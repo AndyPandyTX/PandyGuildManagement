@@ -1,0 +1,9 @@
+# Editor and OS clutter
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Release zips built locally
+*.zip

@@ -1,0 +1,9 @@
+# BigWigsMods packager settings: the release zip holds one folder named like
+# the .toc, so it unzips straight into Interface\AddOns.
+package-as: PandyGuildManagement
+
+ignore:
+  - preview
+  - .github
+  - .gitignore
+  - .pkgmeta

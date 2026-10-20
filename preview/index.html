@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PGM Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&display=swap" rel="stylesheet">
+<style>
+/* Mock-up of Pandy Guild Management's in-game look (sample data).
+   Colours are the addon's own palette from Core.lua; Marcellus stands in
+   for the game's Friz Quadrata font, which isn't web-licensed. */
+:root {
+  --bg: rgb(9,9,11); --panel: rgb(14,15,17); --side: rgb(11,12,14); --card: rgb(20,21,24); --button: rgb(27,29,33);
+  --rowA: rgb(16,17,19); --rowB: rgb(20,22,24); --line: rgb(43,46,54); --frame: rgb(64,69,79); --cardLine: rgb(48,52,60);
+  --ink: rgb(5,5,6); --accent: rgb(89,199,255);
+  --text: rgb(247,247,250); --text2: rgb(179,186,196); --text3: rgb(120,128,140);
+  --jade: rgb(84,209,148); --gold: rgb(255,204,82); --amber: rgb(255,153,61); --red: rgb(242,82,77);
+  --blue: rgb(107,173,255); --purple: rgb(184,138,255);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #2b3b45 radial-gradient(circle at 30% 20%, #4d6b5c 0, #233038 60%, #151c21 100%); min-height: 100vh;
+  font-family: Marcellus, "Palatino Linotype", serif; color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; gap: 8px; }
+.tip-border { border: 1px solid var(--frame); }
+.window { width: 1020px; height: 660px; position: relative; background: var(--bg); flex: none; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+.close { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; background: var(--button); border: 1px solid var(--frame);
+  color: var(--text2); font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.header { position: absolute; left: 15px; right: 15px; top: 10px; height: 54px; background: var(--panel); }
+.framed { border: 1px solid var(--frame); background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.portrait { position: absolute; left: 6px; top: 5px; width: 42px; height: 42px; }
+.portrait span { font-size: 26px; }
+.title { position: absolute; left: 58px; top: 7px; font-size: 17px; color: var(--text); text-shadow: 1px -1px 0 #000; }
+.title b { color: var(--jade); font-weight: normal; }
+.guild { position: absolute; left: 58px; bottom: 6px; font-size: 12px; color: var(--text2); }
+.guild em { font-style: normal; color: var(--text); }
+.st { position: absolute; right: 42px; text-align: right; }
+.st.top { top: 9px; font-size: 12px; } .st.bot { bottom: 9px; font-size: 11px; color: var(--text3); }
+.side { position: absolute; left: 16px; top: 73px; bottom: 17px; width: 210px; background: var(--side); padding: 11px 10px; }
+.heading { font-size: 10px; color: var(--accent); letter-spacing: 1px; margin: 0 0 4px 4px; }
+.navtab { height: 28px; margin-bottom: 2px; border: 1px solid transparent; display: flex; align-items: center; gap: 9px; padding-left: 10px;
+  font-size: 13px; color: var(--text2); cursor: pointer; position: relative; }
+.navtab .ic { width: 16px; height: 16px; filter: grayscale(1); opacity: .7; }
+.navtab:hover { background: rgba(255,255,255,.06); }
+.navtab.on { background: color-mix(in srgb, var(--accent) 16%, black); border-color: color-mix(in srgb, var(--accent) 45%, black); color: var(--text); }
+.navtab.on:before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+.navtab.on .ic { filter: none; opacity: 1; }
+.sec { margin-bottom: 10px; }
+.foot { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--text3); }
+.foot:before { content: ""; position: absolute; left: 14px; right: 14px; top: -9px; border-top: 1px solid var(--line); }
+.main { position: absolute; left: 239px; right: 16px; top: 73px; bottom: 17px; background: var(--panel); padding: 12px; overflow: hidden; }
+.page { display: none; height: 100%; } .page.on { display: block; }
+.toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+.chip, .btn { height: 22px; padding: 0 11px; display: inline-flex; align-items: center; font-size: 11px; color: var(--text2);
+  background: var(--button); border: 1px solid var(--frame); }
+.chip.on { background: color-mix(in srgb, var(--accent) 20%, black); border-color: var(--accent); color: var(--text); }
+.btn { color: var(--accent); font-size: 12px; height: 24px; } .btn.red { color: var(--red); border-color: rgb(140,51,48); background: rgb(41,13,13); }
+.btn:hover, .chip:hover { border-color: var(--accent); }
+.spacer { flex: 1; }
+.scroll { height: calc(100% - 32px); overflow-y: auto; padding-right: 6px; }
+.scroll::-webkit-scrollbar { width: 4px; } .scroll::-webkit-scrollbar-thumb { background: var(--accent); } .scroll::-webkit-scrollbar-track { background: var(--line); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+.tile { height: 70px; background: var(--card); border-color: var(--cardLine); position: relative; }
+.tile .framed { position: absolute; left: 9px; top: 14px; width: 40px; height: 40px; font-size: 20px; }
+.tile .lbl { position: absolute; left: 58px; top: 10px; font-size: 10px; color: var(--text2); letter-spacing: .5px; }
+.tile .val { position: absolute; left: 58px; top: 23px; font-size: 22px; color: var(--accent); text-shadow: 1px -1px 0 #000; }
+.tile .note { position: absolute; left: 58px; bottom: 8px; font-size: 10px; color: var(--text3); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--card); border-color: var(--cardLine); position: relative; padding: 8px 11px 10px 13px; }
+.card:before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--stripe, var(--accent)); }
+.card h3 { margin: 0; font-weight: normal; font-size: 14px; color: var(--text); text-shadow: 1px -1px 0 #000; }
+.card .sub { font-size: 10px; color: var(--text3); margin: 4px 0 8px; }
+.seg { height: 12px; display: flex; border: 1px solid var(--line); background: var(--ink); padding: 1px; margin-bottom: 9px; gap: 1px; }
+.seg i { display: block; height: 100%; }
+.bar { display: grid; grid-template-columns: var(--lw, 120px) 1fr 64px; gap: 6px; align-items: center; height: 19px; font-size: 11px; }
+.bar .track { height: 10px; border: 1px solid var(--line); background: var(--ink); padding: 1px; }
+.bar .fill { height: 100%; }
+.bar .v { text-align: right; color: var(--text2); }
+.bar .v small { color: var(--text3); font-size: 11px; }
+.crest { display: inline-block; width: 13px; height: 13px; border-radius: 50%; margin-right: 5px; vertical-align: -2px; box-shadow: inset 0 0 0 2px rgba(0,0,0,.45); }
+input.search { height: 22px; width: 175px; background: var(--ink); border: 1px solid var(--frame); color: var(--text3);
+  font: 11px Marcellus, serif; padding: 0 7px; }
+input.search:focus { outline: none; border-color: var(--accent); color: var(--text); }
+.thead, .row { display: grid; grid-template-columns: 176px 38px 120px 140px 52px 58px 1fr; align-items: center; font-size: 12px; }
+.thead { height: 22px; background: var(--side); color: var(--text2); font-size: 11px; border-bottom: 1px solid var(--line); }
+.thead span, .row span { padding-left: 6px; white-space: nowrap; overflow: hidden; }
+.thead .on { color: var(--accent); }
+.thead span { cursor: pointer; } .thead span:hover { background: rgba(255,255,255,.06); }
+.arrow { font-size: 8px; margin: 0 3px; vertical-align: 1px; }
+.menu { position: fixed; z-index: 9; min-width: 170px; background: rgb(12,13,15); border: 1px solid var(--frame); padding: 6px 0;
+  font: 12px Marcellus, serif; box-shadow: 0 6px 18px rgba(0,0,0,.6); display: none; }
+.menu div { padding: 3px 14px; color: var(--text); position: relative; }
+.menu div:hover:not(.t):not(.d):not(.off) { background: rgba(255,255,255,.08); }
+.menu .t { color: var(--accent); font-size: 12px; } .menu .off { color: var(--text3); }
+.menu .d { height: 1px; padding: 0; margin: 5px 10px; background: var(--line); }
+.menu .sub:after { content: "\25B8"; position: absolute; right: 10px; color: var(--text3); }
+.row { height: 22px; position: relative; } .row:nth-child(odd) { background: var(--rowA); } .row:nth-child(even) { background: var(--rowB); }
+.row:hover { background: rgba(255,255,255,.07); box-shadow: inset 2px 0 0 var(--accent); }
+.r { text-align: right; padding-right: 6px; }
+.tag { font-size: 11px; }
+.teams { display: grid; grid-template-columns: 190px 1fr; gap: 14px; height: 100%; }
+.tlist .trow { height: 40px; padding: 5px 10px; border-left: 3px solid transparent; }
+.tlist .trow:nth-child(odd) { background: var(--rowA); } .tlist .trow:nth-child(even) { background: var(--rowB); }
+.tlist .trow.on { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, black); }
+.tlist .n { font-size: 13px; } .tlist .s { font-size: 10px; color: var(--text3); margin-top: 3px; }
+.tdetail .boxes { display: flex; gap: 8px; margin-bottom: 9px; }
+.comp { font-size: 13px; margin-bottom: 4px; } .buffs { font-size: 11px; color: var(--text2); margin-bottom: 10px; line-height: 15px; }
+.trow2 { display: grid; grid-template-columns: 160px 64px 60px 106px 64px 1fr; height: 22px; align-items: center; font-size: 12px; }
+.trow2 span { padding-left: 6px; } .trow2:nth-child(odd) { background: var(--rowA); } .trow2:nth-child(even) { background: var(--rowB); }
+.th2 { background: var(--side); color: var(--text2); font-size: 11px; border-bottom: 1px solid var(--line); }
+.grab { position: absolute; right: 5px; bottom: 4px; width: 12px; height: 12px; background:
+  linear-gradient(135deg, transparent 45%, #888 45%, #888 52%, transparent 52%, transparent 65%, #888 65%, #888 72%, transparent 72%); opacity: .7; }
+.picker { display: flex; gap: 8px; align-items: center; font: 12px system-ui, sans-serif; color: #dde7ee; }
+.picker button { width: 22px; height: 22px; border: 2px solid rgba(255,255,255,.25); cursor: pointer; padding: 0; }
+.picker button.on { border-color: #fff; outline: 1px solid #000; }
+.caption { font: 12px system-ui, sans-serif; color: #cfe3d8; opacity: .8; }
+</style>
+</head>
+<body>
+<div class="picker">Accent:
+  <button data-c="89,199,255" title="Ice" class="on" style="background:rgb(89,199,255)"></button>
+  <button data-c="77,230,184" title="Jade" style="background:rgb(77,230,184)"></button>
+  <button data-c="184,143,255" title="Violet" style="background:rgb(184,143,255)"></button>
+  <button data-c="242,245,250" title="White" style="background:rgb(242,245,250)"></button>
+  <button data-c="255,115,92" title="Ember" style="background:rgb(255,115,92)"></button>
+</div>
+<div class="window tip-border">
+  <div class="header tip-border">
+    <div class="close">X</div>
+    <div class="portrait framed"><span>&#x1F43C;</span></div>
+    <div class="title"><b>Pandy</b> Guild Management</div>
+    <div class="guild"><em>&lt;Team Valor&gt;</em>&nbsp; Sample-Realm</div>
+    <div class="st top"><span style="color:var(--text)">152</span> members &nbsp; <span style="color:var(--jade)">23 online</span></div>
+    <div class="st bot">Roster read just now</div>
+  </div>
+  <div class="side tip-border" id="side"></div>
+  <div class="main tip-border">
+    <div class="page on" id="p-overview"></div>
+    <div class="page" id="p-roster"></div>
+    <div class="page" id="p-teams"></div>
+  </div>
+  <div class="grab"></div>
+</div>
+<div class="caption">Preview with sample data. Click Overview, Roster or Raid Teams in the sidebar; pick an accent above.</div>
+<script>
+const CLASS = {
+  WARRIOR:["Warrior","#C69B6D"], PALADIN:["Paladin","#F48CBA"], HUNTER:["Hunter","#AAD372"], ROGUE:["Rogue","#FFF468"],
+  PRIEST:["Priest","#FFFFFF"], DEATHKNIGHT:["Death Knight","#C41E3A"], SHAMAN:["Shaman","#0070DD"], MAGE:["Mage","#3FC7EB"],
+  WARLOCK:["Warlock","#8788EE"], MONK:["Monk","#00FF98"], DRUID:["Druid","#FF7C0A"], DEMONHUNTER:["Demon Hunter","#A330C9"], EVOKER:["Evoker","#33937F"] };
+const NAV = [["Guild",[["overview","Overview","#6b8fb3"],["roster","Roster","#c9a34a"],["professions","Professions","#8a8a8a"]]],
+  ["Raiding",[["teams","Raid Teams","#b36b3a"],["raids","Raids","#a33"]]],["Records",[["log","History","#d9c48c"],["settings","Settings","#777"]]]];
+// Fit the 1020x660 window to whatever space the preview has.
+const win = document.querySelector(".window");
+function fit() { const s = Math.min(1, (innerWidth - 24) / 1020, (innerHeight - 80) / 660); win.style.zoom = s; }
+document.querySelector(".picker").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+  document.documentElement.style.setProperty("--accent", `rgb(${b.dataset.c})`);
+  document.querySelectorAll(".picker button").forEach(x => x.classList.toggle("on", x === b)); });
+addEventListener("resize", fit); fit();
+const side = document.getElementById("side");
+side.innerHTML = NAV.map(([h, tabs]) => `<div class="sec"><div class="heading">${h.toUpperCase()}</div>` +
+  tabs.map(([id, l, c]) => `<div class="navtab${id==="overview"?" on":""}" data-id="${id}"><span class="ic" style="background:${c}"></span>${l}</div>`).join("") + `</div>`).join("") +
+  `<div class="foot">/pgm &nbsp;-&nbsp; v0.2.0</div>`;
+side.addEventListener("click", e => { const t = e.target.closest(".navtab"); if (!t || !document.getElementById("p-" + t.dataset.id)) return;
+  document.querySelectorAll(".navtab").forEach(n => n.classList.toggle("on", n === t));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("on", p.id === "p-" + t.dataset.id)); });
+
+const bar = (label, v, max, col, vt, lc, lw) => `<div class="bar" style="--lw:${lw||120}px"><span style="color:${lc||"var(--text)"}">${label}</span>
+  <div class="track"><div class="fill" style="width:${Math.max(1, 100*v/max)}%;background-color:${col}"></div></div><span class="v">${vt ?? v}</span></div>`;
+const card = (title, sub, body, stripe) => `<div class="card tip-border" ${stripe?`style="--stripe:${stripe}"`:""}><h3>${title}</h3><div class="sub">${sub}</div>${body}</div>`;
+const seg = parts => `<div class="seg">${parts.map(([v,c]) => `<i style="flex:${v};background-color:${c}"></i>`).join("")}</div>`;
+
+const classes = [["PRIEST",19],["DRUID",17],["PALADIN",15],["MAGE",14],["WARRIOR",13],["SHAMAN",12],["HUNTER",11],["DEATHKNIGHT",11],["EVOKER",10],["ROGUE",9],["MONK",8],["WARLOCK",7],["DEMONHUNTER",6]];
+const total = 152, cmax = 19;
+const races = [["Pandaren",24,"var(--gold)"],["Blood Elf",21,"var(--red)"],["Night Elf",18,"var(--blue)"],["Human",17,"var(--blue)"],["Dracthyr",14,"var(--gold)"],["Orc",12,"var(--red)"],["Undead",11,"var(--red)"],["Tauren",10,"var(--red)"],["Earthen",9,"var(--gold)"],["Void Elf",8,"var(--blue)"],["Dwarf",8,"var(--blue)"]];
+document.getElementById("p-overview").innerHTML = `
+<div class="toolbar"><span class="chip on">Everyone</span><span class="chip">Max level</span><span class="chip">Active 30d</span>
+<span style="width:10px"></span><span class="chip">Mains only</span><span class="spacer"></span><span class="btn">Export CSV</span></div>
+<div class="scroll">
+<div class="tiles">
+ <div class="tile tip-border"><div class="framed">&#x1F465;</div><div class="lbl">MEMBERS</div><div class="val">152</div><div class="note">23 online, 41 alts</div></div>
+ <div class="tile tip-border"><div class="framed">&#x23F1;</div><div class="lbl">ACTIVE THIS WEEK</div><div class="val">68</div><div class="note">45% of members</div></div>
+ <div class="tile tip-border"><div class="framed">&#x2B50;</div><div class="lbl">AT MAX LEVEL</div><div class="val">97</div><div class="note">Level 90</div></div>
+ <div class="tile tip-border"><div class="framed">&#x1F33F;</div><div class="lbl">VITALITY</div><div class="val"><span style="color:var(--gold)">63</span><span style="color:var(--text3);font-size:22px"> / 100</span></div><div class="note">94 seen this month</div></div>
+</div>
+<div class="cols"><div class="col">
+${card("Class mix","Members per class. Hover for how many are at max level.",
+  seg(classes.map(([c,n]) => [n, CLASS[c][1]])) + classes.map(([c,n]) => bar(`<span class="crest" style="background:${CLASS[c][1]}"></span>${CLASS[c][0]}`, n, cmax, CLASS[c][1], `${n} <small>(${Math.round(100*n/total)}%)</small>`, CLASS[c][1])).join(""))}
+${card("Race overview","Members per race. Hover for average level and class mix.",
+  seg([[43,"var(--blue)"],[54,"var(--red)"],[47,"var(--gold)"]]) + races.map(([r,n,c]) => bar(`<span class="crest" style="background:${c}"></span>${r}`, n, 24, c, n, null, 130)).join(""))}
+${card("Ranks","Members per rank. In orange: how many have been away 30+ days.",
+  [["Guild Master",1,0],["Officer",6,0],["Raider",24,1],["Trial",5,0],["Member",71,12],["Alt",45,19]].map(([r,n,i]) => bar(r, n, 71, "var(--purple)", n + (i?` <small style="color:var(--amber)">(${i})</small>`:""))).join(""), "var(--purple)")}
+</div><div class="col">
+${card("Level spread","Midnight's cap is 90.",
+  [["90 (max)",97],["80-89",21],["70-79",14],["50-69",9],["10-49",8],["1-9",3]].map(([l,n],i) => bar(l, n, 97, i? "var(--blue)":"var(--jade)", n, null, 90)).join(""), "var(--blue)")}
+${card("Activity","Last seen by the guild roster.",
+  [["Seen this week",68,"var(--jade)"],["Seen last week",14,"rgb(158,214,102)"],["Seen this month",12,"var(--gold)"],["Away 30-59 days",19,"var(--amber)"],["Away 60+ days",39,"var(--red)"]].map(([l,n,c]) => bar(l, n, 68, c)).join(""), "var(--jade)")}
+${card("Professions","Members per profession. In brackets: how many are at 100 skill.",
+  [["Alchemy",22,9],["Herbalism",19,6],["Enchanting",17,7],["Tailoring",15,5],["Mining",14,3],["Jewelcrafting",12,4],["Inscription",11,4],["Blacksmithing",10,3]].map(([l,n,c],i) => bar(l, n, 22, [1,4].includes(i)?"var(--gold)":"var(--jade)", `${n} <small>(${c})</small>`)).join(""))}
+${card("Mythic+ at max level","Blizzard's current score; RaiderIO fills gaps.",
+  [["3000+",4,"rgb(255,128,0)"],["2500-2999",11,"rgb(163,53,238)"],["2000-2499",23,"rgb(0,112,221)"],["1500-1999",19,"rgb(30,255,0)"],["Under 1500",15,"rgb(255,255,255)"],["No score",25,"var(--text3)"]].map(([l,n,c]) => bar(`<span style="color:${c}">${l}</span>`, n, 25, c, n, null, 90)).join(""))}
+</div></div></div>`;
+
+const people = [
+ ["Nattypandy","DRUID",90,"Officer","Online","Dornogal",2981,"9/10","Balance main"],
+ ["Demonpandy","DEMONHUNTER",90,"Alt","Online","Dornogal",2410,"-","alt of Nattypandy"],
+ ["Selwyne","PRIEST",90,"Raider","Online","Silvermoon",2755,"10/10","Disc"],
+ ["Zinzoll","SHAMAN",90,"Raider","2h ago","",2630,"8/10","Resto/Ele"],
+ ["Kaelstrom","MAGE",90,"Raider","Online","The Voidspire",3042,"10/10",""],
+ ["Brightmane","PALADIN",90,"Officer","5h ago","",2540,"9/10","Prot"],
+ ["Vexlin","WARLOCK",90,"Trial","1d ago","",2210,"3/4","trial since Oct 2"],
+ ["Thornleaf","HUNTER",90,"Member","6d ago","",1890,"2/10",""],
+ ["Grimbash","WARRIOR",90,"Raider","Online","Harandar",2690,"7/10","Fury"],
+ ["Mistwalker","MONK",88,"Member","12d ago","",null,"-","leveling"],
+ ["Ashveil","EVOKER",90,"Raider","3h ago","",2870,"10/10","Aug"],
+ ["Shadowfen","ROGUE",90,"Member","41d ago","",1420,"0/10",""],
+ ["Frostbane","DEATHKNIGHT",90,"Raider","Online","Dornogal",2390,"8/10","Blood"],
+ ["Lunarae","DRUID",72,"Alt","2d ago","",null,"-","alt of Selwyne"],
+ ["Pyrrha","MAGE",90,"Member","19d ago","",1710,"1/10",""],
+ ["Oakenshield","WARRIOR",90,"Raider","1d ago","",2480,"9/10","Prot"],
+ ["Celestra","PRIEST",90,"Member","66d ago","",null,"-",""],
+ ["Tidecaller","SHAMAN",90,"Raider","Online","Silvermoon",2600,"10/10","Enh"],
+ ["Hexweaver","WARLOCK",84,"Member","8d ago","",null,"-",""],
+ ["Swiftarrow","HUNTER",90,"Raider","4h ago","",2350,"6/10","MM"],
+];
+const score = s => s == null ? `<span style="color:var(--text3)">-</span>` :
+  `<span style="color:${s>=3000?"rgb(255,128,0)":s>=2500?"rgb(163,53,238)":s>=2000?"rgb(0,112,221)":s>=1500?"rgb(30,255,0)":"#fff"}">${s}</span>`;
+const seen = (s, z) => s === "Online" ? `<span style="color:var(--jade)">${z}</span>` : (() => { const d = parseInt(s); const c = s.includes("h")||d<7 ? "var(--text)" : d<30?"var(--text2)":d<60?"var(--amber)":"var(--red)"; return `<span style="color:${c}">${s}</span>`; })();
+const att = a => { if (a === "-") return `<span style="color:var(--text3)">-</span>`; const [p,q] = a.split("/").map(Number); const r = p/q;
+  return `<span style="color:${r>=.8?"var(--jade)":r>=.5?"var(--gold)":"var(--red)"}">${a}</span>`; };
+document.getElementById("p-roster").innerHTML = `
+<div class="toolbar"><input class="search" placeholder="Search name, rank, note..."><span class="chip">Online</span><span class="chip on">Max level</span><span class="chip">Mains only</span><span class="chip">Away 30d+</span>
+<span class="spacer"></span><span style="font-size:11px;color:var(--text3)">97 of 152</span><span class="btn">Export CSV</span></div>
+<div class="thead" id="thead"></div>
+<div id="rows">${people.map(([n,c,l,r,s,z,m,a,note]) => `<div class="row"><span style="color:${CLASS[c][1]}">${n}${r==="Alt"?' <span class="tag" style="color:var(--purple)">alt</span>':n==="Nattypandy"?' <span class="tag" style="color:var(--text3)">+1</span>':""}</span>
+<span style="text-align:center;color:${l>=90?"var(--text)":"var(--text2)"}">${l}</span><span style="color:var(--text2)">${r}</span><span>${seen(s,z)}</span><span class="r">${score(m)}</span><span class="r">${att(a)}</span><span style="color:var(--text2)">${note}</span></div>`).join("")}</div>`;
+
+const team = [["Brightmane","PALADIN","Tank","Core","5h ago","9/10",2540],["Oakenshield","WARRIOR","Tank","Core","1d ago","9/10",2480],
+ ["Selwyne","PRIEST","Healer","Core","Online","10/10",2755],["Zinzoll","SHAMAN","Healer","Core","2h ago","8/10",2630],["Nattypandy","DRUID","DPS","Core","Online","9/10",2981],
+ ["Kaelstrom","MAGE","DPS","Core","Online","10/10",3042],["Ashveil","EVOKER","DPS","Core","3h ago","10/10",2870],["Grimbash","WARRIOR","DPS","Core","Online","7/10",2690],
+ ["Frostbane","DEATHKNIGHT","DPS","Core","Online","8/10",2390],["Swiftarrow","HUNTER","DPS","Core","4h ago","6/10",2350],["Vexlin","WARLOCK","DPS","Trial","1d ago","3/4",2210],
+ ["Thornleaf","HUNTER","DPS","Bench","6d ago","2/10",1890]];
+const roleCol = {Tank:"var(--blue)",Healer:"var(--jade)",DPS:"var(--red)"}, stCol = {Core:"var(--text)",Trial:"var(--gold)",Bench:"var(--text3)"};
+document.getElementById("p-teams").innerHTML = `<div class="teams"><div class="tlist" style="display:flex;flex-direction:column;height:100%">
+ <div style="flex:1"><div class="trow on"><div class="n">Team Valor</div><div class="s">22 members - Wed/Thu 8-11pm</div></div><div class="trow"><div class="n">Weekend Normal</div><div class="s">14 members - Sat 7pm</div></div></div>
+ <span class="btn" style="justify-content:center;height:26px">+ New raid team</span></div>
+ <div class="tdetail"><div class="boxes" style="align-items:center"><input class="search" style="width:194px;color:var(--text)" value="Team Valor"><input class="search" style="width:194px;color:var(--text)" value="Wed/Thu 8-11pm"><span class="spacer"></span><span class="btn red">Delete</span></div>
+ <div class="comp"><span style="color:var(--blue)">2 Tanks</span> &nbsp; <span style="color:var(--jade)">4 Healers</span> &nbsp; <span style="color:var(--red)">15 DPS</span> &nbsp; <span style="color:var(--text2)">21 active, 1 bench</span></div>
+ <div class="buffs"><span style="color:var(--amber)">Missing:</span> <span style="color:#FFF468">Atrophic Poison</span>, <span style="color:#A330C9">Chaos Brand</span> &nbsp;<span style="color:var(--text3)">(hover for details)</span></div>
+ <div class="boxes" style="align-items:center"><input class="search" style="width:155px" placeholder="Add by name..."><span class="btn">Add</span><span class="btn">Add my group</span><span class="btn">Match past raids</span></div>
+ <div class="trow2 th2"><span>Name</span><span>Role</span><span>Status</span><span>Last seen</span><span>Raids</span><span style="text-align:right;padding-right:14px">M+</span></div>
+ ${team.map(([n,c,r,s,ls,a,m]) => `<div class="trow2"><span style="color:${CLASS[c][1]}">${n} <span style="color:var(--text3)">90</span></span><span style="color:${roleCol[r]}">${r}</span><span style="color:${stCol[s]}">${s}</span><span style="color:${ls==="Online"?"var(--jade)":"var(--text2)"}">${ls}</span><span>${att(a)}</span><span style="text-align:right;padding-right:6px">${score(m)}</span></div>`).join("")}
+ </div></div>`;
+
+// Sortable headers in the preview, mirroring the addon's behaviour.
+const COLS = [["name","Name",""],["level","Lvl","c"],["rank","Rank",""],["seen","Last seen",""],["mplus","M+","r"],["raids","Raids","r"],["note","Note",""]];
+let sortKey = "seen", asc = false;
+const rowsEl = document.getElementById("rows");
+const rowEls = [...rowsEl.children].map((el, i) => ({ el, d: people[i] }));
+const seenVal = s => s === "Online" ? 1e9 : s.includes("h") ? 1e8 - parseInt(s) : 1e7 - parseInt(s);
+const val = (d, k) => ({ name: d[0].toLowerCase(), level: d[2], rank: d[3], seen: seenVal(d[4]), mplus: d[6] || 0,
+  raids: d[7] === "-" ? -1 : eval(d[7]), note: d[8].toLowerCase() })[k];
+function drawHead() {
+  document.getElementById("thead").innerHTML = COLS.map(([k, l, a]) => {
+    const on = k === sortKey, arr = on ? `<span class="arrow">${asc ? "&#9650;" : "&#9660;"}</span>` : "";
+    const st = a === "c" ? "text-align:center" : a === "r" ? "text-align:right;padding-right:6px" : "";
+    return `<span data-k="${k}" class="${on ? "on" : ""}" style="${st}" title="Sort by ${l.toLowerCase()}">${a === "r" ? arr + l : l + arr}</span>`;
+  }).join("");
+}
+function sortRows() {
+  rowEls.sort((x, y) => { const a = val(x.d, sortKey), b = val(y.d, sortKey); return a === b ? x.d[0].localeCompare(y.d[0]) : (a < b) === asc ? -1 : 1; });
+  rowEls.forEach(r => rowsEl.appendChild(r.el));
+}
+document.getElementById("thead").addEventListener("click", e => { const k = e.target.closest("[data-k]")?.dataset.k; if (!k) return;
+  if (k === sortKey) asc = !asc; else { sortKey = k; asc = ["name","rank","note"].includes(k); } drawHead(); sortRows(); });
+drawHead(); sortRows();
+
+// The right-click menu, as the addon builds it.
+const menu = document.createElement("div"); menu.className = "menu"; document.body.appendChild(menu);
+rowsEl.addEventListener("contextmenu", e => { const row = e.target.closest(".row"); if (!row) return; e.preventDefault();
+  const d = rowEls.find(r => r.el === row).d, online = d[4] === "Online", alt = d[3] === "Alt";
+  menu.innerHTML = `<div class="t">${d[0]}</div><div>Whisper</div><div class="${online ? "" : "off"}">Invite to group</div><div>Open profile</div>
+    <div class="d"></div><div class="sub">Raid teams</div>${alt ? `<div>Make this the main</div><div>Unlink from ${d[8].replace("alt of ","")}</div>` : ""}`;
+  menu.style.left = e.clientX + "px"; menu.style.top = e.clientY + "px"; menu.style.display = "block"; });
+addEventListener("click", () => menu.style.display = "none");
+</script>
+</body>
+</html>

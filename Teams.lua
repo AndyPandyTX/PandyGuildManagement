@@ -1,0 +1,464 @@
+-- Teams.lua: raid teams. A guild can run as many as it likes, each with its
+-- own roster, roles, schedule note and attendance.
+--
+-- Raid nights are matched to a team on their own: when a raid is saved, the
+-- team with at least half its (non-bench) roster there gets it. A wrong guess
+-- is one right-click to fix on the Raids page.
+
+local _, NS = ...
+local PGM = NS.PGM
+local C = PGM.C
+
+PGM.ROLES = { "TANK", "HEALER", "DPS" }
+PGM.ROLE_LABEL = { TANK = "Tank", HEALER = "Healer", DPS = "DPS" }
+PGM.ROLE_COLOR = { TANK = C.blue, HEALER = C.jade, DPS = C.red }
+PGM.STATUSES = { "core", "trial", "bench" }
+PGM.STATUS_LABEL = { core = "Core", trial = "Trial", bench = "Bench" }
+PGM.STATUS_COLOR = { core = C.text, trial = C.gold, bench = C.text3 }
+
+-- Raid-wide buffs and boss debuffs in Midnight, and the class that brings
+-- each (Icy Veins' Midnight raid buff list; Hunter's Mark is the one that
+-- changed from The War Within: now a flat 3% for the whole fight). Death
+-- Knights and Warlocks bring utility rather than a throughput buff.
+PGM.RAID_BUFFS = {
+    { class = "MAGE",        name = "Arcane Intellect",      effect = "+3% Intellect" },
+    { class = "PRIEST",      name = "Power Word: Fortitude", effect = "+5% Stamina" },
+    { class = "WARRIOR",     name = "Battle Shout",          effect = "+5% attack power" },
+    { class = "DRUID",       name = "Mark of the Wild",      effect = "+3% Versatility" },
+    { class = "SHAMAN",      name = "Skyfury",               effect = "+2% Mastery, extra auto attacks" },
+    { class = "EVOKER",      name = "Blessing of the Bronze", effect = "-15% movement cooldowns" },
+    { class = "PALADIN",     name = "Devotion Aura",         effect = "-3% damage taken" },
+    { class = "MONK",        name = "Mystic Touch",          effect = "boss takes +5% physical" },
+    { class = "DEMONHUNTER", name = "Chaos Brand",           effect = "boss takes +3% magic" },
+    { class = "HUNTER",      name = "Hunter's Mark",         effect = "boss takes +3% damage" },
+    { class = "ROGUE",       name = "Atrophic Poison",       effect = "boss deals -3% damage" },
+}
+
+-- Utility a raid wants at least one of.
+PGM.RAID_UTILITY = {
+    { name = "Bloodlust", classes = { MAGE = true, SHAMAN = true, EVOKER = true, HUNTER = true } },
+    { name = "Battle res", classes = { DEATHKNIGHT = true, DRUID = true, WARLOCK = true } },
+}
+
+-- The roster doesn't say anyone's spec, so new members start as DPS and one
+-- click on their role fixes it.
+local DEFAULT_ROLE = "DPS"
+
+local function teams()
+    local g = PGM.GuildDB(true)
+    if not g then return nil end
+    g.teams = g.teams or {}
+    return g.teams
+end
+
+-- Shared editing: only officers change teams, and each change is sent to the
+-- rest of the guild (Sync.lua, loaded after this file, so looked up at use).
+local function canEdit()
+    return PGM.CanEdit ~= nil and PGM:CanEdit()
+end
+local function share(fn, ...)
+    if PGM[fn] and canEdit() then PGM[fn](PGM, ...) end
+end
+
+-- After a team's name, schedule, tags or sync setting changes.
+function PGM:TouchTeam(t)
+    share("SyncTeam", t)
+end
+
+function PGM:Teams()
+    return teams() or {}
+end
+
+function PGM:TeamById(id)
+    for _, t in ipairs(PGM:Teams()) do
+        if t.id == id then return t end
+    end
+end
+
+function PGM:CreateTeam(name)
+    local list = teams()
+    if not list or not canEdit() then return nil end
+    name = strtrim(name or "")
+    if name == "" then name = "Raid team " .. (#list + 1) end
+    local t = { id = ("%d-%d"):format(PGM.Now(), math.random(1000, 9999)), name = name, schedule = "",
+                members = {}, removed = {}, created = PGM.Now() }
+    table.insert(list, t)
+    share("SyncTeam", t)
+    PGM:Fire("TEAMS")
+    return t
+end
+
+function PGM:DeleteTeam(id)
+    local list = teams()
+    if not list or not canEdit() then return end
+    for i, t in ipairs(list) do
+        if t.id == id then table.remove(list, i) break end
+    end
+    local g = PGM.GuildDB()
+    for _, s in ipairs(g.raids and g.raids.sessions or {}) do
+        if s.team == id then s.team = nil end
+    end
+    share("SyncTeamDeleted", id)
+    PGM:Fire("TEAMS")
+end
+
+-- Adding by hand also lifts an earlier removal (see RemoveFromTeam).
+function PGM:AddToTeam(id, guid)
+    local t = PGM:TeamById(id)
+    if not t or not guid or t.members[guid] or not canEdit() then return false end
+    -- Carry the removal's stamp over, so the re-add is stamped later than it.
+    local prev = t.removed and tonumber(t.removed[guid]) or nil
+    t.members[guid] = { role = DEFAULT_ROLE, status = "core", added = PGM.Now(), u = prev }
+    if t.removed then t.removed[guid] = nil end
+    share("SyncSpot", t, guid)
+    PGM:Fire("TEAMS")
+    return true
+end
+
+-- A removal by hand is remembered, so importing from notes never puts them
+-- back. Adding them by hand again is the only way back in.
+function PGM:RemoveFromTeam(id, guid)
+    local t = PGM:TeamById(id)
+    if t and t.members[guid] and canEdit() then
+        local prev = t.members[guid].u
+        t.members[guid] = nil
+        t.removed = t.removed or {}
+        t.removed[guid] = prev or PGM.Now()
+        share("SyncSpot", t, guid)
+        PGM:Fire("TEAMS")
+    end
+end
+
+local function nextOf(list, current)
+    for i, v in ipairs(list) do
+        if v == current then return list[i % #list + 1] end
+    end
+    return list[1]
+end
+
+function PGM:CycleRole(id, guid)
+    local t = PGM:TeamById(id)
+    local e = t and t.members[guid]
+    if e and canEdit() then
+        e.role = nextOf(PGM.ROLES, e.role)
+        share("SyncSpot", t, guid)
+        PGM:Fire("TEAMS")
+    end
+end
+
+function PGM:CycleStatus(id, guid)
+    local t = PGM:TeamById(id)
+    local e = t and t.members[guid]
+    if e and canEdit() then
+        e.status = nextOf(PGM.STATUSES, e.status)
+        share("SyncSpot", t, guid)
+        PGM:Fire("TEAMS")
+    end
+end
+
+-- Everyone currently in your group who is in the guild joins the team.
+function PGM:AddGroupToTeam(id)
+    local g = PGM.GuildDB()
+    if not g then return 0 end
+    local n = 0
+    local function try(unit)
+        local ok, guid = pcall(UnitGUID, unit)
+        guid = ok and PGM.Plain(guid) or nil
+        if guid and g.members[guid] and PGM:AddToTeam(id, guid) then n = n + 1 end
+    end
+    local prefix = IsInRaid() and "raid" or "party"
+    for i = 1, GetNumGroupMembers() or 0 do try(prefix .. i) end
+    try("player")
+    return n
+end
+
+-- The teams a character is on, counting their main's and alts' spots.
+function PGM:TeamsOf(guid)
+    local out = {}
+    local group = PGM:GroupOf(guid)
+    for _, t in ipairs(PGM:Teams()) do
+        for _, gu in ipairs(group) do
+            local e = t.members[gu]
+            if e then
+                out[#out + 1] = { team = t, entry = e, guid = gu }
+                break
+            end
+        end
+    end
+    return out
+end
+
+function PGM:TeamsText(guid)
+    local parts = {}
+    for _, it in ipairs(PGM:TeamsOf(guid)) do parts[#parts + 1] = it.team.name end
+    return table.concat(parts, ", ")
+end
+
+-- Was this team member (or one of their characters) at that raid?
+local function attended(s, guid)
+    for _, gu in ipairs(PGM:GroupOf(guid)) do
+        if s.present[gu] then return true end
+    end
+    return false
+end
+
+-- The team a raid night belongs to, or nil: the team with the largest share
+-- of its active roster present, if that share is at least half.
+function PGM:GuessTeam(s)
+    local g = PGM.GuildDB()
+    local best, bestShare
+    for _, t in ipairs(PGM:Teams()) do
+        local size, here = 0, 0
+        for guid, e in pairs(t.members) do
+            -- Members who left the guild stay on file (they may come back)
+            -- but would otherwise count as permanent no-shows.
+            if e.status ~= "bench" and g and g.members[guid] then
+                size = size + 1
+                if attended(s, guid) then here = here + 1 end
+            end
+        end
+        local share = size > 0 and here / size or 0
+        if here >= 3 and share >= 0.5 and (not bestShare or share > bestShare) then
+            best, bestShare = t.id, share
+        end
+    end
+    return best
+end
+
+-- Matches every unassigned raid night to a team. Returns how many it placed.
+function PGM:AutoAssignRaids()
+    local g = PGM.GuildDB()
+    local n = 0
+    if not canEdit() then return 0 end
+    for _, s in ipairs(g and g.raids and g.raids.sessions or {}) do
+        if not s.team then
+            s.team = PGM:GuessTeam(s)
+            if s.team then
+                n = n + 1
+                s.teamU = PGM.Stamp(s.teamU)
+                share("SyncRaid", s)
+            end
+        end
+    end
+    if n > 0 then PGM:Fire("RAIDS") end
+    return n
+end
+
+function PGM:AssignRaid(s, teamId)
+    if not canEdit() then return end
+    s.team = teamId
+    s.teamU = PGM.Stamp(s.teamU)
+    share("SyncRaid", s)
+    PGM:Fire("RAIDS")
+end
+
+-- Roles, classes and missing raid buffs for the non-bench roster.
+function PGM:TeamComposition(t)
+    local g = PGM.GuildDB()
+    local comp = { TANK = 0, HEALER = 0, DPS = 0, total = 0, bench = 0, classes = {}, missing = {} }
+    for guid, e in pairs(t.members) do
+        local rec = g and g.members[guid]
+        if rec then
+            if e.status == "bench" then
+                comp.bench = comp.bench + 1
+            else
+                comp.total = comp.total + 1
+                comp[e.role] = (comp[e.role] or 0) + 1
+                if rec.class then comp.classes[rec.class] = (comp.classes[rec.class] or 0) + 1 end
+            end
+        end
+    end
+    for _, b in ipairs(PGM.RAID_BUFFS) do
+        if not comp.classes[b.class] then comp.missing[#comp.missing + 1] = b end
+    end
+    comp.missingUtility = {}
+    for _, u in ipairs(PGM.RAID_UTILITY) do
+        local have = false
+        for cls in pairs(u.classes) do
+            if comp.classes[cls] then have = true break end
+        end
+        if not have then comp.missingUtility[#comp.missingUtility + 1] = u.name end
+    end
+    return comp
+end
+
+-- ============================================================
+-- TEAMS FROM GUILD NOTES
+-- ============================================================
+-- Guilds tag raiders in their notes: "VA/Main/312/DPS/Anvar", "Z", "M BM
+-- Tank", or an officer note of "Team Valor". A team's tags (say "Valor, VA,
+-- V") pull in every main whose note carries one. Short tags (3 letters or
+-- fewer) only count as the note's first part, or after "Team", so "M" never
+-- matches the M in "M+". Longer ones count anywhere as a whole word.
+--
+-- Importing only ever adds. It skips alts (their main is the raider), and
+-- anyone removed from the team by hand.
+
+local function wholeWord(text, word)
+    local from = 1
+    while true do
+        local a, b = text:find(word, from, true)
+        if not a then return false end
+        local before = a > 1 and text:sub(a - 1, a - 1) or ""
+        local after = text:sub(b + 1, b + 1)
+        -- "&" counts as part of a word, so "Team H" never matches "Team H&M".
+        if not before:find("[%w&]") and not after:find("[%w&]") then return true end
+        from = b + 1
+    end
+end
+
+local function textHasTag(text, tag)
+    if not text or text == "" or tag == "" then return false end
+    local lt, tg = text:lower(), tag:lower()
+    if wholeWord(lt, "team " .. tg) then return true end
+    if #tg <= 3 then
+        return lt:match("^%s*([^/%s%-:]+)") == tg
+    end
+    return wholeWord(lt, tg)
+end
+
+function PGM:TeamTags(t)
+    local out = {}
+    for tag in (t.tags or ""):gmatch("[^,]+") do
+        tag = strtrim(tag)
+        if tag ~= "" then out[#out + 1] = tag end
+    end
+    return out
+end
+
+function PGM:NoteMatchesTeam(rec, t)
+    for _, tag in ipairs(PGM:TeamTags(t)) do
+        if textHasTag(rec.note, tag) or textHasTag(rec.onote, tag) then return true end
+    end
+    return false
+end
+
+-- Role words as guilds write them: "TNK", "HLS", "Heal", "Resto", "DPS".
+local ROLE_WORDS = {
+    tnk = "TANK", tank = "TANK", prot = "TANK", guardian = "TANK",
+    hls = "HEALER", heal = "HEALER", heals = "HEALER", healer = "HEALER", resto = "HEALER",
+    disc = "HEALER", holy = "HEALER", mw = "HEALER",
+    dps = "DPS",
+}
+
+function PGM:RoleFromNote(rec)
+    for _, text in ipairs({ rec.note, rec.onote }) do
+        for word in (text or ""):lower():gmatch("[%a]+") do
+            if ROLE_WORDS[word] then return ROLE_WORDS[word] end
+        end
+    end
+    return DEFAULT_ROLE
+end
+
+local function looksTrial(rec)
+    return (rec.rank and rec.rank:lower():find("trial", 1, true))
+        or (rec.onote and rec.onote:lower():find("trial", 1, true))
+end
+
+-- Adds every tagged main not on the team yet. Returns how many joined.
+function PGM:ImportTeamFromNotes(id, quiet)
+    local t = PGM:TeamById(id)
+    local g = PGM.GuildDB()
+    if not (t and g) or #PGM:TeamTags(t) == 0 or not canEdit() then return 0 end
+    t.removed = t.removed or {}
+    local n, added = 0, {}
+    for guid, rec in pairs(g.members) do
+        if not t.members[guid] and not t.removed[guid] and not PGM:IsAlt(guid)
+            and PGM:NoteMatchesTeam(rec, t) then
+            t.members[guid] = {
+                role = PGM:RoleFromNote(rec),
+                status = looksTrial(rec) and "trial" or "core",
+                added = PGM.Now(),
+                fromNotes = true,
+            }
+            n = n + 1
+            added[#added + 1] = guid
+        end
+    end
+    for _, guid in ipairs(added) do share("SyncSpot", t, guid) end
+    if n > 0 and not quiet then PGM:Fire("TEAMS") end
+    return n
+end
+
+local function titleCase(word)
+    if word:find("&", 1, true) then return word:upper() end
+    return word:sub(1, 1):upper() .. word:sub(2)
+end
+
+-- Reads "Team X" out of every note and makes a team for each X at least
+-- three members mention, tagged with X, its first two letters and its first
+-- letter ("Valor, VA, V"). A short tag two teams would share goes to the
+-- bigger one. A team that already exists (same name) is just imported into.
+-- Returns the names it created and how many members joined in all.
+function PGM:FindTeamsInNotes()
+    local g = PGM.GuildDB()
+    if not g or not canEdit() then return {}, 0 end
+    local mentions = {}
+    for _, rec in pairs(g.members) do
+        local seen = {}
+        for _, text in ipairs({ rec.note, rec.onote }) do
+            for word in (text or ""):lower():gmatch("team%s+([%w&]+)") do
+                if not seen[word] then
+                    seen[word] = true
+                    mentions[word] = (mentions[word] or 0) + 1
+                end
+            end
+        end
+    end
+
+    local found = {}
+    for word, n in pairs(mentions) do
+        if n >= 3 then found[#found + 1] = { word = word, n = n } end
+    end
+    table.sort(found, function(a, b)
+        if a.n ~= b.n then return a.n > b.n end
+        return a.word < b.word
+    end)
+
+    -- Short tags, biggest team first; a tag already taken isn't reused.
+    local taken = {}
+    for _, f in ipairs(found) do
+        local tags = { titleCase(f.word) }
+        local letters = f.word:gsub("[^%a]", "")
+        -- "H&M" is already initials: "HM", but not "H" (that's Honor's).
+        local shorts = f.word:find("&", 1, true) and { letters:upper() }
+            or { letters:sub(1, 2):upper(), letters:sub(1, 1):upper() }
+        for _, short in ipairs(shorts) do
+            if short ~= "" and not taken[short] and short:lower() ~= f.word then
+                taken[short] = true
+                tags[#tags + 1] = short
+            end
+        end
+        f.tags = table.concat(tags, ", ")
+    end
+
+    local created, joined = {}, 0
+    for _, f in ipairs(found) do
+        local name = "Team " .. titleCase(f.word)
+        local team
+        for _, t in ipairs(PGM:Teams()) do
+            if t.name:lower() == name:lower() then team = t end
+        end
+        if not team then
+            team = PGM:CreateTeam(name)
+            team.tags = f.tags
+            team.autoSync = true
+            share("SyncTeam", team)
+            created[#created + 1] = name
+        end
+        joined = joined + PGM:ImportTeamFromNotes(team.id, true)
+    end
+    PGM:Fire("TEAMS")
+    return created, joined
+end
+
+-- Teams set to stay in sync pick up newly tagged recruits after each roster
+-- read. (Alts are resolved first: Alts.lua listens for ROSTER before this.)
+PGM:On("ROSTER", function()
+    if not canEdit() then return end
+    local added = 0
+    for _, t in ipairs(PGM:Teams()) do
+        if t.autoSync then added = added + PGM:ImportTeamFromNotes(t.id, true) end
+    end
+    if added > 0 then PGM:Fire("TEAMS") end
+end)
