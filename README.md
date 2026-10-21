@@ -50,8 +50,8 @@ to whisper or invite.
 
 **Professions.** Pick a profession and see everyone who has it. Online
 members are listed first, so finding a crafter right now takes one click.
-Alts are marked with their main's name. Skill levels aren't shown: the guild
-roster's profession rank isn't Midnight skill (most members read 1).
+Click anyone to open the game's recipe view for them, showing every recipe
+they know and don't. Alts are marked with their main's name.
 
 **Raid Teams.** Run as many teams as you like:
 - Each team has a name, a schedule note and a roster.
@@ -78,9 +78,29 @@ showed up (half or more of its non-bench roster). Right-click a night to
 retag it, and use "Match past raids" on the Raid Teams page to tag older ones.
 Filter by team; a team's view lists its whole roster, so no-shows appear too.
 
+**Addon Users.** Everyone in the guild running Pandy Guild Management, with
+their version, and who needs to update. The Roster also has a "Has addon"
+filter.
+
 **Settings.** Choose which changes get announced in chat (only to you, never
-to guild chat), how many guildies a raid needs to count, window scale, your
-main, and a data reset.
+to guild chat), how many guildies a raid needs to count, window scale, accent
+colour and your main. Guild sync status and the officer cut-off live here, as
+does the GRM import.
+
+## Coming from GRM?
+
+With Guild Roster Manager still enabled, open Settings and click **Import from
+GRM**. It brings over, for this guild:
+
+- **Alt groups** become alt links, shared with the guild. Officers only.
+- **Join dates** fill in "Joined" for everyone. They're shared with the guild
+  when an officer imports.
+- **Rank history** goes into History as promotions and demotions from before
+  this addon was installed.
+- **Custom notes** become your private notes, where you don't already have one.
+
+Anything set by hand is kept, and running it again is safe. After that, GRM can
+be switched off.
 
 ## Where the data comes from
 
@@ -145,9 +165,11 @@ guild addon messages.
   catch-up.
 - **Inside instances:** Midnight blocks addon messages there, so changes wait
   and go out once you leave.
-- **Message budget:** about one message a second, shared by the whole guild.
-  A first-time catch-up can take a few minutes, and brings the 30 most recent
-  raid nights.
+- **Message budget:** about one message a second. Small records like alt
+  links and join dates are packed several to a message. Bulk sends, such as a
+  GRM import or a catch-up, go at low priority, so live edits never wait behind
+  them. A first-time catch-up can take a few minutes, and brings the 30 most
+  recent raid nights.
 
 ## Not included (yet)
 

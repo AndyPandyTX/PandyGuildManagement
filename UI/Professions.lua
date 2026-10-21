@@ -11,6 +11,17 @@ local W = UI.W
 
 local state = { selected = nil, onlineOnly = false, search = "" }
 
+-- Blizzard's own recipe view for a guild member, the same one the guild
+-- window's "View Recipes" opens: everything they know, and don't.
+local function viewRecipes(guid, professionId)
+    if not (C_GuildInfo and C_GuildInfo.QueryGuildMemberRecipes) then return end
+    if CanViewGuildRecipes and not CanViewGuildRecipes(professionId) then
+        PGM.Print("The game doesn't share guild recipes for that profession.")
+        return
+    end
+    C_GuildInfo.QueryGuildMemberRecipes(guid, professionId)
+end
+
 local function profList()
     local g = PGM.GuildDB()
     local byId = {}
@@ -100,12 +111,21 @@ local function memberRow(list)
     r.level:SetWidth(90)
     r.seen = W.FS(r, 12, C.text2)
     r.seen:SetPoint("LEFT", 330, 0)
+    r.onEnter = function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        GameTooltip:SetText(PGM.ColorName(s.it.rec))
+        GameTooltip:AddLine("Click to see their " .. PGM.ProfName(state.selected) .. " recipes: what they know and don't.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Right-click for more.", 0.45, 0.45, 0.45)
+        GameTooltip:Show()
+    end
     r.seen:SetPoint("RIGHT", -6, 0)
     r:SetScript("OnClick", function(s, button)
         if button == "RightButton" then
-            UI:MemberMenu(s, s.it.guid)
+            UI:MemberMenu(s, s.it.guid, {
+                { "View their " .. PGM.ProfName(state.selected) .. " recipes", function() viewRecipes(s.it.guid, state.selected) end },
+            })
         else
-            UI:OpenProfile(s.it.guid)
+            viewRecipes(s.it.guid, state.selected)
         end
     end)
     return r

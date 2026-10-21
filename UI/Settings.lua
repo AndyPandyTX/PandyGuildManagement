@@ -203,6 +203,42 @@ local function build(p)
     end
     p.cutMinus:SetScript("OnClick", function() stepCut(-1) end)
     p.cutPlus:SetScript("OnClick", function() stepCut(1) end)
+
+    -- Who runs the addon.
+    heading(p, "Addon users", 0):SetPoint("TOPLEFT", X, -200)
+    p.usersText = W.FS(p, 11, C.text2)
+    p.usersText:SetPoint("TOPLEFT", X, -224)
+    p.usersText:SetWidth(310)
+    p.usersText:SetWordWrap(true)
+    local see = W.Button(p, "See who", 90, 22)
+    see:SetPoint("TOPLEFT", X, -262)
+    see:SetScript("OnClick", function() UI:Show("users") end)
+
+    -- One-time import from Guild Roster Manager.
+    heading(p, "Import from GRM", 0):SetPoint("TOPLEFT", X, -304)
+    p.grmText = W.FS(p, 11, C.text2)
+    p.grmText:SetPoint("TOPLEFT", X, -328)
+    p.grmText:SetWidth(310)
+    p.grmText:SetWordWrap(true)
+    p.grmText:SetJustifyV("TOP")
+    p.grmButton = W.Button(p, "Import from GRM", 130, 22)
+    p.grmButton:SetPoint("TOPLEFT", X, -400)
+    p.grmButton.tip = "Brings over GRM's alt groups, join dates, rank history and custom notes for this guild. Safe to run again; anything set by hand is kept."
+    p.grmButton:SetScript("OnClick", function()
+        local res, err = PGM:ImportGRM()
+        if not res then
+            PGM.Print(err)
+            return
+        end
+        PGM.Print(("Imported from GRM: %d join dates, %d alt links, %d notes, %d history entries.")
+            :format(res.joins, res.links, res.notes, res.history))
+        if res.skippedLinks > 0 then
+            PGM.Print(("%d alt links skipped: only officers can change shared alt links."):format(res.skippedLinks))
+        elseif res.links + res.joins > 0 then
+            PGM.Print("Sharing them with the guild in the background (a few minutes).")
+        end
+        UI:Refresh()
+    end)
 end
 
 local function refresh(p)
@@ -223,14 +259,36 @@ local function refresh(p)
         if S.lastApplied then
             lines[#lines + 1] = "Last shared change: " .. PGM.AgoText(S.lastApplied) .. "."
         end
-        if S.queue and #S.queue > 0 then
-            lines[#lines + 1] = ("%d message%s waiting to send%s."):format(#S.queue, #S.queue == 1 and "" or "s",
+        local waiting = PGM.SyncQueued and PGM:SyncQueued() or 0
+        if waiting > 0 then
+            lines[#lines + 1] = ("%d message%s waiting to send%s."):format(waiting, waiting == 1 and "" or "s",
                 IsInInstance() and " (after you leave this instance)" or "")
         end
     end
     lines[#lines + 1] = PGM:CanEdit() and (PGM.Hex(C.jade) .. "You can edit|r teams, raid nights and alt links.")
         or "You can view shared teams; officers edit them."
     p.syncStatus:SetText(table.concat(lines, "\n"))
+
+    local users, latest = PGM:AddonUsers()
+    local old = 0
+    for _, it in ipairs(users) do if it.outdated then old = old + 1 end end
+    p.usersText:SetText(("%d member%s run it. Newest version: v%s%s."):format(#users, #users == 1 and "" or "s", latest,
+        old > 0 and (" (" .. old .. " need to update)") or ""))
+
+    local grmReady = PGM:GRMAvailable()
+    local r = g and g.grmResult
+    local grmLines = {}
+    if g and g.grmImported and r then
+        grmLines[#grmLines + 1] = ("Imported %s: %d join dates, %d alt links, %d notes, %d history entries.")
+            :format(PGM.AgoText(g.grmImported), r.joins, r.links, r.notes, r.history)
+    end
+    grmLines[#grmLines + 1] = grmReady and (PGM.Hex(C.jade) .. "GRM's data for this guild is loaded.|r")
+        or "GRM isn't loaded. Enable Guild Roster Manager and /reload to import."
+    if grmReady and not PGM:CanEdit() then
+        grmLines[#grmLines + 1] = "Alt links are imported by officers (they're shared); join dates and notes import for you."
+    end
+    p.grmText:SetText(table.concat(grmLines, "\n"))
+    p.grmButton:SetShown(grmReady)
 
     local cut = g and g.sync and g.sync.officerRank
     local rankName = cut and GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(cut + 1))

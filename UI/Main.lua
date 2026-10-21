@@ -16,7 +16,7 @@ local WIDTH, HEIGHT, SIDE_W = 1020, 660, 210
 local NAV = {
     { heading = "Guild",   ids = { "overview", "roster", "professions" } },
     { heading = "Raiding", ids = { "teams", "raids" } },
-    { heading = "Records", ids = { "log", "settings" } },
+    { heading = "Records", ids = { "log", "users", "settings" } },
 }
 
 local NAV_ICONS = {
@@ -26,6 +26,7 @@ local NAV_ICONS = {
     teams       = "Interface\\Icons\\INV_Misc_GroupNeedMore",
     raids       = "Interface\\Icons\\Achievement_Boss_Ragnaros",
     log         = "Interface\\Icons\\INV_Scroll_03",
+    users       = "Interface\\Icons\\INV_Misc_GroupLooking",
     settings    = "Interface\\Icons\\Trade_Engineering",
 }
 

@@ -32,6 +32,7 @@ local FILTERS = {
     { id = "max",      label = "Max level" },
     { id = "mains",    label = "Mains only" },
     { id = "inactive", label = "Away 30d+" },
+    { id = "addon",    label = "Has addon" },
 }
 
 local function sortValue(it, key)
@@ -73,6 +74,7 @@ local function buildList()
         if f.online and not rec.online then keep = false end
         if f.max and (rec.level or 0) < max then keep = false end
         if f.mains and PGM:IsAlt(guid) then keep = false end
+        if f.addon and not PGM:AddonUserOf(guid) then keep = false end
         if f.inactive then
             local d = PGM.DaysSince(rec.lastOnline)
             if rec.online or not d or d < 30 then keep = false end
@@ -144,6 +146,8 @@ local function buildRow(list)
         if profs then GameTooltip:AddLine(profs, 0.85, 0.85, 0.85) end
         local teams = PGM:TeamsText(it.guid)
         if teams ~= "" then GameTooltip:AddLine("Raid teams: " .. teams, 0.72, 0.54, 1) end
+        local user = PGM:AddonUserOf(it.guid)
+        if user then GameTooltip:AddLine("Runs Pandy Guild Management v" .. (user.v or "?"), 0.33, 0.82, 0.58) end
         local mine = PGM.GuildDB() and PGM.GuildDB().notes[it.guid]
         if mine and mine ~= "" then GameTooltip:AddLine("Your note: " .. mine, 1, 0.82, 0.4, true) end
         GameTooltip:AddLine("Click for profile, right-click for actions", 0.45, 0.45, 0.45)
@@ -185,7 +189,7 @@ local function updateRow(r, it)
 end
 
 local function build(p)
-    p.search = W.EditBox(p, 180, 24, "Search name, rank, note...")
+    p.search = W.EditBox(p, 150, 24, "Search...")
     p.search:SetPoint("TOPLEFT", 0, 0)
     -- New search, filter or sort: back to the top of the list.
     p.search.onChange = function(s)
@@ -316,17 +320,19 @@ end
 -- The right-click menu for a guild member, wherever they're listed.
 -- (Promote, demote and remove aren't here: Blizzard only allows those from a
 -- real button click, so they live on the profile page.)
-function UI:MemberMenu(owner, guid)
+function UI:MemberMenu(owner, guid, extra)
     local g = PGM.GuildDB()
     local rec = g and g.members[guid]
     if not rec then return end
     local isMe = guid == PGM:MyGuid()
-    local entries = {
+    local entries = {}
+    for _, e in ipairs(extra or {}) do entries[#entries + 1] = e end
+    for _, e in ipairs({
         { "Whisper", function() UI:Whisper(rec) end, disabled = isMe },
         { "Invite to group", function() UI:Invite(rec) end, disabled = isMe or not rec.online },
         { "Open profile", function() UI:OpenProfile(guid) end },
         { divider = true },
-    }
+    }) do entries[#entries + 1] = e end
 
     -- Teams and alt links are shared with the guild: officers only.
     if not PGM:CanEdit() then

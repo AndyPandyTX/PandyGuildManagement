@@ -26,18 +26,21 @@
 -- waits until you're out. Inbound fields that arrive secret are dropped.
 --
 -- WIRE: fields joined by \031; the first is protocol "1" + record type.
---   H newest                     I'm here, this is how current I am
+--   H newest version             I'm here, this is how current I am
+--   V version                    I'm here too (an answer to H, so everyone
+--                                learns who runs the addon and which version)
 --   O target newest              I can catch target up
 --   R target since               target: send me everything newer than since
 --   E target count               end of that catch-up
 --   T id u name schedule tags auto                  team details
 --   K id u                                          team deleted
 --   M team guid u state role status                 one team spot (i = on, x = removed)
---   A guid u main                                   alt link ("0" = not an alt, "" = none)
+--   A guid u main [guid u main ...]                 alt links ("0" = not an alt, "" = none)
 --   S id u start stop instance diff team teamU name bosses   raid night
 --   P id guid,guid,...                              raid night attendees (merged in)
 --   D id u                                          raid night deleted
 --   C u officerRank                                 guild master's officer cut-off
+--   J guid u joined [guid u joined ...]             join dates (e.g. from GRM)
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -72,7 +75,9 @@ local function store()
     s.teamDel = s.teamDel or {}
     s.raidDel = s.raidDel or {}
     s.alias = s.alias or {}
+    s.joinU = s.joinU or {}
     g.linkU = g.linkU or {}
+    g.users = g.users or {}
     return g, s
 end
 
@@ -181,10 +186,15 @@ local function blocked()
     return P(inInstance) and (P(kind) == "raid" or P(kind) == "party") or false
 end
 
+-- Two queues: live edits go first; bulk work (an import, a catch-up) only
+-- uses the gaps, so an officer's change never waits behind 300 join dates.
+Sync.bulk = {}
+
 local ticker
 local function pump()
     if blocked() then return end
-    local msg = table.remove(Sync.queue, 1)
+    local q = #Sync.queue > 0 and Sync.queue or Sync.bulk
+    local msg = table.remove(q, 1)
     if not msg then
         if ticker then ticker:Cancel() ticker = nil end
         return
@@ -192,24 +202,50 @@ local function pump()
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, "GUILD")
     if ok and Enum and Enum.SendAddonMessageResult
         and result == Enum.SendAddonMessageResult.AddonMessageThrottle then
-        table.insert(Sync.queue, 1, msg)   -- the allowance refills; try again next tick
+        table.insert(q, 1, msg)   -- the allowance refills; try again next tick
         return
     end
     if ok then Sync.sent = Sync.sent + 1 end
 end
 
-local function send(...)
+local function enqueue(msg, bulk)
     if not enabled() then return end
-    local msg = table.concat({ ... }, SEP)
     if #msg > 255 then
         PGM.Debug("sync: oversized record dropped", #msg)
         return
     end
-    Sync.queue[#Sync.queue + 1] = msg
+    local q = bulk and Sync.bulk or Sync.queue
+    q[#q + 1] = msg
     if not ticker then
         ticker = C_Timer.NewTicker(SEND_GAP, pump)
         pump()
     end
+end
+
+-- While a catch-up is being sent, everything it sends is bulk too.
+local bulkMode = false
+local function send(...)
+    enqueue(table.concat({ ... }, SEP), bulkMode)
+end
+
+-- Packs many small records of one kind into as few messages as fit:
+-- { {a, b, c}, {a, b, c} } -> "1A" a b c a b c ..., each under 250 bytes.
+local function sendPacked(kind, rows, bulk)
+    local parts, size = { kind }, #kind
+    for _, row in ipairs(rows) do
+        local piece = table.concat(row, SEP)
+        if #parts > 1 and size + #SEP + #piece > 250 then
+            enqueue(table.concat(parts, SEP), bulk)
+            parts, size = { kind }, #kind
+        end
+        parts[#parts + 1] = piece
+        size = size + #SEP + #piece
+    end
+    if #parts > 1 then enqueue(table.concat(parts, SEP), bulk) end
+end
+
+function PGM:SyncQueued()
+    return #Sync.queue + #Sync.bulk
 end
 
 -- Fits text into what's left of the 255 bytes after the other fields.
@@ -240,10 +276,13 @@ local function sendSpot(t, guid)
     end
 end
 
-local function sendLink(g, guid)
+local function linkRow(g, guid)
     local v = g.links[guid]
-    local main = v == false and "0" or (v or "")
-    send("1A", guid, g.linkU[guid] or 0, main)
+    return { guid, g.linkU[guid] or 0, v == false and "0" or (v or "") }
+end
+
+local function sendLink(g, guid)
+    sendPacked("1A", { linkRow(g, guid) }, bulkMode)
 end
 
 local function sendRaid(s)
@@ -314,6 +353,19 @@ function PGM:SyncLink(guid)
     sendLink(g, guid)
 end
 
+-- Many links at once (an import): stamped, packed, sent at low priority.
+function PGM:SyncLinks(guids)
+    local g = store()
+    if not g then return end
+    local rows = {}
+    for _, guid in ipairs(guids) do
+        g.linkU[guid] = PGM.Stamp(g.linkU[guid])
+        bump(g.linkU[guid])
+        rows[#rows + 1] = linkRow(g, guid)
+    end
+    sendPacked("1A", rows, true)
+end
+
 function PGM:SyncRaid(s)
     s.u = PGM.Stamp(s.u)
     bump(s.u)
@@ -327,6 +379,23 @@ function PGM:SyncRaidDeleted(id)
     s.raidDel[id] = now
     bump(now)
     send("1D", id, now)
+end
+
+-- Join dates an officer knows (from GRM, say) go to everyone: stamped,
+-- packed, sent at low priority.
+function PGM:SyncJoins(guids)
+    local g, s = store()
+    if not g then return end
+    local rows = {}
+    for _, guid in ipairs(guids) do
+        local rec = g.members[guid]
+        if rec and rec.joined then
+            s.joinU[guid] = PGM.Stamp(s.joinU[guid])
+            bump(s.joinU[guid])
+            rows[#rows + 1] = { guid, s.joinU[guid], rec.joined }
+        end
+    end
+    sendPacked("1J", rows, true)
 end
 
 function PGM:SyncOfficerRank(rank)
@@ -346,7 +415,8 @@ local function sendHello()
     local _, s = store()
     if not (s and enabled()) then return end
     Sync.helloAt = GetTime()
-    send("1H", s.newest)
+    Sync.versionAt = GetTime()
+    send("1H", s.newest, PGM.VERSION)
 end
 PGM.SyncNow = sendHello
 
@@ -354,6 +424,7 @@ PGM.SyncNow = sendHello
 local function dump(target, since)
     local g, s = store()
     if not g then return end
+    bulkMode = true
     local n = 0
     if (s.cfgU or 0) > since then send("1C", s.cfgU, s.officerRank or "") n = n + 1 end
     for _, t in ipairs(g.teams or {}) do
@@ -368,9 +439,11 @@ local function dump(target, since)
     for id, u in pairs(s.teamDel) do
         if u > since then send("1K", id, u) n = n + 1 end
     end
+    local links = {}
     for guid, u in pairs(g.linkU) do
-        if u > since and g.links[guid] ~= nil then sendLink(g, guid) n = n + 1 end
+        if u > since and g.links[guid] ~= nil then links[#links + 1] = linkRow(g, guid) n = n + 1 end
     end
+    sendPacked("1A", links, true)
     local sessions = g.raids and g.raids.sessions or {}
     local sent = 0
     for i = #sessions, 1, -1 do
@@ -384,7 +457,14 @@ local function dump(target, since)
     for id, u in pairs(s.raidDel) do
         if u > since then send("1D", id, u) n = n + 1 end
     end
-    send("1E", target, n)
+    local joins = {}
+    for guid, u in pairs(s.joinU) do
+        local rec = g.members[guid]
+        if u > since and rec and rec.joined then joins[#joins + 1] = { guid, u, rec.joined } n = n + 1 end
+    end
+    sendPacked("1J", joins, true)
+    send("1E", target, n)   -- bulk too, so it arrives after what it follows
+    bulkMode = false
 end
 
 -- ============================================================
@@ -496,9 +576,9 @@ function handlers.M(f)
     changed("TEAMS")
 end
 
-function handlers.A(f)
-    local guid, u, main = f[2], clampU(f[3]), f[4] or ""
-    local g = store()
+local function applyLink(g, guid, u, main)
+    u = clampU(u)
+    main = main or ""
     if not (isGuid(guid) and u) or not g.members[guid] then return end
     if u <= (g.linkU[guid] or 0) then return end
     if main == "0" then
@@ -513,6 +593,11 @@ function handlers.A(f)
     g.linkU[guid] = u
     applied(u)
     changed("ROSTER")
+end
+
+function handlers.A(f)
+    local g = store()
+    for i = 2, #f, 3 do applyLink(g, f[i], f[i + 1], f[i + 2]) end
 end
 
 function handlers.S(f)
@@ -585,6 +670,21 @@ function handlers.D(f)
     changed("RAIDS")
 end
 
+function handlers.J(f)
+    local g, s = store()
+    for i = 2, #f, 3 do
+        local guid, u, joined = f[i], clampU(f[i + 1]), tonumber(f[i + 2])
+        local rec = isGuid(guid) and g.members[guid]
+        -- A join date can't be in the future.
+        if rec and u and joined and u > (s.joinU[guid] or 0) and joined <= PGM.Now() + SKEW then
+            rec.joined = joined
+            s.joinU[guid] = u
+            applied(u)
+            changed("ROSTER")
+        end
+    end
+end
+
 function handlers.C(f, sender, rec)
     if not (rec and rec.rankIndex == 0) then return end   -- the guild master's call alone
     local u = clampU(f[2])
@@ -601,9 +701,40 @@ end
 local offerTimer, pickTimer
 local offers = {}
 
+-- Who runs the addon, and which version. Kept between sessions.
+local function noteUser(rec, version)
+    local g = PGM.GuildDB()
+    if not (g and rec and rec.guid) then return end
+    g.users = g.users or {}
+    local u = g.users[rec.guid] or {}
+    -- Versions before 0.4.0 didn't say theirs.
+    u.v = (version and version ~= "") and clean(version):sub(1, 16) or u.v or "0.3"
+    u.seen = PGM.Now()
+    g.users[rec.guid] = u
+    changed("SYNC")
+end
+
+-- Answer a hello with our version, at most once every five minutes and
+-- after a random wait, so a crowded login doesn't become a flood.
+local versionTimer
+local function answerVersion()
+    if versionTimer or GetTime() - (Sync.versionAt or -1000) < 300 then return end
+    versionTimer = C_Timer.NewTimer(2 + math.random() * 10, function()
+        versionTimer = nil
+        Sync.versionAt = GetTime()
+        send("1V", PGM.VERSION)
+    end)
+end
+
+function handlers.V(f, sender, rec)
+    noteUser(rec, f[2])
+end
+
 function handlers.H(f, sender, rec)
     local theirs = tonumber(f[2]) or 0
     local _, s = store()
+    noteUser(rec, f[3])
+    answerVersion()
     -- I'm behind them: say hello myself, so an officer catches me up.
     if theirs > s.newest + 30 and GetTime() - Sync.helloAt > HELLO_GAP then
         C_Timer.After(2 + math.random() * 4, sendHello)
@@ -659,7 +790,7 @@ end
 
 -- Records that write shared data: officers only. "C" is checked inside
 -- (guild master only). H/O/R/E are control messages, open to everyone.
-local WRITES = { T = true, K = true, M = true, A = true, S = true, P = true, D = true }
+local WRITES = { T = true, K = true, M = true, A = true, S = true, P = true, D = true, J = true }
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
@@ -699,6 +830,12 @@ PGM:On("ROSTER", function()
     local g = PGM.GuildDB()
     if not (g and g.seeded) then return end
     started = true
+    -- Count ourselves among the people running it.
+    local me = g.members[PGM:MyGuid() or ""]
+    if me then
+        g.users = g.users or {}
+        g.users[me.guid] = { v = PGM.VERSION, seen = PGM.Now() }
+    end
     C_Timer.After(8, sendHello)
     C_Timer.NewTicker(HELLO_EVERY, sendHello)
     -- Re-announce the officer cut-off so newcomers get it.
@@ -715,4 +852,47 @@ function PGM:SyncPeers()
         if now - t < 3600 then n = n + 1 end
     end
     return n
+end
+
+-- ============================================================
+-- WHO HAS THE ADDON
+-- ============================================================
+
+-- "0.10.2" as comparable numbers; anything odd sorts as oldest.
+local function versionParts(v)
+    local a, b, c = tostring(v or ""):match("^(%d+)%.(%d+)%.?(%d*)")
+    return tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0
+end
+
+function PGM.NewerVersion(a, b)
+    local a1, a2, a3 = versionParts(a)
+    local b1, b2, b3 = versionParts(b)
+    if a1 ~= b1 then return a1 > b1 end
+    if a2 ~= b2 then return a2 > b2 end
+    return a3 > b3
+end
+
+-- Members known to run the addon: { guid, rec, v, seen, outdated }, newest
+-- version first. "Latest" is the newest anyone in the guild has.
+function PGM:AddonUsers()
+    local g = PGM.GuildDB()
+    local out, latest = {}, PGM.VERSION
+    for guid, u in pairs(g and g.users or {}) do
+        local rec = g.members[guid]
+        if rec then
+            out[#out + 1] = { guid = guid, rec = rec, v = u.v, seen = u.seen }
+            if PGM.NewerVersion(u.v, latest) then latest = u.v end
+        end
+    end
+    for _, it in ipairs(out) do it.outdated = PGM.NewerVersion(latest, it.v) end
+    table.sort(out, function(a, b)
+        if a.rec.online ~= b.rec.online then return a.rec.online end
+        return (a.rec.short or "") < (b.rec.short or "")
+    end)
+    return out, latest
+end
+
+function PGM:AddonUserOf(guid)
+    local g = PGM.GuildDB()
+    return g and g.users and g.users[guid]
 end

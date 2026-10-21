@@ -2,7 +2,7 @@
 ## Title: |cff55d194Pandy|r Guild Management
 ## Notes: Guild roster, overview (class, race, level, activity, professions), raid teams, alts, history and attendance for Midnight.
 ## Author: Pandy
-## Version: 0.3.1
+## Version: 0.4.0
 ## Category: Guild
 ## X-License: MIT
 ## OptionalDeps: RaiderIO
@@ -19,6 +19,7 @@ Alts.lua
 Attendance.lua
 Teams.lua
 Sync.lua
+Grm.lua
 Progress.lua
 Stats.lua
 
@@ -30,6 +31,7 @@ UI\Professions.lua
 UI\Teams.lua
 UI\Profile.lua
 UI\Log.lua
+UI\Users.lua
 UI\Raids.lua
 UI\Settings.lua
 UI\Export.lua
