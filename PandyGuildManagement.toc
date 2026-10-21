@@ -2,7 +2,7 @@
 ## Title: |cff55d194Pandy|r Guild Management
 ## Notes: Guild roster, overview (class, race, level, activity, professions), raid teams, alts, history and attendance for Midnight.
 ## Author: Pandy
-## Version: 0.4.0
+## Version: 0.4.1
 ## Category: Guild
 ## X-License: MIT
 ## OptionalDeps: RaiderIO

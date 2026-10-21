@@ -100,15 +100,16 @@ local function build(p)
             UI.frame:SetScale(v)
         end, 0.6, 1.6, 0.05, "%.2f")
 
-    -- Accent colour swatches, on the same line as Scale.
+    -- Accent colour swatches, on their own row under Scale.
+    y = y - 32
     local al = W.FS(p, 12, C.text)
-    al:SetPoint("TOPLEFT", 420, y)
-    al:SetText("Accent")
+    al:SetPoint("TOPLEFT", 0, y)
+    al:SetText("Accent colour")
     p.swatches = {}
     for i, a in ipairs(PGM.ACCENTS) do
         local sw = CreateFrame("Button", nil, p, "BackdropTemplate")
         sw:SetSize(22, 22)
-        sw:SetPoint("TOPLEFT", 474 + (i - 1) * 28, y + 4)
+        sw:SetPoint("TOPLEFT", 260 + (i - 1) * 28, y + 4)
         W.Backdrop(sw, a.col, C.frame, 1)
         sw:SetScript("OnEnter", function(s)
             GameTooltip:SetOwner(s, "ANCHOR_TOP")
@@ -131,9 +132,9 @@ local function build(p)
     y = y - 26
     p.mainText = W.FS(p, 12, C.text2)
     p.mainText:SetPoint("TOPLEFT", 4, y)
-    p.mainText:SetWidth(520)
+    p.mainText:SetWidth(380)
     p.mainText:SetWordWrap(true)
-    y = y - 22
+    y = y - 34
     local setMain = W.Button(p, "Make this character my main", 210, 22)
     setMain:SetPoint("TOPLEFT", 4, y)
     setMain:SetScript("OnClick", function()
@@ -149,7 +150,7 @@ local function build(p)
     reset:SetScript("OnClick", function() StaticPopup_Show("PANDYGUILD_RESET") end)
     local about = W.FS(p, 11, C.text3)
     about:SetPoint("TOPLEFT", 4, y - 34)
-    about:SetWidth(600)
+    about:SetWidth(380)
     about:SetWordWrap(true)
     about:SetText("Pandy Guild Management v" .. PGM.VERSION .. ". Shared with the guild: raid teams, raid nights, alt links. "
         .. "Never shared: private notes, settings.")
@@ -272,7 +273,7 @@ local function refresh(p)
     local users, latest = PGM:AddonUsers()
     local old = 0
     for _, it in ipairs(users) do if it.outdated then old = old + 1 end end
-    p.usersText:SetText(("%d member%s run it. Newest version: v%s%s."):format(#users, #users == 1 and "" or "s", latest,
+    p.usersText:SetText(("%d member%s it. Newest version: v%s%s."):format(#users, #users == 1 and " runs" or "s run", latest,
         old > 0 and (" (" .. old .. " need to update)") or ""))
 
     local grmReady = PGM:GRMAvailable()

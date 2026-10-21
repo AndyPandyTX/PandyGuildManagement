@@ -69,7 +69,7 @@ local function refresh(p)
     local users, latest = PGM:AddonUsers()
     local outdated = 0
     for _, it in ipairs(users) do if it.outdated then outdated = outdated + 1 end end
-    p.title:SetText(("%d guild member%s run Pandy Guild Management"):format(#users, #users == 1 and "" or "s"))
+    p.title:SetText(("%d guild member%s Pandy Guild Management"):format(#users, #users == 1 and " runs" or "s run"))
     p.sub:SetText(("Newest version in the guild: v%s%s. Copies say hello when their player logs in, so this fills in as people log on.")
         :format(latest, outdated > 0 and (", " .. outdated .. " on an older one") or ""))
     p.list:SetData(users, true)
