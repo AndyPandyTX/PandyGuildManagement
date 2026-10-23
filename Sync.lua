@@ -387,13 +387,23 @@ function PGM:SyncRaid(s)
     sendRaid(s)
 end
 
-function PGM:SyncRaidDeleted(id)
+-- A night can be known by several ids (each officer who recorded it made
+-- one; s.alias maps theirs to ours). Delete under all of them, stamped past
+-- the night's own stamp so a retag in the same second can't outlive it, and
+-- say which raid and when, so copies that matched it by time find it too.
+function PGM:SyncRaidDeleted(session)
     local _, s = store()
-    if not s then return end
-    local now = PGM.Now()
-    s.raidDel[id] = now
-    bump(now)
-    send("1D", id, now)
+    if not (s and session and session.id) then return end
+    local stamp = PGM.Stamp(math.max(session.u or 0, s.raidDel[session.id] or 0))
+    local ids = { session.id }
+    for remote, localId in pairs(s.alias) do
+        if localId == session.id then ids[#ids + 1] = remote end
+    end
+    bump(stamp)
+    for _, id in ipairs(ids) do
+        s.raidDel[id] = stamp
+        send("1D", id, stamp, session.instance or 0, session.diffID or 0, session.start or 0, session.stop or 0)
+    end
 end
 
 -- Join dates an officer knows (from GRM, say) go to everyone: stamped,
@@ -541,22 +551,27 @@ local function ensureTeam(id)
 end
 
 -- The local raid night a remote one is: same id, a known alias, or the same
--- instance within three hours (two officers recorded the same night).
-local function findRaid(id, instance, start)
+-- night by raid, difficulty and time (Attendance.lua's PGM:SameRaidNight),
+-- which then becomes an alias.
+local function findRaid(id, night)
     local g, s = store()
-    local sessions = g.raids and g.raids.sessions or {}
     local localId = s.alias[id] or id
-    for _, r in ipairs(sessions) do
+    for _, r in ipairs(g.raids and g.raids.sessions or {}) do
         if r.id == localId then return r end
     end
-    if instance and start then
-        for _, r in ipairs(sessions) do
-            if r.instance and r.instance == instance and math.abs((r.start or 0) - start) < 3 * 3600 then
-                if r.id ~= id then s.alias[id] = r.id end
-                return r
-            end
+    if night and night.instance and night.start then
+        local r = PGM:FindRaidNight(night)
+        if r then
+            if r.id ~= id then s.alias[id] = r.id end
+            return r
         end
     end
+end
+
+-- A remote id, "0" and the like as nil.
+local function known(n)
+    n = tonumber(n)
+    return (n and n ~= 0) and n or nil
 end
 
 local handlers = {}
@@ -644,24 +659,29 @@ end
 function handlers.S(f)
     local id, u = f[2], clampU(f[3])
     local start, stop = tonumber(f[4]), tonumber(f[5])
-    local instance, diffID = tonumber(f[6]), tonumber(f[7])
+    local instance, diffID = known(f[6]), known(f[7])
     local team, teamU = f[8] ~= "" and f[8] or nil, clampU(f[9]) or 0
     if not (id and u and start and stop) then return end
     local g, s = store()
     if (s.raidDel[id] or 0) >= u then return end
     g.raids = g.raids or { sessions = {} }
     g.raids.sessions = g.raids.sessions or {}
-    local r = findRaid(id, instance, start)
+    local r = findRaid(id, { instance = instance, diffID = diffID, start = start, stop = stop })
+    -- Deleted here under our own id for it.
+    if r and (s.raidDel[r.id] or 0) >= u then return end
     if not r then
+        if s.alias[id] and (s.raidDel[s.alias[id]] or 0) >= u then return end
         r = { id = id, start = start, stop = stop, instance = instance, diffID = diffID,
               name = f[10] ~= "" and f[10] or "Raid", present = {}, bosses = {}, u = 0, teamU = 0 }
-        -- Keep the list in time order.
+        -- Keep the list in time order, and no longer than our own cap.
         local at = #g.raids.sessions + 1
         for i, other in ipairs(g.raids.sessions) do
             if (other.start or 0) > start then at = i break end
         end
         table.insert(g.raids.sessions, at, r)
+        while #g.raids.sessions > (PGM.MAX_RAID_NIGHTS or 300) do table.remove(g.raids.sessions, 1) end
     end
+    r.diffID = r.diffID or diffID
     r.start = math.min(r.start or start, start)
     r.stop = math.max(r.stop or stop, stop)
     r.instance = r.instance or instance
@@ -698,14 +718,21 @@ function handlers.P(f)
     end
 end
 
+-- D id u [instance diffID start stop]: the night is found by id, by alias,
+-- or (when the sender said which raid and when) by matching it, so a copy
+-- that knows it under its own id deletes it too.
 function handlers.D(f)
     local id, u = f[2], clampU(f[3])
     local g, s = store()
     if not (id and u) or (s.raidDel[id] or 0) >= u then return end
     s.raidDel[id] = u
-    local localId = s.alias[id] or id
-    for i, r in ipairs(g.raids and g.raids.sessions or {}) do
-        if r.id == localId then table.remove(g.raids.sessions, i) break end
+    local night = { instance = known(f[4]), diffID = known(f[5]), start = known(f[6]), stop = known(f[7]) }
+    local r = findRaid(id, night)
+    if r and (r.u or 0) <= u then
+        for i, x in ipairs(g.raids.sessions) do
+            if x == r then table.remove(g.raids.sessions, i) break end
+        end
+        s.raidDel[r.id] = math.max(s.raidDel[r.id] or 0, u)
     end
     applied(u)
     changed("RAIDS")

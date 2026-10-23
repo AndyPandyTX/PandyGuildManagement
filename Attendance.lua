@@ -57,6 +57,47 @@ local function presentCount(s)
     return n
 end
 
+PGM.MAX_RAID_NIGHTS = MAX_SESSIONS
+
+-- Two records are the same raid night when they're the same raid at the
+-- same difficulty and they overlap in time, or started within half an hour:
+-- two officers recording one night, or a late joiner's shorter record. A
+-- Normal night and a later Heroic one, or two teams back to back, stay apart.
+local SAME_START = 30 * 60
+function PGM:SameRaidNight(a, b)
+    if not (a.instance and a.instance ~= 0 and a.instance == b.instance) then return false end
+    local da, db = a.diffID, b.diffID
+    if da and db and da ~= 0 and db ~= 0 and da ~= db then return false end
+    local as, bs = a.start or 0, b.start or 0
+    if math.abs(as - bs) <= SAME_START then return true end
+    return as < (b.stop or bs) and bs < (a.stop or as)
+end
+
+-- The saved night that `night` is a record of, if any (never `except`).
+function PGM:FindRaidNight(night, except)
+    local g = PGM.GuildDB()
+    for _, x in ipairs(g and g.raids and g.raids.sessions or {}) do
+        if x ~= except and PGM:SameRaidNight(x, night) then return x end
+    end
+end
+
+-- Fold one record of a night into another: everyone present in either,
+-- every boss, the widest times, the newer team tag.
+function PGM:MergeRaidNight(into, from)
+    into.start = math.min(into.start or from.start or 0, from.start or into.start or 0)
+    into.stop = math.max(into.stop or 0, from.stop or 0)
+    into.present = into.present or {}
+    for guid in pairs(from.present or {}) do into.present[guid] = true end
+    into.bosses = into.bosses or {}
+    for _, boss in ipairs(from.bosses or {}) do
+        if not tContains(into.bosses, boss) then table.insert(into.bosses, boss) end
+    end
+    if (from.teamU or 0) > (into.teamU or 0) then into.team, into.teamU = from.team, from.teamU end
+    into.diffID = into.diffID or from.diffID
+    into.diff = into.diff or from.diff
+    into.count = presentCount(into)
+end
+
 function PGM:ActiveRaid()
     local r = PGM.GuildDB() and PGM.GuildDB().raids
     return r and r.open
@@ -122,11 +163,23 @@ function PGM:CloseRaid(force)
         PGM.Debug(("raid session discarded (%ds, %d guildies)"):format(s.stop - s.start, heads))
     else
         s.count = heads
-        s.team = PGM:GuessTeam(s)
-        s.teamU = s.team and PGM.Now() or 0
-        s.id = s.id or newId(s.start)
-        table.insert(r.sessions, s)
-        while #r.sessions > MAX_SESSIONS do table.remove(r.sessions, 1) end
+        local same = PGM:FindRaidNight(s)
+        if same then
+            -- Another officer's record of this night arrived while ours was
+            -- still open: one night, not two.
+            PGM:MergeRaidNight(same, s)
+            if not same.team then
+                same.team = PGM:GuessTeam(same)
+                same.teamU = same.team and PGM.Now() or 0
+            end
+            s = same
+        else
+            s.team = PGM:GuessTeam(s)
+            s.teamU = s.team and PGM.Now() or 0
+            s.id = s.id or newId(s.start)
+            table.insert(r.sessions, s)
+            while #r.sessions > MAX_SESSIONS do table.remove(r.sessions, 1) end
+        end
         -- An officer's raid night goes to the guild (merged with any other
         -- officer's record of the same night).
         if canEdit() and PGM.SyncRaid then PGM:SyncRaid(s) end
@@ -145,7 +198,7 @@ function PGM:DeleteRaid(session)
     local index = r and tIndexOf(r.sessions, session)
     if index and canEdit() then
         table.remove(r.sessions, index)
-        if PGM.SyncRaidDeleted and session.id then PGM:SyncRaidDeleted(session.id) end
+        if PGM.SyncRaidDeleted and session.id then PGM:SyncRaidDeleted(session) end
         PGM:Fire("RAIDS")
     end
 end
@@ -161,6 +214,16 @@ local function check()
     if inRaidInstance() then
         if r.suppress and (r.suppress == true or r.suppress == instanceID()) then return end
         r.suppress = nil
+        -- A different raid, or the same one at another difficulty (Normal,
+        -- then Heroic), is a new night.
+        if r.open then
+            local diffID = P((select(3, GetInstanceInfo())))
+            local inst = instanceID()
+            if (inst and r.open.instance and inst ~= r.open.instance)
+                or (diffID and r.open.diffID and diffID ~= r.open.diffID) then
+                PGM:CloseRaid()
+            end
+        end
         if not r.open then open() else sample() end
     else
         r.suppress = nil

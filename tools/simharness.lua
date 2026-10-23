@@ -626,6 +626,57 @@ local last = g.log[#g.log]
 check(last.kind == "leave" and last.name == "Demonpandy", "Demonpandy's leave is logged")
 check(P.LogText(last):find("left the guild. Still here: Nattypandy", 1, true), "her main still here is listed: " .. P.LogText(last))
 
+print("-- raid nights: no duplicates, no wrong merges, deletes stick")
+do
+    local now = BASE + math.floor(T)
+    local function night(id, startOff, diff, present)
+        local n = { id = id, start = now + startOff, stop = now + startOff + 7200, instance = 4242, diffID = diff,
+                    name = "Abyss", present = {}, bosses = {} }
+        for _, gu in ipairs(present) do n.present[gu] = true end
+        return n
+    end
+    local function abyss(cl)
+        local list = {}
+        for _, x in ipairs(cl.g.raids and cl.g.raids.sessions or {}) do
+            if x.instance == 4242 then list[#list + 1] = x end
+        end
+        return list
+    end
+    -- B saves and shares first; A's own record of the night is still open.
+    A.g.raids = A.g.raids or { sessions = {} }
+    A.g.raids.open = night("open-A", -7300, 16, { gid(10), gid(21) })
+    A.g.raids.open.last = now - 100
+    local bn = night("n-B", -7000, 16, { gid(11), gid(22) })
+    table.insert(B.g.raids.sessions, bn)
+    B.PGM:SyncRaid(bn)
+    run(10)
+    A.PGM:CloseRaid(true)
+    run(15)
+    check(#abyss(A) == 1, "an open record merges into the night that arrived (A has " .. #abyss(A) .. ")")
+    check(#abyss(C) == 1, "...and nobody else gets a second copy (C has " .. #abyss(C) .. ")")
+    local p = 0 for _ in pairs((abyss(C)[1] or { present = {} }).present) do p = p + 1 end
+    check(p == 4, "...with everyone from both records (got " .. p .. ")")
+
+    -- Heroic, starting while the Normal one was on: a different night.
+    local hn = night("n-B-heroic", -6500, 15, { gid(11) })
+    table.insert(B.g.raids.sessions, hn)
+    B.PGM:SyncRaid(hn)
+    run(10)
+    check(#abyss(C) == 2, "a Heroic night doesn't merge with the Normal one (C has " .. #abyss(C) .. ")")
+
+    -- A deletes the Normal night: gone everywhere, and stays gone.
+    local an
+    for _, x in ipairs(abyss(A)) do if x.diffID == 16 then an = x end end
+    A.PGM:DeleteRaid(an)
+    run(15)
+    local function normals(cl) local n = 0 for _, x in ipairs(abyss(cl)) do if x.diffID == 16 then n = n + 1 end end return n end
+    check(normals(A) == 0 and normals(B) == 0 and normals(C) == 0, "a deleted night is gone for everyone")
+    B.PGM.SyncSend(false, "1S", "n-B", now - 50, now - 7000, now + 200, 4242, 16, "", 0, "Abyss", "")
+    run(5)
+    check(normals(C) == 0, "a stale copy re-sent under another id doesn't bring it back")
+    check(#abyss(C) == 1, "...and the Heroic night is untouched")
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)
