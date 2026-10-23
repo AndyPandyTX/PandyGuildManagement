@@ -117,6 +117,24 @@ filter.
 
 ![Addon Users](screenshots/09-addon-users.png)
 
+**Bulk Actions.** Kick, promote or demote many members at once, by rules:
+- Make rules for each action: away at least N days (or online within N
+  days, for promotions), ranks, level range, days in the guild, text in
+  their notes, and the rank to move them to.
+- By default a rule leaves raid team members alone, and for kicks and
+  demotions anyone whose alt or main was on recently.
+- Everyone the rules pick is listed. Untick someone to leave them alone;
+  that's remembered.
+- Start, confirm, then press the button or its hotkey (Ctrl-Shift-K, or your
+  own). Each press runs the next batch, several people at a time. The game
+  only allows these from a real click or key press, one press per batch.
+- After each press the roster is read again to confirm who was done. Anything
+  that didn't take is tried once more, then marked failed. Removals show in
+  History as "was removed from the guild".
+- It never lists you, the guild master, or anyone at your rank or above. It
+  disarms in combat, when you leave the page and when you close the window.
+  Rules aren't shared with the guild.
+
 **Settings.** Choose which changes get announced in chat (only to you, never
 to guild chat), how many guildies a raid needs to count, window scale, accent
 colour and your main. Guild sync status and the officer cut-off live here, as

@@ -58,9 +58,10 @@ function W.Heading(parent, text, size)
 end
 
 -- A flat button. A red accent makes it the destructive kind. `template`
--- lets a secure button share the look.
-function W.Button(parent, text, w, h, accent, template)
-    local b = CreateFrame("Button", nil, parent, template and (template .. ",BackdropTemplate") or "BackdropTemplate")
+-- lets a secure button share the look; `name` gives it the global name a
+-- key binding needs to click it.
+function W.Button(parent, text, w, h, accent, template, name)
+    local b = CreateFrame("Button", name, parent, template and (template .. ",BackdropTemplate") or "BackdropTemplate")
     b:SetSize(w or 90, h or 24)
     accent = accent or C.accent
     local destructive = accent == C.red

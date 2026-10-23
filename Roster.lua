@@ -118,7 +118,7 @@ function PGM.LogText(e)
     local k = e.kind
     if k == "join" then return who .. " joined the guild"
     elseif k == "rejoin" then return who .. " rejoined the guild"
-    elseif k == "leave" then return who .. " left the guild"
+    elseif k == "leave" then return who .. (e.removed and " was removed from the guild" or " left the guild")
     elseif k == "promote" then return ("%s promoted: %s > %s"):format(who, e.from or "?", e.to or "?")
     elseif k == "demote" then return ("%s demoted: %s > %s"):format(who, e.from or "?", e.to or "?")
     elseif k == "rename" then return ("%s renamed from %s"):format(who, e.from or "?")
@@ -241,7 +241,8 @@ function PGM:ApplyRoster(snap, complete)
                 old.left = now
                 g.former[guid] = old
                 g.members[guid] = nil
-                fresh[#fresh + 1] = PGM:AddLog(g, "leave", old)
+                local removed = PGM.BulkKicked and PGM:BulkKicked(guid)
+                fresh[#fresh + 1] = PGM:AddLog(g, "leave", old, removed and { removed = true } or nil)
             end
         end
         g.lastComplete = now
