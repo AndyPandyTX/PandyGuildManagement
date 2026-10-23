@@ -1,0 +1,13 @@
+{
+  "name": "pandy-guild-management-tools",
+  "private": true,
+  "description": "Lint and multi-client sync simulation for Pandy Guild Management",
+  "scripts": {
+    "lint": "node lint.js ..",
+    "test": "node simrun.js .. && node simrun.js .. forever"
+  },
+  "dependencies": {
+    "fengari": "^0.1.4",
+    "luaparse": "^0.3.1"
+  }
+}

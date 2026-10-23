@@ -143,7 +143,27 @@ local function stepsTo(action, rec, toRank)
     return math.max(0, d)
 end
 
-local function matches(r, action, guid, rec, myRank, g)
+-- What every rule check needs, worked out once per pass over the guild
+-- rather than per member per rule: who has a raid team spot, and each
+-- member's alt group as it's asked for.
+local function context(g)
+    local ctx = { g = g, onTeam = {}, groups = {} }
+    for _, t in ipairs(PGM:Teams()) do
+        for guid in pairs(t.members or {}) do ctx.onTeam[guid] = true end
+    end
+    return ctx
+end
+
+local function groupOf(ctx, guid)
+    local group = ctx.groups[guid]
+    if not group then
+        group = PGM:GroupOf(guid)
+        ctx.groups[guid] = group
+    end
+    return group
+end
+
+local function matches(r, action, guid, rec, myRank, ctx)
     if r.ranks and next(r.ranks) and not r.ranks[rec.rankIndex] then return false end
     local away = daysAway(rec)
     -- An unknown last-online never counts as away: better to skip someone.
@@ -162,10 +182,15 @@ local function matches(r, action, guid, rec, myRank, g)
             return false
         end
     end
-    if r.skipTeams and #PGM:TeamsOf(guid) > 0 then return false end
+    -- A team spot held by any of their characters counts (as TeamsOf does).
+    if r.skipTeams then
+        for _, other in ipairs(groupOf(ctx, guid)) do
+            if ctx.onTeam[other] then return false end
+        end
+    end
     if r.keepIfGroupActive and r.awayDays then
-        for _, other in ipairs(PGM:GroupOf(guid)) do
-            local orec = other ~= guid and g.members[other]
+        for _, other in ipairs(groupOf(ctx, guid)) do
+            local orec = other ~= guid and ctx.g.members[other]
             local oa = orec and daysAway(orec)
             if oa and oa < r.awayDays then return false end
         end
@@ -181,41 +206,48 @@ end
 -- Everyone the enabled rules pick for this action, by name. Never you, the
 -- guild master, or anyone at your rank or above (the game wouldn't let you).
 -- Ignored people are included, marked, so the page can show them unticked.
+-- Also returns how many people each enabled rule picks, from the same pass.
 function PGM:BulkMatches(action)
     local g, b = store()
-    local out = {}
+    local out, counts = {}, {}
     local myRank = PGM:MyRankIndex()
-    if not (g and myRank) then return out end
+    if not (g and myRank) then return out, counts end
     local rules = {}
     for _, r in ipairs(b.rules[action]) do
-        if r.on then rules[#rules + 1] = r end
+        if r.on then rules[#rules + 1] = r counts[r.id] = 0 end
     end
-    if #rules == 0 then return out end
+    if #rules == 0 then return out, counts end
+    local ctx = context(g)
     local me = PGM:MyGuid()
     for guid, rec in pairs(g.members) do
         if guid ~= me and rec.rankIndex and rec.rankIndex > myRank and rec.rankIndex ~= 0 then
+            local first
             for _, r in ipairs(rules) do
-                if matches(r, action, guid, rec, myRank, g) then
-                    out[#out + 1] = { guid = guid, rec = rec, rule = r, toRank = r.toRank, action = action,
-                                      ignored = b.ignore[action][guid] and true or nil }
-                    break
+                if matches(r, action, guid, rec, myRank, ctx) then
+                    counts[r.id] = counts[r.id] + 1
+                    first = first or r
                 end
+            end
+            if first then
+                out[#out + 1] = { guid = guid, rec = rec, rule = first, toRank = first.toRank, action = action,
+                                  ignored = b.ignore[action][guid] and true or nil }
             end
         end
     end
     table.sort(out, function(a, c) return PGM.NameLess(a.rec.short, c.rec.short) end)
-    return out
+    return out, counts
 end
 
--- How many people one rule picks, for the rule list.
+-- How many people one rule picks.
 function PGM:BulkRuleCount(action, rule)
     local g = PGM.GuildDB()
     local myRank = PGM:MyRankIndex()
     if not (g and myRank) then return 0 end
+    local ctx = context(g)
     local me, n = PGM:MyGuid(), 0
     for guid, rec in pairs(g.members) do
         if guid ~= me and rec.rankIndex and rec.rankIndex > myRank and rec.rankIndex ~= 0
-            and matches(rule, action, guid, rec, myRank, g) then
+            and matches(rule, action, guid, rec, myRank, ctx) then
             n = n + 1
         end
     end

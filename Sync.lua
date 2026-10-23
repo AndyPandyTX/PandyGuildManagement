@@ -65,7 +65,8 @@ local HELLO_GAP = 120
 local HELLO_EVERY = 20 * 60
 local MAX_DUMP_RAIDS = 30   -- a first-time catch-up brings this many recent raid nights
 
-local Sync = { queue = {}, sent = 0, recv = 0, applied = 0, officers = {}, helloAt = 0 }
+local Sync = { queue = {}, sent = 0, recv = 0, applied = 0, officers = {}, helloAt = 0, tries = {},
+               offerTimers = {}, offered = {}, dumped = {} }
 PGM.Sync = Sync
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -81,7 +82,13 @@ local function store()
     if not g then return nil end
     g.sync = g.sync or {}
     local s = g.sync
+    -- Two different "how current": `newest` is the newest record we hold
+    -- (it decides whether we can offer someone a catch-up); `caught` is how
+    -- far a catch-up has brought us (what we ask from). Our own edits and
+    -- records we overhear move only `newest`, so they can't make us look
+    -- caught up on things we missed.
     s.newest = s.newest or 0
+    s.caught = s.caught or s.newest
     s.teamDel = s.teamDel or {}
     s.raidDel = s.raidDel or {}
     s.alias = s.alias or {}
@@ -132,6 +139,13 @@ local function myFullName()
     return name .. "-" .. realm
 end
 
+-- Is a message's target me? Never when either name is unknown or empty
+-- (norm of nothing is "", which would match any empty target).
+local function isMe(target)
+    local me = myFullName()
+    return me ~= nil and type(target) == "string" and target ~= "" and norm(target) == norm(me)
+end
+
 -- The roster record of whoever sent a message, or nil. The name index is
 -- rebuilt after each roster read.
 local byName
@@ -155,7 +169,8 @@ end
 -- OFFICERS
 -- ============================================================
 
-local OFFICER_WORDS = { "officer", "leader", "guild master", "gm" }
+-- Patterns; "gm" only as a word of its own, or "Sigma" and "Enigma" would count.
+local OFFICER_WORDS = { "officer", "leader", "guild master", "%f[%w]gm%f[%W]" }
 
 -- Does this member's rank count as an officer?
 function PGM:IsOfficerRec(rec)
@@ -166,7 +181,7 @@ function PGM:IsOfficerRec(rec)
     if cut then return rec.rankIndex <= cut end
     local name = (rec.rank or ""):lower()
     for _, w in ipairs(OFFICER_WORDS) do
-        if name:find(w, 1, true) then return true end
+        if name:find(w) then return true end
     end
     return false
 end
@@ -189,13 +204,16 @@ end
 -- ============================================================
 
 -- Inside an instance (or any chat lockdown) messages can't go out; they wait.
+-- Any instance at all, delves and battlegrounds included: waiting until
+-- you're out costs nothing, and a record sent where it's blocked is lost.
 local function blocked()
     if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown then
         local ok, locked = pcall(C_ChatInfo.InChatMessagingLockdown)
         if ok and P(locked) then return true end
     end
     local inInstance, kind = IsInInstance()
-    return P(inInstance) and (P(kind) == "raid" or P(kind) == "party") or false
+    kind = P(kind)
+    return (P(inInstance) and kind ~= nil and kind ~= "none") or false
 end
 -- For modules: true while nothing can reach the guild, so they can say so
 -- rather than queue something that goes out stale an hour later.
@@ -215,12 +233,24 @@ local function pump()
         return
     end
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, "GUILD")
-    if ok and Enum and Enum.SendAddonMessageResult
-        and result == Enum.SendAddonMessageResult.AddonMessageThrottle then
-        table.insert(q, 1, msg)   -- the allowance refills; try again next tick
+    local R = Enum and Enum.SendAddonMessageResult or {}
+    if ok and (result == nil or result == true or result == 0 or result == R.Success) then
+        Sync.sent = Sync.sent + 1
+        Sync.tries[msg] = nil
         return
     end
-    if ok then Sync.sent = Sync.sent + 1 end
+    -- A malformed record will never go; anything else (the allowance ran
+    -- out, a lockdown began, a hiccup) is tried again next tick, up to a
+    -- point.
+    local hopeless = ok and (result == R.InvalidPrefix or result == R.InvalidMessage or result == R.InvalidChatType)
+    local tries = (Sync.tries[msg] or 0) + 1
+    if hopeless or tries > 20 then
+        Sync.tries[msg] = nil
+        PGM.Debug("sync: gave up on a record", tostring(result))
+        return
+    end
+    Sync.tries[msg] = tries
+    table.insert(q, 1, msg)
 end
 
 local function enqueue(msg, bulk)
@@ -396,13 +426,23 @@ function PGM:SyncRaid(s)
     sendRaid(s)
 end
 
-function PGM:SyncRaidDeleted(id)
+-- A night can be known by several ids (each officer who recorded it made
+-- one; s.alias maps theirs to ours). Delete under all of them, stamped past
+-- the night's own stamp so a retag in the same second can't outlive it, and
+-- say which raid and when, so copies that matched it by time find it too.
+function PGM:SyncRaidDeleted(session)
     local _, s = store()
-    if not s then return end
-    local now = PGM.Now()
-    s.raidDel[id] = now
-    bump(now)
-    send("1D", id, now)
+    if not (s and session and session.id) then return end
+    local stamp = PGM.Stamp(math.max(session.u or 0, s.raidDel[session.id] or 0))
+    local ids = { session.id }
+    for remote, localId in pairs(s.alias) do
+        if localId == session.id then ids[#ids + 1] = remote end
+    end
+    bump(stamp)
+    for _, id in ipairs(ids) do
+        s.raidDel[id] = stamp
+        send("1D", id, stamp, session.instance or 0, session.diffID or 0, session.start or 0, session.stop or 0)
+    end
 end
 
 -- Join dates an officer knows (from GRM, say) go to everyone: stamped,
@@ -458,7 +498,7 @@ local function sendHello()
     if not (s and enabled()) then return end
     Sync.helloAt = GetTime()
     Sync.versionAt = GetTime()
-    send("1H", s.newest, PGM.VERSION)
+    send("1H", s.caught, PGM.VERSION)
 end
 PGM.SyncNow = sendHello
 
@@ -550,22 +590,27 @@ local function ensureTeam(id)
 end
 
 -- The local raid night a remote one is: same id, a known alias, or the same
--- instance within three hours (two officers recorded the same night).
-local function findRaid(id, instance, start)
+-- night by raid, difficulty and time (Attendance.lua's PGM:SameRaidNight),
+-- which then becomes an alias.
+local function findRaid(id, night)
     local g, s = store()
-    local sessions = g.raids and g.raids.sessions or {}
     local localId = s.alias[id] or id
-    for _, r in ipairs(sessions) do
+    for _, r in ipairs(g.raids and g.raids.sessions or {}) do
         if r.id == localId then return r end
     end
-    if instance and start then
-        for _, r in ipairs(sessions) do
-            if r.instance and r.instance == instance and math.abs((r.start or 0) - start) < 3 * 3600 then
-                if r.id ~= id then s.alias[id] = r.id end
-                return r
-            end
+    if night and night.instance and night.start then
+        local r = PGM:FindRaidNight(night)
+        if r then
+            if r.id ~= id then s.alias[id] = r.id end
+            return r
         end
     end
+end
+
+-- A remote id, "0" and the like as nil.
+local function known(n)
+    n = tonumber(n)
+    return (n and n ~= 0) and n or nil
 end
 
 local handlers = {}
@@ -668,24 +713,29 @@ end
 function handlers.S(f)
     local id, u = f[2], clampU(f[3])
     local start, stop = tonumber(f[4]), tonumber(f[5])
-    local instance, diffID = tonumber(f[6]), tonumber(f[7])
+    local instance, diffID = known(f[6]), known(f[7])
     local team, teamU = f[8] ~= "" and f[8] or nil, clampU(f[9]) or 0
     if not (id and u and start and stop) then return end
     local g, s = store()
     if (s.raidDel[id] or 0) >= u then return end
     g.raids = g.raids or { sessions = {} }
     g.raids.sessions = g.raids.sessions or {}
-    local r = findRaid(id, instance, start)
+    local r = findRaid(id, { instance = instance, diffID = diffID, start = start, stop = stop })
+    -- Deleted here under our own id for it.
+    if r and (s.raidDel[r.id] or 0) >= u then return end
     if not r then
+        if s.alias[id] and (s.raidDel[s.alias[id]] or 0) >= u then return end
         r = { id = id, start = start, stop = stop, instance = instance, diffID = diffID,
               name = f[10] ~= "" and f[10] or "Raid", present = {}, bosses = {}, u = 0, teamU = 0 }
-        -- Keep the list in time order.
+        -- Keep the list in time order, and no longer than our own cap.
         local at = #g.raids.sessions + 1
         for i, other in ipairs(g.raids.sessions) do
             if (other.start or 0) > start then at = i break end
         end
         table.insert(g.raids.sessions, at, r)
+        while #g.raids.sessions > (PGM.MAX_RAID_NIGHTS or 300) do table.remove(g.raids.sessions, 1) end
     end
+    r.diffID = r.diffID or diffID
     r.start = math.min(r.start or start, start)
     r.stop = math.max(r.stop or stop, stop)
     r.instance = r.instance or instance
@@ -722,14 +772,21 @@ function handlers.P(f)
     end
 end
 
+-- D id u [instance diffID start stop]: the night is found by id, by alias,
+-- or (when the sender said which raid and when) by matching it, so a copy
+-- that knows it under its own id deletes it too.
 function handlers.D(f)
     local id, u = f[2], clampU(f[3])
     local g, s = store()
     if not (id and u) or (s.raidDel[id] or 0) >= u then return end
     s.raidDel[id] = u
-    local localId = s.alias[id] or id
-    for i, r in ipairs(g.raids and g.raids.sessions or {}) do
-        if r.id == localId then table.remove(g.raids.sessions, i) break end
+    local night = { instance = known(f[4]), diffID = known(f[5]), start = known(f[6]), stop = known(f[7]) }
+    local r = findRaid(id, night)
+    if r and (r.u or 0) <= u then
+        for i, x in ipairs(g.raids.sessions) do
+            if x == r then table.remove(g.raids.sessions, i) break end
+        end
+        s.raidDel[r.id] = math.max(s.raidDel[r.id] or 0, u)
     end
     applied(u)
     changed("RAIDS")
@@ -782,7 +839,7 @@ end
 
 -- ---- catch-up choreography ----
 
-local offerTimer, pickTimer
+local pickTimer
 local offers = {}
 
 -- Who runs the addon, and which version. Kept between sessions.
@@ -819,32 +876,42 @@ function handlers.H(f, sender, rec)
     local _, s = store()
     noteUser(rec, f[3])
     answerVersion()
-    -- I'm behind them: say hello myself, so an officer catches me up. Any
-    -- gap counts: the same data means the same newest, and a catch-up ends
-    -- by bringing the two level (see E), so this can't repeat forever.
-    if theirs > s.newest and GetTime() - Sync.helloAt > HELLO_GAP then
-        C_Timer.After(2 + math.random() * 4, sendHello)
-    end
-    -- I'm an officer and ahead of them: offer, unless someone beats me to it.
-    if PGM:CanEdit() and s.newest > theirs then
-        if offerTimer then offerTimer:Cancel() end
-        Sync.offerFor, Sync.offerNewest = sender, s.newest
-        offerTimer = C_Timer.NewTimer(1 + math.random() * 4, function()
-            offerTimer = nil
-            send("1O", sender, s.newest)
+    -- They're further along than me: say hello myself, so an officer
+    -- catches me up. Once: several hellos in a row don't each schedule one.
+    if theirs > s.caught and not Sync.helloPending and GetTime() - Sync.helloAt > HELLO_GAP then
+        Sync.helloPending = true
+        C_Timer.After(2 + math.random() * 4, function()
+            Sync.helloPending = nil
+            sendHello()
         end)
+    end
+    -- I'm an officer and hold something newer than they've caught up to:
+    -- offer, unless another officer offers them as much first. One offer
+    -- per player, so a second hello doesn't cancel the first player's.
+    local key = norm(sender)
+    if PGM:CanEdit() and s.newest > theirs and key ~= "" then
+        local pending = Sync.offerTimers[key]
+        if pending then pending.timer:Cancel() end
+        local mine = s.newest
+        Sync.offerTimers[key] = { newest = mine, timer = C_Timer.NewTimer(1 + math.random() * 4, function()
+            Sync.offerTimers[key] = nil
+            Sync.offered[key] = GetTime()
+            send("1O", sender, mine)
+        end) }
     end
 end
 
 function handlers.O(f, sender, rec)
     local target, theirs = f[2], tonumber(f[3]) or 0
     -- Someone else offered the same player at least as much: stand down.
-    if offerTimer and Sync.offerFor and norm(target) == norm(Sync.offerFor) and theirs >= (Sync.offerNewest or 0) then
-        offerTimer:Cancel()
-        offerTimer = nil
+    local pending = Sync.offerTimers[norm(target or "")]
+    if pending and theirs >= pending.newest then
+        pending.timer:Cancel()
+        Sync.offerTimers[norm(target)] = nil
     end
-    -- An offer to me, from an officer: gather them for a few seconds, take the best.
-    if norm(target) == norm(myFullName()) and PGM:IsOfficerRec(rec) then
+    -- An offer to me, from an officer: gather them for a few seconds, take
+    -- the best, and ask from how far I'd caught up.
+    if isMe(target) and PGM:IsOfficerRec(rec) then
         offers[#offers + 1] = { sender = sender, newest = theirs }
         if not pickTimer then
             pickTimer = C_Timer.NewTimer(4, function()
@@ -853,27 +920,46 @@ function handlers.O(f, sender, rec)
                 local best = offers[1]
                 wipe(offers)
                 local _, s = store()
-                if best and s then send("1R", best.sender, math.max(0, s.newest - OVERLAP)) end
+                if best and s then
+                    Sync.awaiting = GetTime()
+                    send("1R", best.sender, math.max(0, s.caught - OVERLAP))
+                end
             end)
         end
     end
 end
 
+-- Only a request I offered (in the last minute), and one catch-up per
+-- player every few minutes: anyone can send an R, and each one costs the
+-- whole guild's message allowance.
+local DUMP_GAP = 180
 function handlers.R(f, sender)
     local target, since = f[2], tonumber(f[3]) or 0
-    if norm(target) == norm(myFullName()) and PGM:CanEdit() then
-        dump(sender, since)
-    end
+    if not (isMe(target) and PGM:CanEdit()) then return end
+    local key = norm(sender)
+    local now = GetTime()
+    if not (Sync.offered[key] and now - Sync.offered[key] < 60) then return end
+    if Sync.dumped[key] and now - Sync.dumped[key] < DUMP_GAP then return end
+    Sync.offered[key] = nil
+    Sync.dumped[key] = now
+    dump(sender, since)
 end
 
 function handlers.E(f, sender, rec)
-    if norm(f[2]) == norm(myFullName()) then
+    if isMe(f[2]) and PGM:IsOfficerRec(rec) then
         -- I now hold everything that officer had (a record I couldn't use,
-        -- like a spot for someone not in my roster, included), so I'm as
-        -- current as they are. Otherwise we'd keep catching up forever.
-        if PGM:IsOfficerRec(rec) then bump(clampU(f[4])) end
+        -- like a spot for someone not in my roster, included), so I've
+        -- caught up to them. Otherwise we'd keep catching up forever.
+        local theirs = clampU(f[4])
+        local _, s = store()
+        if theirs and s then
+            s.caught = math.max(s.caught or 0, theirs)
+            bump(theirs)
+        end
         Sync.lastCatchUp = PGM.Now()
         Sync.lastFrom = sender
+        Sync.awaiting = nil
+        Sync.settled = true
         changed("SYNC")
     end
 end
@@ -929,6 +1015,12 @@ PGM:On("ROSTER", function()
     C_Timer.After(8, sendHello)
     C_Timer.NewTicker(HELLO_EVERY, sendHello)
     C_Timer.After(15, function() PGM:SyncMyMain() end)
+    -- Settled: caught up, or clearly not getting a catch-up (no offer in a
+    -- minute and a half, or one that never finished in ten minutes). Until
+    -- then this copy may be behind on what other officers changed, so
+    -- Teams.lua waits for it before importing from notes.
+    C_Timer.After(90, function() if not Sync.awaiting then Sync.settled = true end end)
+    C_Timer.After(600, function() Sync.settled = true end)
     -- Before 0.7.1 a team's rename, schedule, tags and "Keep in sync" stayed
     -- on the officer's own copy, and didn't change the team's stamp. So once,
     -- the copy that created each team (only it has `created`) re-shares it
@@ -965,6 +1057,13 @@ logout:SetScript("OnEvent", function()
     local g = PGM.GuildDB()
     if not (g and g.sync) then return end
     local keep = {}
+    -- Last session's leftovers that haven't been re-queued yet (a reload
+    -- right after login) come along too, first.
+    if not Sync.resumedDone then
+        for _, msg in ipairs(g.sync.pending or {}) do
+            if #keep < MAX_PENDING then keep[#keep + 1] = msg end
+        end
+    end
     for _, q in ipairs({ Sync.queue, Sync.bulk }) do
         for _, msg in ipairs(q) do
             if #keep < MAX_PENDING and KEEP[msg:sub(2, 2)] then keep[#keep + 1] = msg end
@@ -978,6 +1077,7 @@ PGM:On("ROSTER", function()
     if Sync.resumed or not (g and g.seeded) then return end
     Sync.resumed = true
     C_Timer.After(20, function()
+        Sync.resumedDone = true
         local _, s = store()
         local pending = s and s.pending
         if not pending then return end
@@ -985,6 +1085,10 @@ PGM:On("ROSTER", function()
         for _, msg in ipairs(pending) do enqueue(msg, true) end
     end)
 end)
+
+function PGM:SyncSettled()
+    return Sync.settled or not enabled()
+end
 
 -- How many officers with the addon we've heard from in the last hour.
 function PGM:SyncPeers()

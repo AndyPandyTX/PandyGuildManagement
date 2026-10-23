@@ -28,7 +28,7 @@ local armed, wantArmed = false, false
 StaticPopupDialogs.PANDYGUILD_BULK_START = {
     text = "%s",
     button1 = "Start", button2 = CANCEL,
-    OnAccept = function() UI:BulkArm(true) end,
+    OnAccept = function(_, data) UI:BulkConfirmed(data) end,
     timeout = 0, whileDead = true, hideOnEscape = true, showAlert = true, preferredIndex = 3,
 }
 
@@ -60,6 +60,14 @@ end
 
 local function changed()
     PGM:Fire("BULK")
+end
+
+-- The rule an edit box was editing when it got focus, not whatever is
+-- selected by the time it loses focus (after a delete, say).
+local function ruleFor(box)
+    for _, r in ipairs(PGM:BulkRules(state.action)) do
+        if r.id == box.ruleId then return r end
+    end
 end
 
 -- ============================================================
@@ -153,6 +161,7 @@ end
 -- dragging or scaling the window) disarms this too.
 hooksecurefunc(UI, "HideSecure", function() UI:BulkDisarm() end)
 PGM:RegisterEvent("PLAYER_REGEN_DISABLED", function()
+    if page and page.capturing and page.endCapture then page.endCapture() end
     wantArmed = false
     UI:BulkDisarm()
 end)
@@ -160,9 +169,17 @@ end)
 UI:On("MOVED", function()
     if wantArmed and PGM:BulkRunning() and page and page:IsVisible() then UI:BulkArm(false) end
 end)
+-- The button gets its next batch at once; the page repaints at most every
+-- quarter second however many presses, confirmations and roster reads land.
+local repaintQueued = false
 PGM:On("BULK", function()
     if armed then UI:BulkLoad() end
-    UI:Refresh()
+    if repaintQueued then return end
+    repaintQueued = true
+    C_Timer.After(0.25, function()
+        repaintQueued = false
+        UI:Refresh()
+    end)
 end)
 
 -- ============================================================
@@ -187,7 +204,7 @@ end
 
 local function setNumber(field)
     return function(s)
-        local r = selectedRule()
+        local r = ruleFor(s)
         if not r then return end
         local v = tonumber(s:GetText() or "")
         if r[field] ~= v then
@@ -208,7 +225,7 @@ local function buildEditor(p, ed)
     ed.name:SetPoint("TOPLEFT", 84, y)
     ed.name:SetMaxLetters(40)
     ed.name.onCommit = function(s)
-        local r = selectedRule()
+        local r = ruleFor(s)
         local t = strtrim(s:GetText() or "")
         if r and t ~= "" and t ~= r.name then r.name = t changed() end
     end
@@ -219,7 +236,7 @@ local function buildEditor(p, ed)
     ed.days:SetPoint("TOPLEFT", 84, y)
     label(ed, "days", 140, y - 4, C.text3)
     ed.days.onCommit = function(s)
-        local r = selectedRule()
+        local r = ruleFor(s)
         if not r then return end
         local v = tonumber(s:GetText() or "")
         local field = state.action == "promote" and "seenDays" or "awayDays"
@@ -285,9 +302,13 @@ local function buildEditor(p, ed)
     ed.note:SetPoint("TOPLEFT", 84, y)
     ed.note:SetMaxLetters(40)
     ed.note.onCommit = function(s)
-        local r = selectedRule()
+        local r = ruleFor(s)
         local t = strtrim(s:GetText() or "")
         if r and t ~= (r.note or "") then r.note = t ~= "" and t or nil changed() end
+    end
+
+    for _, box in ipairs({ ed.name, ed.days, ed.minLevel, ed.maxLevel, ed.joined, ed.note }) do
+        box:HookScript("OnEditFocusGained", function(s) s.ruleId = state.rule end)
     end
 
     y = y - 30
@@ -314,6 +335,7 @@ local function buildEditor(p, ed)
     ed.delete = W.Button(ed, "Delete rule", 100, 22, C.red)
     ed.delete:SetPoint("TOPLEFT", 0, y)
     ed.delete:SetScript("OnClick", function()
+        UI:CommitBulkEdits()
         local r = selectedRule()
         if r then
             PGM:BulkDeleteRule(state.action, r.id)
@@ -346,7 +368,7 @@ local function ruleUpdate(r, rule)
     r.check:Sync()
     local sel = rule.id == state.rule
     r.name:SetText((sel and PGM.Hex(C.accent) or "") .. (rule.name or "Rule") .. (sel and "|r" or ""))
-    r.count:SetText(rule.on and tostring(PGM:BulkRuleCount(state.action, rule)) or "off")
+    r.count:SetText(rule.on and tostring(page and page.counts and page.counts[rule.id] or 0) or "off")
 end
 
 local STATE_TEXT = {
@@ -424,6 +446,26 @@ local function queueUpdate(r, it)
     for _, fs in ipairs({ r.name, r.rank, r.seen, r.right }) do fs:SetAlpha(alpha) end
 end
 
+-- Start was confirmed for this action and this many people. If either
+-- changed while the popup was open, don't run something else under it.
+local function includedCount(action)
+    local n = 0
+    for _, it in ipairs(PGM:BulkMatches(action)) do if not it.ignored then n = n + 1 end end
+    return n
+end
+
+function UI:BulkConfirmed(data)
+    if not data or data.action ~= state.action then
+        PGM.Print("Bulk Actions: the action changed, so nothing started. Press Start again.")
+        return
+    end
+    if includedCount(state.action) ~= data.count then
+        PGM.Print("Bulk Actions: the list changed, so nothing started. Check it and press Start again.")
+        return
+    end
+    UI:BulkArm(true)
+end
+
 function UI:CommitBulkEdits()
     if not page then return end
     local ed = page.editor
@@ -433,6 +475,8 @@ end
 local function build(p)
     page = p
     p:SetScript("OnHide", function()
+        if p.endCapture and p.capturing then p.endCapture() end
+        StaticPopup_Hide("PANDYGUILD_BULK_START")
         wantArmed = false
         UI:BulkDisarm()
     end)
@@ -446,6 +490,7 @@ local function build(p)
                 return
             end
             UI:CommitBulkEdits()
+            StaticPopup_Hide("PANDYGUILD_BULK_START")
             state.action, state.rule = a, nil
             UI:Refresh()
         end)
@@ -527,15 +572,14 @@ local function build(p)
             UI:BulkArm(false)
             return
         end
-        local n = 0
-        for _, it in ipairs(PGM:BulkMatches(state.action)) do if not it.ignored then n = n + 1 end end
+        local n = includedCount(state.action)
         if n == 0 then return end
         local who = n == 1 and "member" or "members"
         local what = state.action == "kick" and ("Remove %d %s from the guild?"):format(n, who)
             or ("%s %d %s?"):format(LABEL[state.action], n, who)
         StaticPopup_Show("PANDYGUILD_BULK_START", what
             .. "\n\nNothing happens until you press the button or " .. hotkey()
-            .. ". Each press does the next few.")
+            .. ". Each press does the next few.", nil, { action = state.action, count = n })
     end)
     p.stop = W.Button(p, "Stop", 80, 30, C.red)
     p.stop:SetPoint("LEFT", p.spot, "RIGHT", 8, 0)
@@ -559,9 +603,14 @@ local function build(p)
         p.capturing = false
         UI:Refresh()
     end
+    p.endCapture = endCapture
+    -- With Ctrl, Shift or Alt only: a bare key (W, 1, Enter) would take over
+    -- that key whenever a run is armed. Escape cancels.
+    local REFUSED = { ENTER = true, TAB = true, SPACE = true, BACKSPACE = true }
     capture:SetScript("OnKeyDown", function(_, key)
         if key == "ESCAPE" then endCapture() return end
         if key:find("SHIFT") or key:find("CTRL") or key:find("ALT") or key:find("META") then return end
+        if REFUSED[key] or not (IsAltKeyDown() or IsControlKeyDown() or IsShiftKeyDown()) then return end
         local combo = (IsAltKeyDown() and "ALT-" or "") .. (IsControlKeyDown() and "CTRL-" or "")
             .. (IsShiftKeyDown() and "SHIFT-" or "") .. key
         PGM.setOpt("bulkHotkey", combo)
@@ -606,6 +655,10 @@ local function refresh(p)
     p.perms:SetText(#can > 0 and ("Your rank can " .. table.concat(can, ", ") .. ". Only ranks below yours are listed.")
         or "Your rank can't kick, promote or demote.")
 
+    -- One pass over the guild for both the list and each rule's count.
+    local matched, counts = PGM:BulkMatches(action)
+    p.counts = counts
+
     -- Rules.
     local rules = PGM:BulkRules(action)
     if not selectedRule() then state.rule = rules[1] and rules[1].id or nil end
@@ -638,7 +691,7 @@ local function refresh(p)
     end
 
     -- Queue: the run's own list while one is going, else a live preview.
-    local items = running == action and PGM.Bulk.queue or PGM:BulkMatches(action)
+    local items = running == action and PGM.Bulk.queue or matched
     local included = 0
     for _, it in ipairs(items) do if not it.ignored then included = included + 1 end end
     p.queue:SetData(items, true)
@@ -681,7 +734,7 @@ local function refresh(p)
         p.start:SetAlpha((allowed[action] and included > 0) and 1 or 0.5)
     end
     if InCombatLockdown() then p.status:SetText("Paused for combat. Resume after.") end
-    p.keyText:SetText(p.capturing and (PGM.Hex(C.accent) .. "Press a key, or Escape|r")
+    p.keyText:SetText(p.capturing and (PGM.Hex(C.accent) .. "Press Ctrl, Shift or Alt + a key|r")
         or ("Hotkey: " .. PGM.Hex(C.text) .. hotkey() .. "|r"))
 end
 

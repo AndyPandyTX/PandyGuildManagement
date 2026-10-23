@@ -175,6 +175,14 @@ local function count(t)
     return n
 end
 
+-- Fields that keep their old value when the game kept them secret this time.
+local KEEP_FIELDS = { "rank", "rankIndex", "level", "class" }
+
+-- Versions other parts check to skip work when nothing they care about
+-- changed: membersVersion on any join or leave, notesVersion when that or
+-- anyone's note, officer note or rank changed.
+PGM.membersVersion, PGM.notesVersion = 0, 0
+
 function PGM:ApplyRoster(snap, complete)
     local g = PGM.GuildDB(true)
     if not g then return end
@@ -189,7 +197,7 @@ function PGM:ApplyRoster(snap, complete)
         old = old or g.former[new.guid]
         -- Field by field, so one hidden or unloaded value never wipes what
         -- we knew. A field the game kept secret this time keeps its old value.
-        for _, k in ipairs({ "rank", "rankIndex", "level", "class" }) do
+        for _, k in ipairs(KEEP_FIELDS) do
             if new[k] == nil and old then new[k] = old[k] end
         end
         new.race = (d and d.race) or (old and old.race)
@@ -204,6 +212,7 @@ function PGM:ApplyRoster(snap, complete)
             g.members[guid] = rec
         end
         g.seeded = now
+        PGM.membersVersion, PGM.notesVersion = PGM.membersVersion + 1, PGM.notesVersion + 1
         PGM:AddLog(g, "seeded", { name = "" }, { n = count(snap) })
         g.lastScan, g.lastComplete = now, now
         PGM:Fire("ROSTER")
@@ -214,7 +223,11 @@ function PGM:ApplyRoster(snap, complete)
     for guid, new in pairs(snap) do
         local old = g.members[guid]
         enrich(new, old)
+        if not old or old.note ~= new.note or old.onote ~= new.onote or old.rankIndex ~= new.rankIndex then
+            PGM.notesVersion = PGM.notesVersion + 1
+        end
         if not old then
+            PGM.membersVersion = PGM.membersVersion + 1
             local kind = g.former[guid] and "rejoin" or "join"
             g.former[guid] = nil
             new.joined = now
@@ -254,6 +267,10 @@ function PGM:ApplyRoster(snap, complete)
             local leaving = {}
             for _, guid in ipairs(gone) do leaving[guid] = true end
             local me = g.members[PGM.MyGuid and PGM:MyGuid() or ""]
+            if #gone > 0 then
+                PGM.membersVersion = PGM.membersVersion + 1
+                PGM.notesVersion = PGM.notesVersion + 1
+            end
             for _, guid in ipairs(gone) do
                 local old = g.members[guid]
                 -- Their characters still here: the rest of their group, as
@@ -302,11 +319,12 @@ local function scanNow()
     if snap then PGM:ApplyRoster(snap, complete) end
 end
 
--- GUILD_ROSTER_UPDATE comes in bursts; one scan a second is plenty.
-local function queueScan()
+-- GUILD_ROSTER_UPDATE comes in bursts (and every few seconds in a busy
+-- guild); one read every 3 seconds is plenty, 1 when asked for on purpose.
+local function queueScan(soon)
     if scanQueued then return end
     scanQueued = true
-    C_Timer.After(1, scanNow)
+    C_Timer.After(soon == true and 1 or 3, scanNow)
 end
 
 -- Ask the server for fresh data. It throttles this itself, so we keep to one
@@ -319,7 +337,7 @@ function PGM:RequestRoster(force)
     if C_GuildInfo and C_GuildInfo.GuildRoster then
         pcall(C_GuildInfo.GuildRoster)
     end
-    if force then queueScan() end
+    if force then queueScan(true) end
 end
 
 function PGM:CountMembers()

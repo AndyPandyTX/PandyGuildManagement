@@ -171,9 +171,18 @@ end
 
 local handlers = PGM.SyncHandlers or {}
 
+-- Anyone may send these, so keep the numbers possible: no more samples than
+-- an hour holds, no more online than the guild has, and an average no
+-- higher than the peak. One wild record can't pin an hour's figures.
+local MAX_SAMPLES = math.floor(3600 / SAMPLE_EVERY) + 1
 function handlers.W(f)
     local key, peak, avg10, samples = tonumber(f[2]), tonumber(f[3]), tonumber(f[4]), tonumber(f[5])
-    if not (key and peak and peak >= 0 and peak < 5000) then return end
+    if not (key and peak and peak >= 0) then return end
+    local members = PGM.CountMembers and PGM:CountMembers() or 0
+    if members > 0 and peak > members then return end
+    if key > hourOf(PGM.Now()) then return end
+    samples = samples and math.max(0, math.min(math.floor(samples), MAX_SAMPLES)) or nil
+    avg10 = avg10 and math.max(0, math.min(avg10, peak * 10)) or nil
     mergeHour(key, peak, avg10, samples, f[6])
 end
 
@@ -244,21 +253,49 @@ end)
 -- ============================================================
 
 -- Local clock parts for an hour key: hour of day (0-23), weekday (1 = Sunday).
+-- Remembered per hour: the answer never changes within a session.
+local localParts = {}
 local function local_(key)
-    local t = date("*t", key * 3600)
-    return t.hour, t.wday
+    local t = localParts[key]
+    if not t then
+        local d = date("*t", key * 3600)
+        t = { d.hour, d.wday }
+        localParts[key] = t
+    end
+    return t[1], t[2]
 end
-PGM.ActivityLocalTime = local_
 
-local cache, cacheKey = nil, nil
-PGM:On("ACTIVITY", function() cache = nil end)
-PGM:On("ROSTER", function() cache = nil end)
+-- Each hour's "who was on" list, parsed once and again only if it changes.
+local parsed = {}
+local function membersOf(key, h)
+    local m = h.m or ""
+    local c = parsed[key]
+    if not c or c.m ~= m then
+        c = { m = m, list = {} }
+        for id in m:gmatch("[^,]+") do c.list[#c.list + 1] = fullGuid(id) end
+        parsed[key] = c
+    end
+    return c.list
+end
+
+-- Results by period. They only go stale when the hours change (ACTIVITY),
+-- when someone joins, leaves or is relinked (the guild's versions below),
+-- or when the hour turns; not on every roster read.
+local caches, cacheFor = {}, nil
+PGM:On("ACTIVITY", function() wipe(caches) end)
+PGM:On("ROSTER", function()
+    local v = (PGM.membersVersion or 0) .. ":" .. (PGM.altsVersion or 0)
+    if v ~= cacheFor then
+        cacheFor = v
+        wipe(caches)
+    end
+end)
 
 -- Everything the Activity page shows, for the last `days` days.
 -- mainsOnly folds each alt's hours into its main.
 function PGM:ComputeActivity(days, mainsOnly)
-    local key = days .. (mainsOnly and "m" or "a")
-    if cache and cacheKey == key then return cache end
+    local key = days .. (mainsOnly and "m" or "a") .. hourOf(PGM.Now())
+    if caches[key] then return caches[key] end
     local g, a = store()
     local o = {
         days = days, observed = 0, possible = days * 24, sumAvg = 0, avg = 0,
@@ -287,8 +324,7 @@ function PGM:ComputeActivity(days, mainsOnly)
             c.sum, c.n = c.sum + avg, c.n + 1
             -- Who played: one hour per person per hour slot, alts folded in.
             local seenThisHour = {}
-            for id in (h.m or ""):gmatch("[^,]+") do
-                local guid = fullGuid(id)
+            for _, guid in ipairs(membersOf(hkey, h)) do
                 if g.members[guid] then
                     local who = mainsOnly and PGM:MainOf(guid) or guid
                     if not seenThisHour[who] then
@@ -329,7 +365,7 @@ function PGM:ComputeActivity(days, mainsOnly)
         if x.hours ~= y.hours then return x.hours > y.hours end
         return PGM.NameLess(x.rec.short, y.rec.short)
     end)
-    cache, cacheKey = o, key
+    caches[key] = o
     return o
 end
 

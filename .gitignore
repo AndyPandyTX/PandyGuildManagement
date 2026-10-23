@@ -9,3 +9,4 @@ Thumbs.db
 *.zip
 screenshots/full/
 ~$*
+tools/node_modules/
