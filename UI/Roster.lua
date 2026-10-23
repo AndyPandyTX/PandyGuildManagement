@@ -194,6 +194,9 @@ local function updateRow(r, it)
     end
     r.cells.note:SetText(rec.note or "")
     r.cells.note:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
+    -- Offline members stand back: same colours, half as bright.
+    local alpha = rec.online and 1 or 0.5
+    for _, fs in pairs(r.cells) do fs:SetAlpha(alpha) end
 end
 
 local function build(p)
@@ -206,15 +209,21 @@ local function build(p)
         refresh(p)
     end
 
+    -- Filters are remembered between sessions; the first time, the list
+    -- starts on who's online.
+    local savedFilters = PGM.opt("rosterFilters")
+    state.filters = type(savedFilters) == "table" and savedFilters or { online = true }
     p.chips = {}
     local prev = p.search
     for _, f in ipairs(FILTERS) do
         local chip = W.Chip(p, f.label, function(s)
-            state.filters[f.id] = not state.filters[f.id]
+            state.filters[f.id] = not state.filters[f.id] or nil
             s:SetActive(state.filters[f.id])
+            PGM.setOpt("rosterFilters", state.filters)
             p.list.offset = 0
             UI:Refresh()
         end)
+        chip:SetActive(state.filters[f.id])
         chip:SetPoint("LEFT", prev, "RIGHT", 8, 0)
         prev = chip
     end
@@ -318,6 +327,8 @@ function refresh(p)
         p.empty:SetText("You're not in a guild on this character.")
     elseif not (g and g.seeded) then
         p.empty:SetText("Reading the guild roster...")
+    elseif #p.list.data == 0 and state.filters.online and state.search ~= "" then
+        p.empty:SetText("Nobody online matches. Turn off Online to search everyone.")
     elseif #p.list.data == 0 then
         p.empty:SetText("Nobody matches.")
     else
