@@ -36,7 +36,32 @@ character's score comes from the game; main, warband and roles need RaiderIO.
 
 ## Pages
 
-**Groups.** The board.
+**Groups.** Three views across the top:
+- **Browse:** every group in one list, guild posts and Blizzard's Group
+  Finder together. Each row says what it is, who leads it (Guild, and
+  "alt of X"), **Needs: 1 Tank 3 DPS**, how full it is, the leader's
+  rating, playstyle and note. Guild rows have a jade edge.
+  - **Guild:** Guild first, Guild only, Scheduled, and Sort (newest, key
+    level, leader rating).
+  - **Group Finder:** Mythic+, Raids, Delves or Custom. Clicking one
+    searches the Group Finder (the game only searches from a click), and
+    Search runs it again.
+  - **Filters**, like OAK's: key range (10-15, 15+ or 15), leader rating,
+    playstyle, which dungeons, raids or delves, Fits my role, Has tank,
+    Has healer, Battle res, Lust and Hide declined. They're remembered.
+  - **Apply** sends a Group Finder application with the roles you play
+    (right-click for one role). On a guild post it's **Ask to join**.
+- **My group:** your group across the top (needs, how full, listed or
+  guild only, Close), then everyone asking to join, a row each: name,
+  Guild tag and main, roles offered, spec, item level, and the
+  **Character**, **Main** and **Warband** M+ scores in their own columns,
+  each with the roles it was earned on. Invite and Decline on each.
+- **Post a group:** the form below, and the Group Finder and ping settings.
+
+`/pgg mine` and `/pgg post` open those views.
+
+The form and the rest of this section describe Post a group and how guild
+posts behave:
 - **Post a group:** Mythic+, Raid, Delve or Other; what and level (your own
   keystone is filled in); size; the roles you still need; a note; and when it
   starts. Leave Start empty for now, or type `20:30`, `Sat 20:30` or `+30`

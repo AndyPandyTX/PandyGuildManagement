@@ -75,10 +75,9 @@ local function listed()
     if id and id > 0 then return id, entry end
 end
 
--- A post (as G:Post takes it) for that activity.
-local function postFor(id, entry)
-    local a = readable(call(LFG.GetActivityInfoTable, id))
-    if not a then return nil end
+-- An activity's kind (G.KINDS), its name without the bracket, and what
+-- was in the bracket ("Mythic Keystone", "Heroic", "Tier 8").
+local function activityParts(a)
     local full = str(a.fullName) or ""
     local what, paren = full:match("^(.-)%s*%((.-)%)%s*$")
     what = what or full
@@ -87,9 +86,17 @@ local function postFor(id, entry)
         kind = "M"
     elseif P(a.isCurrentRaidActivity) or num(a.categoryID) == 3 then
         kind = "R"
-    elseif full:lower():find("delve", 1, true) then
+    elseif num(a.categoryID) == 121 or full:lower():find("delve", 1, true) then
         kind = "D"
     end
+    return kind, what, paren, full
+end
+
+-- A post (as G:Post takes it) for that activity.
+local function postFor(id, entry)
+    local a = readable(call(LFG.GetActivityInfoTable, id))
+    if not a then return nil end
+    local kind, what, paren, full = activityParts(a)
     local level = ""
     if kind == "M" then
         local map, keyLevel = G.ReadMyKey()
@@ -275,6 +282,294 @@ function G:DeclineApplicant(key)
 end
 
 -- ============================================================
+-- SEARCHING
+-- ============================================================
+
+-- The same searches OAK LFG Sorter and the Group Finder make. A search is
+-- a hardware-event call: it only works from a click, like Apply.
+local function mask(name, fallback)
+    local f = Enum and Enum.LFGListFilter
+    return (f and f[name]) or fallback or 0
+end
+local bor = (bit and bit.bor) or function(a, b) return a + b end
+
+G.FINDER_CATS = {
+    { id = "M", label = "Mythic+", cat = 2, filters = function() return bor(mask("CurrentSeason", 0x40), mask("PvE")) end },
+    { id = "R", label = "Raids", cat = 3, filters = function() return mask("Recommended") end },
+    { id = "D", label = "Delves", cat = 121 },
+    { id = "O", label = "Custom", cat = 6 },
+}
+
+-- From a click. True, or false and why not.
+function G:SearchFinder(kind)
+    local c
+    for _, x in ipairs(G.FINDER_CATS) do
+        if x.id == kind then c = x end
+    end
+    if not (c and LFG.Search) then return false, "The Group Finder can't search right now." end
+    if listed() then return false, "You're listed, so the game won't search. Delist first." end
+    local lang = readable(call(LFG.GetLanguageSearchFilter))
+    local panel = LFGListFrame and LFGListFrame.SearchPanel
+    local cross = panel and panel.searchCrossFactionListings
+    if cross == nil then cross = true end
+    local adv = kind == "M" and readable(call(LFG.GetAdvancedFilter)) or nil
+    local ok, err = pcall(LFG.Search, c.cat, c.filters and c.filters() or 0, mask("PvE"), lang, cross, adv)
+    if not ok then return false, tostring(err) end
+    G.searchKind, G.searchedAt = kind, GetTime()
+    return true
+end
+
+local BREZ = { DRUID = true, DEATHKNIGHT = true, WARLOCK = true, PALADIN = true }
+local LUST = { MAGE = true, SHAMAN = true, EVOKER = true, HUNTER = true }
+
+local results = {}
+
+-- My application to a result: "applied", "invited", "declined"... or nil.
+local function appStatus(id)
+    local ok, a, b = pcall(LFG.GetApplicationInfo, id)
+    if not ok then return nil end
+    local s = readable(a) and str(a.applicationStatus) or str(b)
+    return (s and s ~= "none") and s or nil
+end
+
+local function keyLevelOf(info, a)
+    local text = table.concat({ str(info.name) or "", str(info.comment) or "",
+        str(a and a.shortName) or "", str(a and a.fullName) or "" }, " ")
+    local ok, lv = pcall(string.match, text, "%+(%d%d?)")
+    return ok and tonumber(lv) or 0
+end
+
+local function playstyleOf(info, a)
+    local v = num(info.generalPlaystyle)
+    if not (v and v > 0 and LFG.GetPlaystyleString) then return nil end
+    local ok, s = pcall(LFG.GetPlaystyleString, nil, v, a)
+    return ok and str(s) or nil
+end
+
+-- What a result's group already has, and so still needs.
+local function rolesOf(id, kind, size)
+    local counts = readable(call(LFG.GetSearchResultMemberCounts, id)) or {}
+    local has = { T = num(counts.TANK) or 0, H = num(counts.HEALER) or 0, D = num(counts.DAMAGER) or 0 }
+    local need = { T = num(counts.TANK_REMAINING), H = num(counts.HEALER_REMAINING), D = num(counts.DAMAGER_REMAINING) }
+    if not (need.T and need.H and need.D) then
+        -- No "remaining" counts: a five-player group wants 1 / 1 / 3.
+        local base = size <= 5 and { T = 1, H = 1, D = 3 } or G.KIND_NEED[kind]
+        for _, r in ipairs(G.ROLES) do need[r] = math.max(0, base[r] - has[r]) end
+    end
+    return need, has
+end
+
+local function readResults()
+    wipe(results)
+    local ok, _, list = pcall(LFG.GetSearchResults)
+    for _, raw in ipairs(ok and readable(list) or {}) do
+        local id = num(raw)
+        local info = id and readable(call(LFG.GetSearchResultInfo, id))
+        if info and not P(info.isDelisted) then
+            local act = num(info.activityID) or (readable(info.activityIDs) and num(info.activityIDs[1]))
+            local a = act and readable(call(LFG.GetActivityInfoTable, act))
+            if a then
+                local kind, what, paren = activityParts(a)
+                local size = num(a.maxNumPlayers) or G.KIND_SIZE[kind]
+                local level = ""
+                if kind == "M" then
+                    local lv = keyLevelOf(info, a)
+                    level = lv > 0 and tostring(lv) or ""
+                elseif kind == "R" and paren then
+                    level = paren:sub(1, 1)
+                elseif kind == "D" and paren then
+                    level = paren:match("%d+") or ""
+                end
+                local need, has = rolesOf(id, kind, size)
+                local members = num(info.numMembers) or 1
+                local classes, brez, lust = {}, false, false
+                for i = 1, members do
+                    local pi = readable(call(LFG.GetSearchResultPlayerInfo, id, i))
+                    local class = pi and (str(pi.classFilename) or str(pi.classFileName))
+                    if not class and LFG.GetSearchResultMemberInfo then
+                        local okm, _, cls = pcall(LFG.GetSearchResultMemberInfo, id, i)
+                        class = okm and str(cls) or nil
+                    end
+                    if class then
+                        classes[#classes + 1] = class
+                        brez = brez or BREZ[class] or false
+                        lust = lust or LUST[class] or false
+                    end
+                end
+                local leader = str(info.leaderName)
+                results[#results + 1] = {
+                    id = id, kind = kind, what = what, level = level, size = size,
+                    need = need, has = has, members = members, classes = classes, brez = brez, lust = lust,
+                    leader = leader, rec = leader and G.RecByName(leader) or nil,
+                    mates = num(info.numGuildMates) or 0,
+                    score = num(info.leaderOverallDungeonScore) or 0,
+                    playstyle = playstyleOf(info, a), age = num(info.age) or 0,
+                    note = G.Clean(str(info.comment) or "", 60),
+                    status = appStatus(id),
+                }
+            end
+        end
+    end
+    G.resultsAt = GetTime()
+    G:Fire("FINDER")
+end
+
+local resultsTimer
+local function queueResults()
+    if resultsTimer then return end
+    resultsTimer = C_Timer.NewTimer(0.3, function()
+        resultsTimer = nil
+        readResults()
+    end)
+end
+
+function G:FinderResults()
+    return results
+end
+
+-- Apply to a result, from a click: as `role`, or every role I play.
+function G:ApplyFinder(id, role)
+    local roles = role and { [role] = true } or G.MyRoles()
+    local ok = LFG.ApplyToGroup and pcall(LFG.ApplyToGroup, id, roles.T or false, roles.H or false, roles.D or false)
+    if not ok then PGM.Print("The game wouldn't send that application. Apply from the Group Finder instead.") end
+    queueResults()
+end
+
+function G:CancelFinder(id)
+    if LFG.CancelApplication then pcall(LFG.CancelApplication, id) end
+    queueResults()
+end
+
+-- ============================================================
+-- THE BOARD: GUILD POSTS AND THE GROUP FINDER, TOGETHER
+-- ============================================================
+
+-- "10-15", "15+" or "15": a key range, or nil for any.
+local function keyRange(text)
+    text = strtrim(text or "")
+    local a, b = text:match("^(%d+)%s*%-%s*(%d+)$")
+    if a then return tonumber(a), tonumber(b) end
+    a = text:match("^(%d+)%+$")
+    if a then return tonumber(a), 99 end
+    a = text:match("^(%d+)$")
+    if a then return tonumber(a), tonumber(a) end
+end
+G.KeyRange = keyRange
+
+-- One row of the board: a guild post, a Group Finder result, or both (a
+-- guildie's listing that's also on the guild board).
+local function fromPost(p)
+    local g = PGM.GuildDB()
+    local rec = g and g.members[p.leader or ""]
+    return {
+        post = p, kind = p.kind, what = p.what, level = p.level, size = p.size, need = p.need,
+        rec = rec, guild = true, note = p.note, scheduled = (p.start or 0) > 0,
+        score = (rec and PGM:MPlusScore(rec)) or 0, u = p.u or 0,
+    }
+end
+
+local function fromResult(r)
+    return {
+        result = r, kind = r.kind, what = r.what, level = r.level, size = r.size, need = r.need, has = r.has,
+        rec = r.rec, guild = r.rec ~= nil or r.mates > 0, note = r.note, score = r.score,
+        playstyle = r.playstyle, brez = r.brez, lust = r.lust, u = PGM.Now() - (r.age or 0),
+    }
+end
+
+-- The board's rows for filter settings f (see the Groups page).
+function G:Board(f)
+    local rows, byLeader = {}, {}
+    for _, p in ipairs(G:PostList()) do
+        if not (p.mine and (p.start or 0) == 0) and (f.scheduled or (p.start or 0) == 0) then
+            local row = fromPost(p)
+            rows[#rows + 1] = row
+            if row.rec and (p.start or 0) == 0 then byLeader[row.rec.guid] = row end
+        end
+    end
+    for _, r in ipairs(results) do
+        local merged = r.rec and byLeader[r.rec.guid]
+        if merged then
+            merged.result, merged.has, merged.playstyle = r, r.has, r.playstyle
+            merged.brez, merged.lust, merged.score = r.brez, r.lust, math.max(merged.score, r.score)
+        elseif not (r.rec and r.rec.guid == PGM:MyGuid()) then
+            rows[#rows + 1] = fromResult(r)
+        end
+    end
+
+    local kmin, kmax = keyRange(f.keys)
+    local roles = G.MyRoles()
+    local out = {}
+    for _, row in ipairs(rows) do
+        local level = tonumber(row.level) or 0
+        local keep = (not f.kind or row.kind == f.kind)
+            and (not f.guildOnly or row.guild)
+            and (not kmin or row.kind ~= "M" or (level >= kmin and level <= kmax))
+            and ((tonumber(f.minRating) or 0) <= 0 or row.score >= tonumber(f.minRating))
+            and (not f.playstyle or row.playstyle == f.playstyle)
+            and (not (f.dungeons and next(f.dungeons)) or f.dungeons[row.what])
+            and (not f.hasTank or (row.has and row.has.T > 0) or (not row.has and row.need.T == 0))
+            and (not f.hasHealer or (row.has and row.has.H > 0) or (not row.has and row.need.H == 0))
+            and (not f.brez or row.brez ~= false)
+            and (not f.lust or row.lust ~= false)
+        if keep and f.fitsMe then
+            keep = false
+            for r in pairs(roles) do
+                if (row.need[r] or 0) > 0 then keep = true end
+            end
+        end
+        local st = row.result and row.result.status
+        if keep and f.hideDeclined and (st == "declined" or st == "declined_full" or st == "declined_delisted") then
+            keep = false
+        end
+        if keep then out[#out + 1] = row end
+    end
+    table.sort(out, function(a, b)
+        if f.guildFirst and a.guild ~= b.guild then return a.guild end
+        if a.scheduled ~= b.scheduled then return b.scheduled end
+        if a.scheduled then return a.post.start < b.post.start end
+        if f.sort == "rating" and a.score ~= b.score then return a.score > b.score end
+        if f.sort == "level" then
+            local la, lb = tonumber(a.level) or 0, tonumber(b.level) or 0
+            if la ~= lb then return la > lb end
+        end
+        return (a.u or 0) > (b.u or 0)
+    end)
+    return out
+end
+
+-- Names of the dungeons, raids or delves on the board, for the picker.
+function G:BoardActivities(kind)
+    local seen, out = {}, {}
+    for _, r in ipairs(results) do
+        if r.kind == kind and r.what ~= "" and not seen[r.what] then
+            seen[r.what] = true
+            out[#out + 1] = r.what
+        end
+    end
+    for _, p in pairs(G.posts) do
+        if p.kind == kind and (p.what or "") ~= "" and not seen[p.what] then
+            seen[p.what] = true
+            out[#out + 1] = p.what
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+-- Playstyles seen on the board ("Relaxed", "Learning"...), for the cycle.
+function G:BoardPlaystyles()
+    local seen, out = {}, {}
+    for _, r in ipairs(results) do
+        if r.playstyle and not seen[r.playstyle] then
+            seen[r.playstyle] = true
+            out[#out + 1] = r.playstyle
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+-- ============================================================
 -- BLIZZARD'S WINDOWS
 -- ============================================================
 
@@ -376,6 +671,9 @@ G:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE", function()
     queueSync()
     queueApplicants()
 end)
+G:RegisterEvent("LFG_LIST_SEARCH_RESULTS_RECEIVED", queueResults)
+G:RegisterEvent("LFG_LIST_SEARCH_RESULT_UPDATED", queueResults)
+G:RegisterEvent("LFG_LIST_APPLICATION_STATUS_UPDATED", queueResults)
 G:RegisterEvent("LFG_LIST_APPLICANT_LIST_UPDATED", queueApplicants)
 G:RegisterEvent("LFG_LIST_APPLICANT_UPDATED", queueApplicants)
 -- Someone joined: the roles still open changed.

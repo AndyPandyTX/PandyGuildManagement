@@ -189,6 +189,14 @@ Added after the first build (GroupFinder.lua):
   `LFGListApplicationViewer_UpdateApplicantMember`: a jade edge on guild
   rows, and guild lines in the tooltips. No sorting: Premade Groups Filter
   owns that.
+- **Browse.** `G:SearchFinder(kind)` calls `C_LFGList.Search` with the
+  same category, filters and language OAK and Blizzard use, from a click.
+  `LFG_LIST_SEARCH_RESULTS_RECEIVED` (from our search or anyone's) is read
+  into results: activity, key level, needs (the `_REMAINING` counts, else
+  1/1/3 less who's there), classes (battle res, lust), leader, rating,
+  playstyle, my application. `G:Board(filters)` merges them with guild
+  posts (a guildie's post and listing become one row), filters and sorts.
+  Apply is `C_LFGList.ApplyToGroup`, from a click.
 - **Scores.** `G.Scores` reads RaiderIO's `mplusCurrent`, `mplusMainCurrent`
   and `mplusWarbandCurrent` (score and roles, full or partial), preferring
   the game's own score for the character.

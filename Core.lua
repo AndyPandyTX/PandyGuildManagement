@@ -62,6 +62,12 @@ local DEFAULTS = {
     freeMaxOnly = true,
     freeAddonOnly = false,
     keysSort = "level",
+    -- The Groups page's Browse filters (playstyle unset means any).
+    board = {
+        guildFirst = true, guildOnly = false, scheduled = true, sort = "newest",
+        keys = "", minRating = 0, dungeons = {},
+        fitsMe = false, hasTank = false, hasHealer = false, brez = false, lust = false, hideDeclined = true,
+    },
 }
 
 local function fillDefaults(dst, src)
@@ -338,7 +344,7 @@ function G.NeedText(need, highlight)
             parts[#parts + 1] = icon .. PGM.Hex(col) .. n .. " " .. PGM.ROLE_LABEL[key] .. "|r"
         end
     end
-    if #parts == 0 then return PGM.Hex(PGM.C.text3) .. "No roles needed|r" end
+    if #parts == 0 then return PGM.Hex(PGM.C.text3) .. "Full|r" end
     return table.concat(parts, "  ")
 end
 
@@ -465,6 +471,8 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
     local cmd = strtrim((input or ""):lower())
     if cmd == "" or cmd == "groups" then
         PGM.UI:Show("groups")
+    elseif cmd == "mine" or cmd == "my" or cmd == "post" then
+        G.UI.ShowView(cmd == "post" and "post" or "mine")
     elseif cmd == "free" or cmd == "who" then
         PGM.UI:Show("free")
     elseif cmd == "keys" or cmd == "key" then
@@ -474,6 +482,7 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
     else
         PGM.Print("Guild Groups v" .. G.VERSION .. ":")
         PGM.Print("  /pgg - guild groups")
+        PGM.Print("  /pgg mine | post - your group, or the post form")
         PGM.Print("  /pgg free - who's free")
         PGM.Print("  /pgg keys - everyone's keystone")
         PGM.Print("  /pgg close - close your post")
