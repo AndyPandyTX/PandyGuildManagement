@@ -156,6 +156,29 @@ function G.WhoText(rec)
     return text
 end
 
+-- Their warband's best M+ score this season, from RaiderIO when it's
+-- installed, or nil. Shown next to the character's own when higher.
+function G.WarbandScore(rec)
+    if PGM.IS_FOREVER or not (rec and rec.short and RaiderIO and RaiderIO.GetProfile) then return nil end
+    local ok, profile = pcall(RaiderIO.GetProfile, rec.short, ((rec.realm or ""):gsub("%s+", "")))
+    local mp = ok and type(profile) == "table" and profile.mythicKeystoneProfile
+    local score = type(mp) == "table" and tonumber(mp.warbandCurrentScore)
+    if score and score > 0 then return math.floor(score + 0.5) end
+end
+
+-- "2650 M+", or "2650 M+ (warband 3146)" when the warband's is higher.
+function G.ScoreText(rec)
+    local score = PGM:MPlusScore(rec)
+    local wb = G.WarbandScore(rec)
+    local parts = {}
+    if score then parts[#parts + 1] = PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r M+" end
+    if wb and wb > (score or 0) then
+        parts[#parts + 1] = PGM.Hex(PGM.C.text3) .. "(warband |r" .. PGM.Hex(PGM:ScoreColor(wb)) .. wb .. "|r"
+            .. PGM.Hex(PGM.C.text3) .. ")|r"
+    end
+    return #parts > 0 and table.concat(parts, " ") or nil
+end
+
 -- My spec's role letter (T, H or D), or D when the game won't say.
 function G.SpecRole()
     if not (GetSpecialization and GetSpecializationRole) then return "D" end

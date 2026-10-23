@@ -274,8 +274,8 @@ local function askUpdate(r, it)
     local spec = specName(a.spec)
     if spec then parts[#parts + 1] = spec end
     if a.ilvl > 0 then parts[#parts + 1] = a.ilvl .. " ilvl" end
-    local score = rec and PGM:MPlusScore(rec)
-    if score then parts[#parts + 1] = PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r M+" end
+    local score = rec and G.ScoreText(rec)
+    if score then parts[#parts + 1] = score end
     if a.note ~= "" then parts[#parts + 1] = PGM.Hex(C.text3) .. a.note .. "|r" end
     r.info:SetText(table.concat(parts, "   "))
     local open = a.state == "new"

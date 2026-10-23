@@ -432,10 +432,10 @@ function G.handlers.A(f, sender, rec)
         ilvl = tonumber(f[6]) or 0, spec = tonumber(f[7]) or 0, note = G.Clean(f[8], 60),
         at = GetTime(), state = "new",
     }
-    local score = PGM:MPlusScore(rec)
+    local score = G.ScoreText(rec)
     PGM.Print(("%s asks to join as %s%s%s."):format(G.WhoText(rec), G.RoleText(p.asks[key].role, true),
         p.asks[key].ilvl > 0 and (", " .. p.asks[key].ilvl .. " ilvl") or "",
-        score and (", " .. score .. " M+") or ""))
+        score and (", " .. score) or ""))
     sound()
     G:Fire("POSTS")
 end
