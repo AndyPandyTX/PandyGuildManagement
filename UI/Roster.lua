@@ -15,6 +15,12 @@ local COLS = {
     { key = "raids",  label = "Raids",     w = 58, justify = "RIGHT" },
     { key = "note",   label = "Note",      w = 0 },
 }
+-- No Mythic+ on WoW Forever; the Note column takes the room.
+if PGM.IS_FOREVER then
+    for i = #COLS, 1, -1 do
+        if COLS[i].key == "mplus" then table.remove(COLS, i) end
+    end
+end
 
 local state = { sort = "seen", asc = false, search = "", filters = {} }
 local refresh   -- defined below; the search box calls it
@@ -115,11 +121,11 @@ local function buildRow(list)
     local r = W.Row(list)
     r.cells = {}
     local x = 0
-    for i, col in ipairs(COLS) do
+    for _, col in ipairs(COLS) do
         local fs = W.FS(r, 12, C.text, col.justify)
         fs:SetPoint("LEFT", x + 6, 0)
         if col.w > 0 then fs:SetWidth(col.w - 12) else fs:SetPoint("RIGHT", -6, 0) end
-        r.cells[i] = fs
+        r.cells[col.key] = fs
         x = x + col.w
     end
     r:SetScript("OnClick", function(s, button)
@@ -165,27 +171,29 @@ local function updateRow(r, it)
     elseif it.alts > 0 then
         name = name .. PGM.Hex(C.text3) .. " +" .. it.alts .. "|r"
     end
-    r.cells[1]:SetText(name)
+    r.cells.name:SetText(name)
     local max = PGM.MaxLevel()
-    r.cells[2]:SetText(((rec.level or 0) >= max and PGM.Hex(C.text) or PGM.Hex(C.text2)) .. (rec.level or "?") .. "|r")
-    r.cells[3]:SetText(rec.rank or "?")
-    r.cells[3]:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
-    r.cells[4]:SetText(seenText(rec))
-    if it.mplus then
+    r.cells.level:SetText(((rec.level or 0) >= max and PGM.Hex(C.text) or PGM.Hex(C.text2)) .. (rec.level or "?") .. "|r")
+    r.cells.rank:SetText(rec.rank or "?")
+    r.cells.rank:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
+    r.cells.seen:SetText(seenText(rec))
+    if not r.cells.mplus then
+        -- No M+ column on WoW Forever.
+    elseif it.mplus then
         local col = PGM:ScoreColor(it.mplus)
-        r.cells[5]:SetText(PGM.Hex(col) .. it.mplus .. "|r")
+        r.cells.mplus:SetText(PGM.Hex(col) .. it.mplus .. "|r")
     else
-        r.cells[5]:SetText(PGM.Hex(C.text3) .. "-|r")
+        r.cells.mplus:SetText(PGM.Hex(C.text3) .. "-|r")
     end
     if it.possible > 0 then
         local pct = it.present / it.possible
         local col = pct >= 0.8 and C.jade or (pct >= 0.5 and C.gold or C.red)
-        r.cells[6]:SetText(PGM.Hex(col) .. it.present .. "/" .. it.possible .. "|r")
+        r.cells.raids:SetText(PGM.Hex(col) .. it.present .. "/" .. it.possible .. "|r")
     else
-        r.cells[6]:SetText(PGM.Hex(C.text3) .. "-|r")
+        r.cells.raids:SetText(PGM.Hex(C.text3) .. "-|r")
     end
-    r.cells[7]:SetText(rec.note or "")
-    r.cells[7]:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
+    r.cells.note:SetText(rec.note or "")
+    r.cells.note:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
 end
 
 local function build(p)

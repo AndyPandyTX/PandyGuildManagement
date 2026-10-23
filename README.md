@@ -139,6 +139,18 @@ GRM**. It brings over, for this guild:
 Anything set by hand is kept, and running it again is safe. After that, GRM can
 be switched off.
 
+## WoW Forever
+
+The same addon runs on WoW Forever. Everything above works there, except:
+
+- The level cap is 60, so "max level" and the level bands follow that.
+- There's no Mythic+, so the M+ score, M+ column and M+ spread are hidden,
+  along with RaiderIO raid progress.
+- The raid-buff checklist on Raid Teams is hidden, since it lists Midnight's buffs.
+
+Guild data stays separate: a Forever guild and a retail guild never share teams,
+raid nights or alts.
+
 ## Where the data comes from
 
 - **Guild roster:** name, rank, level, class, zone, notes and last online.

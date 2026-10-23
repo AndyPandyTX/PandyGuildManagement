@@ -110,20 +110,25 @@ local function build()
     left:SetPoint("TOPLEFT", 0, -92)
     left:SetPoint("BOTTOMLEFT", 0, 40)
     left:SetWidth(370)
+    -- WoW Forever has no Mythic+ score or raid progress to show, so those two
+    -- rows go and everything below moves up to close the gap.
+    local lift = PGM.IS_FOREVER and 40 or 0
     p.status = field(left, "Status", 0)
     p.joined = field(left, "Joined", -20)
-    p.mplus = field(left, "Mythic+", -40)
-    p.raid = field(left, "Raid", -60)
-    p.profs = field(left, "Professions", -80)
-    p.teams = field(left, "Raid teams", -100)
-    p.note = field(left, "Guild note", -120)
-    p.onote = field(left, "Officer note", -140)
+    if not PGM.IS_FOREVER then
+        p.mplus = field(left, "Mythic+", -40)
+        p.raid = field(left, "Raid", -60)
+    end
+    p.profs = field(left, "Professions", -80 + lift)
+    p.teams = field(left, "Raid teams", -100 + lift)
+    p.note = field(left, "Guild note", -120 + lift)
+    p.onote = field(left, "Officer note", -140 + lift)
 
     local nl = W.FS(left, 11, C.text3)
-    nl:SetPoint("TOPLEFT", 0, -168)
+    nl:SetPoint("TOPLEFT", 0, -168 + lift)
     nl:SetText("Your private note (only you see this)")
     p.mine = W.EditBox(left, 370, 24, "Add a note...")
-    p.mine:SetPoint("TOPLEFT", 0, -184)
+    p.mine:SetPoint("TOPLEFT", 0, -184 + lift)
     p.mine:SetMaxLetters(240)
     p.mine.onCommit = function(s)
         local g = PGM.GuildDB(true)
@@ -133,13 +138,13 @@ local function build()
     end
 
     local al = W.FS(left, 13, C.accent)
-    al:SetPoint("TOPLEFT", 0, -220)
+    al:SetPoint("TOPLEFT", 0, -220 + lift)
     al:SetText("Characters")
     p.altLines = {}
     for i = 1, 6 do
         local fs = W.FS(left, 12, C.text)
-        fs:SetPoint("TOPLEFT", 0, -240 - (i - 1) * 18)
-        fs:SetPoint("TOPRIGHT", 0, -240 - (i - 1) * 18)
+        fs:SetPoint("TOPLEFT", 0, -240 + lift - (i - 1) * 18)
+        fs:SetPoint("TOPRIGHT", 0, -240 + lift - (i - 1) * 18)
         p.altLines[i] = fs
     end
 
@@ -267,7 +272,9 @@ function UI:RefreshProfile()
         local former = g and g.former[p.guid]
         p.name:SetText(former and PGM.ColorName(former) or "?")
         p.sub:SetText(PGM.Hex(C.text3) .. "No longer in the guild|r")
-        for _, fs in ipairs({ p.status, p.joined, p.mplus, p.raid, p.profs, p.teams, p.note, p.onote, p.attText, p.played }) do fs:SetText("") end
+        for _, key in ipairs({ "status", "joined", "mplus", "raid", "profs", "teams", "note", "onote", "attText", "played" }) do
+            if p[key] then p[key]:SetText("") end
+        end
         for _, fs in ipairs(p.altLines) do fs:SetText("") end
         for _, line in ipairs(p.history) do line.date:SetText("") line.text:SetText("") end
         for _, t in ipairs(p.strip) do t:SetColorTexture(C.line[1], C.line[2], C.line[3], 0.35) end
@@ -294,11 +301,13 @@ function UI:RefreshProfile()
     else
         p.joined:SetText(PGM.Hex(C.text3) .. "Before tracking began " .. PGM.Date(g.seeded) .. "|r")
     end
-    local score = PGM:MPlusScore(rec)
-    p.mplus:SetText(score and (PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r")
-        or PGM.Hex(C.text3) .. "No score this season" .. "|r")
-    local prog = PGM:RaidProgress(rec)
-    p.raid:SetText(prog and prog.text or (PGM.Hex(C.text3) .. "-|r"))
+    if p.mplus then
+        local score = PGM:MPlusScore(rec)
+        p.mplus:SetText(score and (PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r")
+            or PGM.Hex(C.text3) .. "No score this season" .. "|r")
+        local prog = PGM:RaidProgress(rec)
+        p.raid:SetText(prog and prog.text or (PGM.Hex(C.text3) .. "-|r"))
+    end
     p.profs:SetText(PGM.ProfText(rec, true) or (PGM.Hex(C.text3) .. "None known|r"))
     local teamParts = {}
     for _, it in ipairs(PGM:TeamsOf(p.guid)) do

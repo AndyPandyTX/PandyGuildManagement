@@ -15,6 +15,17 @@ PandyGuildManagement = PGM
 PGM.NAME = "Pandy Guild Management"
 PGM.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 
+-- WoW Forever (game version 1.60, "Camelot" in the game's own constants) runs
+-- the same engine and API as Midnight with Classic content: level cap 60, no
+-- Mythic+, and Classic raids. The project constant is the proper way to ask;
+-- the interface number (16001 against 120105) covers a build without it.
+do
+    local camelot = WOW_PROJECT_CAMELOT
+    local interface = GetBuildInfo and select(4, GetBuildInfo()) or 0
+    PGM.IS_FOREVER = (camelot ~= nil and WOW_PROJECT_ID == camelot)
+        or (type(interface) == "number" and interface > 0 and interface < 100000)
+end
+
 -- Clean and dark: neutral near-black panels, crisp one-pixel frames, bright
 -- text, and a single accent colour for headings and whatever's selected.
 -- The status colours (jade for "good", red, amber...) mean the same thing on
@@ -154,11 +165,17 @@ function PGM.setOpt(key, value)
 end
 
 function PGM.MaxLevel()
-    -- The game's cap, not this account's: an account without Midnight would
-    -- otherwise call everyone at 90 "above max".
-    local ok, cap = pcall(GetMaxLevelForLatestExpansion or GetMaxLevelForPlayerExpansion)
+    -- Retail: the game's cap, not this account's, or an account without
+    -- Midnight would call everyone at 90 "above max". Forever: the latest
+    -- expansion is the engine's, so ask for the player's cap there instead.
+    local fn
+    if PGM.IS_FOREVER then fn = GetMaxLevelForPlayerExpansion
+    else fn = GetMaxLevelForLatestExpansion or GetMaxLevelForPlayerExpansion end
+    local ok, cap = false, nil
+    if fn then ok, cap = pcall(fn) end
     cap = ok and PGM.Plain(cap) or nil
-    return (type(cap) == "number" and cap > 1) and cap or 90
+    if type(cap) == "number" and cap > 1 then return cap end
+    return PGM.IS_FOREVER and 60 or 90
 end
 
 function PGM.ClassColor(classFile)

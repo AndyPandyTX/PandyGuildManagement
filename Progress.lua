@@ -4,6 +4,8 @@
 -- since that's live. When it doesn't, and RaiderIO is installed, its bundled
 -- database fills in, along with raid progress, which Blizzard doesn't share
 -- for other players at all. Without RaiderIO those parts simply stay empty.
+-- WoW Forever has neither Mythic+ nor RaiderIO data, so both answer nil
+-- there, and the pages hide their M+ and raid-progress spots.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -39,6 +41,7 @@ end
 
 -- This season's Mythic+ score as a whole number, or nil.
 function PGM:MPlusScore(rec)
+    if PGM.IS_FOREVER then return nil end
     if rec and (rec.score or 0) > 0 then return math.floor(rec.score + 0.5) end
     local p = profileOf(rec)
     local score = p and p.mythicKeystoneProfile and tonumber(p.mythicKeystoneProfile.currentScore)
@@ -61,6 +64,7 @@ local LETTER = { [1] = "N", [2] = "H", [3] = "M" }
 -- { text, value } where value sorts Mythic above Heroic above Normal. Entries
 -- for last tier, or borrowed from the character's main, don't count.
 function PGM:RaidProgress(rec)
+    if PGM.IS_FOREVER then return nil end
     local p = profileOf(rec)
     local raid = p and p.raidProfile
     local entries = raid and (raid.sortedProgress or raid.progress)

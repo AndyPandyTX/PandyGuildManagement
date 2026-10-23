@@ -134,7 +134,8 @@ local function memberUpdate(r, it)
         r.att:SetText(PGM.Hex(C.text3) .. "-|r")
     end
     local score = PGM:MPlusScore(rec)
-    r.mplus:SetText(score and (PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r") or (PGM.Hex(C.text3) .. "-|r"))
+    if PGM.IS_FOREVER then r.mplus:SetText("")
+    else r.mplus:SetText(score and (PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r") or (PGM.Hex(C.text3) .. "-|r")) end
 end
 
 local ROLE_ORDER = { TANK = 1, HEALER = 2, DPS = 3 }
@@ -253,7 +254,7 @@ local function build(p)
     hover:EnableMouse(true)
     hover:SetScript("OnEnter", function(s)
         local comp = p.compData
-        if not comp or comp.total == 0 then return end
+        if PGM.IS_FOREVER or not comp or comp.total == 0 then return end
         GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
         GameTooltip:SetText("Raid buffs and debuffs (Midnight)")
         for _, b in ipairs(PGM.RAID_BUFFS) do
@@ -378,7 +379,7 @@ local function build(p)
     rfs:SetText("Raids")
     local mfs = W.FS(header, 11, C.text2, "RIGHT")
     mfs:SetPoint("RIGHT", -14, 0)
-    mfs:SetText("M+")
+    mfs:SetText(PGM.IS_FOREVER and "" or "M+")
 
     p.members = W.List(d, 22, memberRow, memberUpdate)
     p.members:SetPoint("TOPLEFT", 0, -180)
@@ -427,7 +428,10 @@ local function refresh(p)
         PGM.Hex(C.blue), comp.TANK, PGM.Hex(C.jade), comp.HEALER, PGM.Hex(C.red), comp.DPS,
         PGM.Hex(C.text2), comp.total, comp.bench > 0 and (", " .. comp.bench .. " bench") or ""))
     p.compData = comp
-    if comp.total == 0 then
+    if PGM.IS_FOREVER then
+        -- The buff list is Midnight's; Forever's raids are a different game.
+        p.buffs:SetText("")
+    elseif comp.total == 0 then
         p.buffs:SetText("Add members to see which raid buffs the team brings.")
     else
         local parts = {}

@@ -1,9 +1,10 @@
 -- Stats.lua: the numbers behind the Overview page, and CSV exports.
 --
 -- Class mix, race overview, level spread, activity and a vitality score.
--- Level bands sit under Midnight's cap, the class list has all thirteen, and
--- the max-level crowd gets a Mythic+ spread, since on retail that's the level
--- spread that matters. Race, score and professions come from Club.lua.
+-- Level bands sit under the game's cap (90, or 60 on WoW Forever), only classes
+-- the guild has are listed, and on retail the max-level crowd gets a Mythic+
+-- spread, since that's the level spread that matters there. Race, score and
+-- professions come from Club.lua.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -20,13 +21,16 @@ PGM.ACTIVITY = {
 
 local MPLUS_BANDS = { 3000, 2500, 2000, 1500, 1 }
 
+-- Three ten-level bands under the cap, a wider one, then the rest: 90 gives
+-- 50-69 and 10-49, Forever's 60 gives 20-39 and 10-19.
 local function levelBands(max)
+    local wide = math.max(11, max - 40)
     return {
         { label = tostring(max) .. " (max)", lo = max, hi = 999 },
         { label = (max - 10) .. "-" .. (max - 1), lo = max - 10, hi = max - 1 },
         { label = (max - 20) .. "-" .. (max - 11), lo = max - 20, hi = max - 11 },
-        { label = "50-" .. (max - 21), lo = 50, hi = max - 21 },
-        { label = "10-49", lo = 10, hi = 49 },
+        { label = wide .. "-" .. (max - 21), lo = wide, hi = max - 21 },
+        { label = "10-" .. (wide - 1), lo = 10, hi = wide - 1 },
         { label = "1-9", lo = 1, hi = 9 },
     }
 end

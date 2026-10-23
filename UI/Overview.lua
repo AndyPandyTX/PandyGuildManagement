@@ -240,7 +240,7 @@ local function refresh(p)
 
     -- Levels.
     p.levels.sub:SetText(o.atMax == o.total and o.total > 0 and "Everyone here is at max level."
-        or ("Midnight's cap is %d."):format(max))
+        or ("The level cap is %d."):format(max))
     peak = 1
     for _, l in ipairs(o.levels) do peak = math.max(peak, l.count) end
     items = {}
