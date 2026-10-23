@@ -40,3 +40,4 @@ UI\Raids.lua
 UI\Bulk.lua
 UI\Settings.lua
 UI\Export.lua
+UI\GuildFrame.lua
