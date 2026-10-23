@@ -384,6 +384,7 @@ local function replaceSecure()
     if InCombatLockdown() then return end
     UI:HideSecure()
     if UI.profile and UI.profile:IsVisible() and UI.RefreshProfile then UI:RefreshProfile() end
+    UI:Fire("MOVED")   -- anything else placed by position goes back too
 end
 PGM:RegisterEvent("UI_SCALE_CHANGED", replaceSecure)
 PGM:RegisterEvent("DISPLAY_SIZE_CHANGED", replaceSecure)

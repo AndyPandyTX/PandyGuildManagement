@@ -243,6 +243,11 @@ end
 
 function UI:OpenProfile(guid)
     if not self.profile then build() end
+    -- Commit a half-typed private note to whoever it was for, and put away
+    -- any secure button from the page underneath (an armed Bulk run among
+    -- them) before this page covers it.
+    self.profile.mine:ClearFocus()
+    self:HideSecure()
     self.profile.guid = guid
     self.profile.mine:SetText("")
     local g = PGM.GuildDB()
