@@ -33,7 +33,7 @@
 --                                learns who runs the addon and which version)
 --   O target newest              I can catch target up
 --   R target since               target: send me everything newer than since
---   E target count               end of that catch-up
+--   E target count newest        end of that catch-up; target is now this current
 --   T id u name schedule tags auto                  team details
 --   K id u                                          team deleted
 --   M team guid u state role status                 one team spot (i = on, x = removed)
@@ -501,7 +501,7 @@ local function dump(target, since)
         if u > since and g.claims[guid] then claims[#claims + 1] = { guid, u, g.claims[guid] } n = n + 1 end
     end
     sendPacked("1B", claims, true)
-    send("1E", target, n)   -- bulk too, so it arrives after what it follows
+    send("1E", target, n, s.newest)   -- bulk too, so it arrives after what it follows
     bulkMode = false
 end
 
@@ -795,12 +795,14 @@ function handlers.H(f, sender, rec)
     local _, s = store()
     noteUser(rec, f[3])
     answerVersion()
-    -- I'm behind them: say hello myself, so an officer catches me up.
-    if theirs > s.newest + 30 and GetTime() - Sync.helloAt > HELLO_GAP then
+    -- I'm behind them: say hello myself, so an officer catches me up. Any
+    -- gap counts: the same data means the same newest, and a catch-up ends
+    -- by bringing the two level (see E), so this can't repeat forever.
+    if theirs > s.newest and GetTime() - Sync.helloAt > HELLO_GAP then
         C_Timer.After(2 + math.random() * 4, sendHello)
     end
     -- I'm an officer and ahead of them: offer, unless someone beats me to it.
-    if PGM:CanEdit() and s.newest > theirs + 30 then
+    if PGM:CanEdit() and s.newest > theirs then
         if offerTimer then offerTimer:Cancel() end
         Sync.offerFor, Sync.offerNewest = sender, s.newest
         offerTimer = C_Timer.NewTimer(1 + math.random() * 4, function()
@@ -840,8 +842,12 @@ function handlers.R(f, sender)
     end
 end
 
-function handlers.E(f, sender)
+function handlers.E(f, sender, rec)
     if norm(f[2]) == norm(myFullName()) then
+        -- I now hold everything that officer had (a record I couldn't use,
+        -- like a spot for someone not in my roster, included), so I'm as
+        -- current as they are. Otherwise we'd keep catching up forever.
+        if PGM:IsOfficerRec(rec) then bump(clampU(f[4])) end
         Sync.lastCatchUp = PGM.Now()
         Sync.lastFrom = sender
         changed("SYNC")
@@ -899,10 +905,60 @@ PGM:On("ROSTER", function()
     C_Timer.After(8, sendHello)
     C_Timer.NewTicker(HELLO_EVERY, sendHello)
     C_Timer.After(15, function() PGM:SyncMyMain() end)
+    -- Before 0.7.1 a team's rename, schedule, tags and "Keep in sync" stayed
+    -- on the officer's own copy, and didn't change the team's stamp. So once,
+    -- the copy that created each team (only it has `created`) re-shares it
+    -- one tick newer than that stamp: enough to beat everyone's placeholder,
+    -- which has the same stamp, never enough to beat a real edit since.
+    C_Timer.After(25, function()
+        local _, s = store()
+        if not s or s.resent071 or not PGM:CanEdit() then return end
+        s.resent071 = true
+        for _, t in ipairs(g.teams or {}) do
+            if t.created then
+                t.u = (t.u or 0) + 1
+                bump(t.u)
+                sendTeam(t)
+            end
+        end
+    end)
     -- Re-announce the officer cut-off so newcomers get it.
     C_Timer.After(12, function()
         local _, s = store()
         if PGM:IsGuildMaster() and s and s.cfgU then send("1C", s.cfgU, s.officerRank or "") end
+    end)
+end)
+
+-- Records still waiting to go out when the game closes or reloads (a big
+-- import takes a minute or more to send) are kept and sent next session.
+-- Only data records: hellos and catch-up chatter would be stale by then.
+-- Seeing a record twice changes nothing, so resending is always safe.
+local KEEP = { T = true, K = true, M = true, A = true, S = true, P = true, D = true, J = true, C = true, B = true }
+local MAX_PENDING = 300
+local logout = CreateFrame("Frame")
+logout:RegisterEvent("PLAYER_LOGOUT")
+logout:SetScript("OnEvent", function()
+    local g = PGM.GuildDB()
+    if not (g and g.sync) then return end
+    local keep = {}
+    for _, q in ipairs({ Sync.queue, Sync.bulk }) do
+        for _, msg in ipairs(q) do
+            if #keep < MAX_PENDING and KEEP[msg:sub(2, 2)] then keep[#keep + 1] = msg end
+        end
+    end
+    g.sync.pending = #keep > 0 and keep or nil
+end)
+
+PGM:On("ROSTER", function()
+    local g = PGM.GuildDB()
+    if Sync.resumed or not (g and g.seeded) then return end
+    Sync.resumed = true
+    C_Timer.After(20, function()
+        local _, s = store()
+        local pending = s and s.pending
+        if not pending then return end
+        s.pending = nil
+        for _, msg in ipairs(pending) do enqueue(msg, true) end
     end)
 end)
 

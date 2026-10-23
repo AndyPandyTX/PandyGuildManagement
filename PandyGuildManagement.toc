@@ -2,7 +2,7 @@
 ## Title: |cff55d194Pandy|r Guild Management
 ## Notes: Guild roster, overview, play-time activity, professions, raid teams, alts, history and attendance for Midnight and WoW Forever.
 ## Author: Pandy
-## Version: 0.7.0
+## Version: 0.7.1
 ## Category: Guild
 ## X-License: MIT
 ## X-Curse-Project-ID: 1761564

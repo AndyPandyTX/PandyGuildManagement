@@ -207,23 +207,17 @@ local function build(p)
     p.nameBox.onCommit = function(s)
         local t = PGM:TeamById(s.teamId)
         local name = strtrim(s:GetText() or "")
-        if t and name ~= "" and name ~= t.name then
-            t.name = name
-            PGM:Fire("TEAMS")
-        elseif t and name == "" then
+        if t and name == "" then
             s:SetText(t.name)   -- a team can't have no name; put it back
+        elseif t then
+            PGM:UpdateTeam(t.id, { name = name })
         end
     end
     p.schedBox = W.EditBox(d, 200, 24, "Schedule, e.g. Wed/Thu 8-11pm")
     p.schedBox:SetPoint("LEFT", p.nameBox, "RIGHT", 8, 0)
     p.schedBox:HookScript("OnEditFocusGained", remember)
     p.schedBox.onCommit = function(s)
-        local t = PGM:TeamById(s.teamId)
-        local text = strtrim(s:GetText() or "")
-        if t and text ~= (t.schedule or "") then
-            t.schedule = text
-            PGM:Fire("TEAMS")
-        end
+        if s.teamId then PGM:UpdateTeam(s.teamId, { schedule = s:GetText() or "" }) end
     end
     function UI:CommitTeamEdits()
         p.nameBox:ClearFocus()
@@ -279,12 +273,7 @@ local function build(p)
     p.tagsBox:SetPoint("TOPLEFT", 0, -92)
     p.tagsBox:HookScript("OnEditFocusGained", remember)
     p.tagsBox.onCommit = function(s)
-        local t = PGM:TeamById(s.teamId)
-        local text = strtrim(s:GetText() or "")
-        if t and text ~= (t.tags or "") then
-            t.tags = text
-            PGM:Fire("TEAMS")
-        end
+        if s.teamId then PGM:UpdateTeam(s.teamId, { tags = s:GetText() or "" }) end
     end
     p.import = W.Button(d, "Import from notes", 132, 24)
     p.import:SetPoint("LEFT", p.tagsBox, "RIGHT", 6, 0)
@@ -306,7 +295,7 @@ local function build(p)
     end, function(v)
         local t = selectedTeam()
         if t then
-            t.autoSync = v and true or nil
+            PGM:UpdateTeam(t.id, { autoSync = v })
             if v then PGM:ImportTeamFromNotes(t.id) end
         end
     end)

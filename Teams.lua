@@ -65,6 +65,35 @@ function PGM:TouchTeam(t)
     share("SyncTeam", t)
 end
 
+-- Change a team's details: any of name, schedule, tags, autoSync. Shared
+-- with the guild when anything actually changed. Returns true if it did.
+-- (Every edit box goes through here, so nothing is changed locally only.)
+function PGM:UpdateTeam(id, fields)
+    local t = PGM:TeamById(id)
+    if not t or not canEdit() then return false end
+    local changed = false
+    if fields.name then
+        local name = strtrim(fields.name)
+        if name ~= "" and name ~= t.name then t.name, changed = name, true end
+    end
+    for _, key in ipairs({ "schedule", "tags" }) do
+        local v = fields[key]
+        if v then
+            v = strtrim(v)
+            if v ~= (t[key] or "") then t[key], changed = v, true end
+        end
+    end
+    if fields.autoSync ~= nil then
+        local v = fields.autoSync and true or nil
+        if v ~= t.autoSync then t.autoSync, changed = v, true end
+    end
+    if changed then
+        PGM:TouchTeam(t)
+        PGM:Fire("TEAMS")
+    end
+    return changed
+end
+
 function PGM:Teams()
     return teams() or {}
 end
