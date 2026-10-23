@@ -47,6 +47,12 @@ Type **/pgm** to open it, or click it in the AddOns button on the minimap.
 - Last 10 raids, history, and a private note only you can see
 - Promote, demote and remove buttons, if your rank allows it
 
+**Bulk actions** (officers)
+- Kick, promote or demote by rules: time away, rank, level, time in the guild, note text
+- Review everyone it picks and untick anyone to spare
+- Then press one button or hotkey per batch, several people at a time
+- Leaves raid team members alone, and anyone whose alt or main was on recently, unless you say otherwise
+
 **History**
 - Every join, rejoin, leave, promotion, demotion, rename and max-level ding, with filters
 
