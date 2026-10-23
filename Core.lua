@@ -64,7 +64,7 @@ local DEFAULTS = {
     keysSort = "level",
     keysReverse = false,
     keysOnline = true,
-    keysMineFirst = true,
+    keysPinMine = false,    -- Mine first (was keysMineFirst, on by default)
     -- Tell the guild: {key} is the keystone link (or what the group is),
     -- {needs} the roles still open, {name} your character.
     announce = "{key} - needs {needs}. Whisper me to join!",
@@ -455,6 +455,7 @@ G:RegisterEvent("ADDON_LOADED", function(_, name)
     db.guilds = db.guilds or {}
     db.chars = db.chars or {}
     db.settings = db.settings or {}
+    db.settings.keysMineFirst = nil   -- replaced by keysPinMine, which starts off
     fillDefaults(db.settings, DEFAULTS)
     G:Fire("LOADED")
 end)

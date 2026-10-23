@@ -627,7 +627,10 @@ local function boardRow(list)
         local res = row.result
         if res and #res.classes > 0 then
             local parts = {}
-            for _, class in ipairs(res.classes) do parts[#parts + 1] = PGM.ClassHex(class) .. PGM.ClassName(class) .. "|r" end
+            for _, class in ipairs(res.classes) do
+                local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
+                parts[#parts + 1] = PGM.ClassHex(class) .. name .. "|r"
+            end
             GameTooltip:AddLine(table.concat(parts, ", "), 1, 1, 1, true)
         end
         if row.post and (row.post.start or 0) > 0 then

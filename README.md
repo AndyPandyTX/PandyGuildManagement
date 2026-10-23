@@ -88,8 +88,9 @@ without the module. Role, item level, M+ score, keystone and zone. Tick
 
 **Keystones.** Everyone's key this week. Click a column to sort by key
 level, dungeon, who, M+ score or when it was seen (click again to flip it).
-**Online only** is on to start with, and **Mine first** keeps your own
-characters' keys on top. On your own key:
+**Online only** is on to start with, and hides offline characters, yours
+included. **Mine first** (off to start with) pins your own characters' keys
+to the top, tinted so it's clear why they're out of order. On your own key:
 - **List** opens the Group Finder's Start a Group on that keystone. You
   click List Group there: the game doesn't let addons list a group.
 - **Post** fills in a guild post for it.

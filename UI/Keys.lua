@@ -20,13 +20,15 @@ local COLS = {
 local LESS = {
     level = function(a, b) return a.level > b.level end,
     map = function(a, b) return a.name < b.name end,
-    who = function(a, b) return PGM.SortKey(a.rec.short) < PGM.SortKey(b.rec.short) end,
+    who = function(a, b) return PGM.NameLess(a.rec.short, b.rec.short) end,
     score = function(a, b) return (a.score or 0) > (b.score or 0) end,
     seen = function(a, b) return (a.u or 0) > (b.u or 0) end,
 }
 
 local function buildRow(list)
     local r = W.Row(list)
+    r.wash = W.Solid(r, "BORDER", C.accent, 0.08)
+    r.wash:SetAllPoints()
     r.level = W.FS(r, 13, C.accent)
     r.level:SetPoint("LEFT", 6, 0)
     r.level:SetWidth(46)
@@ -75,6 +77,8 @@ end
 
 local function updateRow(r, it)
     r.it = it
+    -- Pinned to the top by Mine first: tinted, so the order makes sense.
+    r.wash:SetShown(it.pinned)
     r.level:SetText("+" .. it.level)
     r.key:SetText(it.name)
     r.who:SetText(G.WhoText(it.rec))
@@ -103,7 +107,7 @@ local function build(p)
     end)
     p.online:SetPoint("TOPLEFT", 0, -46)
     p.mineFirst = W.Chip(p, "Mine first", function()
-        G.setOpt("keysMineFirst", not G.opt("keysMineFirst"))
+        G.setOpt("keysPinMine", not G.opt("keysPinMine"))
         UI:Refresh()
     end)
     p.mineFirst:SetPoint("LEFT", p.online, "RIGHT", 4, 0)
@@ -132,15 +136,30 @@ local function refresh(p)
         return
     end
     G:RequestLibKeystone()   -- at most every two minutes
+    local list = G.UI.KeyRows()
+    local online, mineFirst = G.opt("keysOnline"), G.opt("keysPinMine")
+    p.title:SetText(("Keystones this week: %d%s"):format(#list, online and " online" or ""))
+    p.sub:SetText("From guildies running this module (with their alts' keys), or BigWigs, LittleWigs or EllesmereUI (LibKeystone). Click a column to sort.")
+    p.online:SetActive(online and true or false)
+    p.mineFirst:SetActive(mineFirst and true or false)
+    p.header:Update()
+    p.list:SetData(list, true)
+    p.empty:SetText(#list == 0 and (online and "No keys from anyone online yet. Turn off Online only to see everyone's."
+        or "No keys heard yet. They arrive as guildies log in, and from anyone running BigWigs or EllesmereUI.") or "")
+end
+
+-- The rows, filtered and sorted as the page's settings say.
+function G.UI.KeyRows()
     local me = PGM:MyGuid()
     local myMain = PGM:MainOf(me or "")
-    local online, mineFirst = G.opt("keysOnline"), G.opt("keysMineFirst")
+    local online, mineFirst = G.opt("keysOnline"), G.opt("keysPinMine")
     local list = {}
     for _, it in ipairs(G:KeyList()) do
         it.mine = PGM:MainOf(it.guid) == myMain
         it.current = it.guid == me
         it.score = PGM:MPlusScore(it.rec)
-        if not online or it.rec.online or it.mine then list[#list + 1] = it end
+        it.pinned = mineFirst and it.mine or false
+        if not online or it.rec.online then list[#list + 1] = it end
     end
     local key = LESS[G.opt("keysSort")] and G.opt("keysSort") or "level"
     local less, rev = LESS[key], G.opt("keysReverse")
@@ -153,14 +172,7 @@ local function refresh(p)
         if a.level ~= b.level then return a.level > b.level end
         return PGM.NameLess(a.rec.short, b.rec.short)
     end)
-    p.title:SetText(("Keystones this week: %d%s"):format(#list, online and " online" or ""))
-    p.sub:SetText("From guildies running this module (with their alts' keys), or BigWigs, LittleWigs or EllesmereUI (LibKeystone). Click a column to sort.")
-    p.online:SetActive(online and true or false)
-    p.mineFirst:SetActive(mineFirst and true or false)
-    p.header:Update()
-    p.list:SetData(list, true)
-    p.empty:SetText(#list == 0 and (online and "No keys from anyone online yet. Turn off Online only to see everyone's."
-        or "No keys heard yet. They arrive as guildies log in, and from anyone running BigWigs or EllesmereUI.") or "")
+    return list
 end
 
 UI:AddTab({ id = "keys", label = "Keystones", build = build, refresh = refresh, module = true,
