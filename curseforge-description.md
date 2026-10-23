@@ -1,6 +1,6 @@
 # Pandy Guild Management
 
-A guild manager for Midnight, built for big raiding guilds. See your whole guild at a glance, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
+A guild manager for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
 
 Type **/pgm** to open it, or click it in the AddOns button on the minimap.
 
@@ -61,6 +61,14 @@ Everyone running the addon shares one set of data, over hidden guild addon messa
 - **Light on traffic:** about one message a second, and nothing is sent inside instances
 
 Open **Addon Users** to see who's running it and who needs to update.
+
+## WoW Forever
+
+The same download runs on WoW Forever. Everything above works there too, with a few differences:
+
+- The level cap is 60, so "max level" and the level bands follow that
+- There's no Mythic+, so M+ scores and RaiderIO raid progress are hidden
+- The raid-buff checklist is hidden, since it lists Midnight's buffs
 
 ## Coming from Guild Roster Manager?
 
