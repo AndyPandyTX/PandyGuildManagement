@@ -5,6 +5,7 @@ package-as: PandyGuildManagement
 ignore:
   - preview
   - screenshots
+  - tools
   - curseforge-description.md
   - .github
   - .gitignore
