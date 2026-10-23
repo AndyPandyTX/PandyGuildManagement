@@ -36,7 +36,8 @@ local function buildList()
     for i = #g.log, 1, -1 do
         local e = g.log[i]
         if (not allowed or allowed[e.kind])
-            and (q == "" or (e.name and e.name:lower():find(q, 1, true))) then
+            and (q == "" or (e.name and e.name:lower():find(q, 1, true))
+                or (e.by and e.by:lower():find(q, 1, true))) then
             out[#out + 1] = e
         end
     end

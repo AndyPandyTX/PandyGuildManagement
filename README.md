@@ -100,6 +100,14 @@ they know and don't. Alts are marked with their main's name.
 
 **History.** Every join, rejoin, leave, promotion, demotion, rename and
 max-level ding, with filters.
+- **Who did it:** "Zobeast demoted by Nattypandy", "Valarr was removed from
+  the guild by Nattypandy", "Seefoo joined the guild (invited by Dazibanu)".
+  It comes from the game's own messages while you're online, and from the
+  guild event log for anything that happened while you were away.
+- **Who they left behind:** when someone leaves or is removed, their
+  characters still in the guild are listed ("Still here: Bobalt, Bobbank"),
+  in History and in the chat announcement.
+- Search finds a name whether they made the change or it happened to them.
 
 ![History](screenshots/08-history.png)
 

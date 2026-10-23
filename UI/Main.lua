@@ -318,6 +318,7 @@ PGM:On("RAIDS", queueRefresh)
 PGM:On("TEAMS", queueRefresh)
 PGM:On("SYNC", queueRefresh)
 PGM:On("ACTIVITY", queueRefresh)
+PGM:On("LOG", queueRefresh)
 
 -- UI-only messages (window moved, and so on).
 local uiListeners = {}

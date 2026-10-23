@@ -100,6 +100,7 @@ function PGM:AddLog(g, kind, rec, extra)
     e.guid = rec.guid
     e.name = rec.short or rec.name
     e.class = rec.class
+    if PGM.CreditLog then PGM:CreditLog(e) end
     g.log[#g.log + 1] = e
 
     local cap = PGM.opt("logCap") or 3000
@@ -112,15 +113,29 @@ function PGM:AddLog(g, kind, rec, extra)
     return e
 end
 
+-- " Still here: A, B, C +2" for someone who left characters behind.
+local function stillHere(e)
+    local alts = e.alts
+    if type(alts) ~= "table" or #alts == 0 then return "" end
+    local shown = {}
+    for i = 1, math.min(3, #alts) do shown[i] = alts[i] end
+    local more = #alts > 3 and (" +" .. (#alts - 3)) or ""
+    return ". Still here: " .. table.concat(shown, ", ") .. more
+end
+
 -- One line of plain English for a log entry, shared by the Log page and chat.
+-- `e.by` is whoever made the change, when the game said (GuildEvents.lua).
 function PGM.LogText(e)
     local who = PGM.ClassHex(e.class) .. (e.name or "?") .. "|r"
+    local by = e.by and (" by " .. e.by) or ""
     local k = e.kind
-    if k == "join" then return who .. " joined the guild"
-    elseif k == "rejoin" then return who .. " rejoined the guild"
-    elseif k == "leave" then return who .. (e.removed and " was removed from the guild" or " left the guild")
-    elseif k == "promote" then return ("%s promoted: %s > %s"):format(who, e.from or "?", e.to or "?")
-    elseif k == "demote" then return ("%s demoted: %s > %s"):format(who, e.from or "?", e.to or "?")
+    if k == "join" or k == "rejoin" then
+        return who .. (k == "join" and " joined the guild" or " rejoined the guild")
+            .. (e.by and (" (invited by " .. e.by .. ")") or "")
+    elseif k == "leave" then
+        return who .. (e.removed and (" was removed from the guild" .. by) or " left the guild") .. stillHere(e)
+    elseif k == "promote" then return ("%s promoted%s: %s > %s"):format(who, by, e.from or "?", e.to or "?")
+    elseif k == "demote" then return ("%s demoted%s: %s > %s"):format(who, by, e.from or "?", e.to or "?")
     elseif k == "rename" then return ("%s renamed from %s"):format(who, e.from or "?")
     elseif k == "maxlevel" then return ("%s reached level %d"):format(who, e.level or PGM.MaxLevel())
     elseif k == "seeded" then return ("Started tracking %d members"):format(e.n or 0)
@@ -236,13 +251,28 @@ function PGM:ApplyRoster(snap, complete)
         if #gone > 10 and #gone > members / 3 then
             PGM.Debug("ignoring", #gone, "departures from a suspicious read")
         else
+            local leaving = {}
+            for _, guid in ipairs(gone) do leaving[guid] = true end
+            local me = g.members[PGM.MyGuid and PGM:MyGuid() or ""]
             for _, guid in ipairs(gone) do
                 local old = g.members[guid]
+                -- Their characters still here: the rest of their group, as
+                -- it was before this read (not anyone leaving with them).
+                local still = {}
+                for _, other in ipairs(PGM.GroupOf and PGM:GroupOf(guid) or {}) do
+                    local orec = other ~= guid and not leaving[other] and g.members[other]
+                    if orec and orec.short then still[#still + 1] = orec.short end
+                end
+                table.sort(still, PGM.NameLess)
                 old.left = now
                 g.former[guid] = old
                 g.members[guid] = nil
-                local removed = PGM.BulkKicked and PGM:BulkKicked(guid)
-                fresh[#fresh + 1] = PGM:AddLog(g, "leave", old, removed and { removed = true } or nil)
+                local extra = { alts = #still > 0 and still or nil }
+                -- Our own Bulk Actions kick, in case no message credits it.
+                if PGM.BulkKicked and PGM:BulkKicked(guid) then
+                    extra.removed, extra.by = true, me and me.short
+                end
+                fresh[#fresh + 1] = PGM:AddLog(g, "leave", old, extra)
             end
         end
         g.lastComplete = now

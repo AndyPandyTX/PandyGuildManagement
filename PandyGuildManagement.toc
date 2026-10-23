@@ -16,6 +16,7 @@
 Core.lua
 Club.lua
 Roster.lua
+GuildEvents.lua
 Alts.lua
 Attendance.lua
 Teams.lua

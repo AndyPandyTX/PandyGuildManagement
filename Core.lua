@@ -235,7 +235,7 @@ end
 
 function PGM.ClassHex(classFile)
     local r, g, b = PGM.ClassColor(classFile)
-    return ("|cff%02x%02x%02x"):format(r * 255, g * 255, b * 255)
+    return ("|cff%02x%02x%02x"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
 end
 
 function PGM.ClassName(classFile)
@@ -252,7 +252,8 @@ function PGM.ColorName(rec)
 end
 
 function PGM.Hex(col)
-    return ("|cff%02x%02x%02x"):format(col[1] * 255, col[2] * 255, col[3] * 255)
+    return ("|cff%02x%02x%02x"):format(math.floor(col[1] * 255 + 0.5), math.floor(col[2] * 255 + 0.5),
+        math.floor(col[3] * 255 + 0.5))
 end
 
 -- How long ago, compactly: "now", "5h", "3d", "2mo", "1y".
