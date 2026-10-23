@@ -1,0 +1,78 @@
+# Pandy Guild Management
+
+A guild manager for Midnight, built for big raiding guilds. See your whole guild at a glance, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
+
+Type **/pgm** to open it, or click it in the AddOns button on the minimap.
+
+## Features
+
+**Guild overview**
+- Members, active this week, at max level, and a vitality score out of 100
+- Class mix, race overview, level spread, activity, ranks, professions and Mythic+ spread
+- Joins and leaves per week, where online members are, and CSV export
+
+**Roster**
+- Search by name, rank, zone, notes, class, race or profession
+- Sortable columns, plus filters for online, max level, mains only, away 30d+ and "has the addon"
+- Right-click anyone to whisper or invite, or click to open their profile
+
+**Raid teams**
+- As many teams as you like, each with a schedule, roles and Core / Trial / Bench status
+- Built from the tags in your guild notes, and can be kept in sync with them. Members you remove by hand stay removed.
+- Shows which Midnight raid buffs and utility each team is missing
+- Attendance per team, counted only at that team's raids
+
+**Raid attendance**
+- Recorded automatically when you're in a raid with enough guildies. Nothing to set up.
+- Each night is tagged to the team that showed up
+- Alts count for their main
+
+**Play-time activity**
+- Average and peak online, and the guild's busiest hour of the week
+- Average online by hour of day, and a weekday × hour heat map
+- For each member: hours played, usual play time and most active day
+- Every copy of the addon fills in the hours the others missed
+
+**Alts**
+- Found from alt ranks, common guild-note formats ("alt of Natty", "VA/Alt/.../Natty") and your own account
+- Link, unlink or pick a main by hand. Your choice always wins.
+
+**Professions**
+- Pick a profession and see everyone who has it, with online crafters first
+- Click a name to open the game's recipe view for that person
+
+**Member profiles**
+- Join date, M+ score, raid progress, professions, teams, notes and their characters
+- Last 10 raids, history, and a private note only you can see
+- Promote, demote and remove buttons, if your rank allows it
+
+**History**
+- Every join, rejoin, leave, promotion, demotion, rename and max-level ding, with filters
+
+## Guild sync
+
+Everyone running the addon shares one set of data, over hidden guild addon messages:
+
+- **Shared:** raid teams, raid nights, alt links, join dates and play-time activity
+- **Never shared:** private notes and your settings
+- **Only officers can edit.** By default that's the Guild Master and any rank named Officer or Leader, including officer alts and Raid Leadership. The Guild Master can choose a different cut-off rank instead.
+- **Checked by every copy:** each copy checks the sender's guild rank before accepting a change, so an edited copy can't push changes.
+- **Catches up:** anyone who logs in late gets caught up by an officer who's online
+- **Light on traffic:** about one message a second, and nothing is sent inside instances
+
+Open **Addon Users** to see who's running it and who needs to update.
+
+## Coming from Guild Roster Manager?
+
+With GRM still enabled, click **Import from GRM** in Settings. It brings over alt groups, join dates, rank history and custom notes. Anything you set by hand is kept, and running it again is safe.
+
+## Midnight notes
+
+- Midnight has no combat log for addons, so raid attendance checks the raid group once a minute and at every boss kill.
+- Promote, demote and remove use Blizzard's own commands through buttons you click.
+- When the game hides roster data (in some instanced content), the addon skips that read rather than guessing.
+- Addons can't write guild notes or the MOTD, which is why there's a private note.
+
+## Feedback
+
+Bug reports and ideas are welcome on [GitHub](https://github.com/AndyPandyTX/PandyGuildManagement/issues).
