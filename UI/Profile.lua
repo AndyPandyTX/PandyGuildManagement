@@ -42,9 +42,32 @@ function UI:DisarmRemove()
     r:SetLabel("Remove")
 end
 
+local function rankName(i)
+    local n = GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(i + 1))
+    return (n and n ~= "") and n or ("Rank " .. (i + 1))
+end
+
+-- The commands that move someone from one rank to another: /gpromote or
+-- /gdemote once per rank, as many as fit in one macro (any left over go
+-- with the next click). Rank 0 is the guild master, so a lower index is a
+-- higher rank.
+local MACRO_MAX = 255
+local function rankMacro(name, from, to)
+    if not (name and from and to) or from == to then return nil end
+    local line = (to < from and "/gpromote " or "/gdemote ") .. name
+    local lines, size = {}, 0
+    for _ = 1, math.abs(from - to) do
+        local extra = #line + (size > 0 and 1 or 0)
+        if size + extra > MACRO_MAX then break end
+        lines[#lines + 1] = line
+        size = size + extra
+    end
+    return table.concat(lines, "\n")
+end
+
 local function buildSecure()
     local h = UI:SecureHolder()
-    if h.promote then return h end
+    if h.setRank then return h end
     local function btn(label, col, prev)
         local b = W.Button(h, label, 96, 24, col, "SecureActionButtonTemplate")
         -- Both edges: since 10.0 a secure button acts on the edge the
@@ -55,9 +78,15 @@ local function buildSecure()
         if prev then b:SetPoint("LEFT", prev, "RIGHT", 8, 0) else b:SetPoint("LEFT") end
         return b
     end
-    h.promote = btn("Promote", C.jade)
-    h.demote = btn("Demote", C.amber, h.promote)
-    h.remove = btn("Remove", C.red, h.demote)
+    h.setRank = btn("Set rank", C.jade)
+    h.setRank:SetWidth(110)
+    h.setRank.tip = "Moves them to the rank picked on the left, as many ranks as it takes, in one click."
+    -- Ask for the roster straight away, so the new rank shows quickly.
+    h.setRank:HookScript("PostClick", function(_, _, down)
+        if (down and true or false) ~= GetCVarBool("ActionButtonUseKeyDown") then return end
+        C_Timer.After(1, function() PGM:RequestRoster(true) end)
+    end)
+    h.remove = btn("Remove", C.red, h.setRank)
     h.remove.tip = "Removes them from the guild. Click once to arm, again to confirm."
     -- Removal can't be undone, so it arms first: an unarmed button has no
     -- macrotext, so the first click does nothing but arm it. PostClick, not
@@ -231,8 +260,27 @@ local function build()
         W.Menu(s, p.rec and p.rec.short or "Raid teams", entries)
     end)
     p.secureSpot = CreateFrame("Frame", nil, p)
-    p.secureSpot:SetSize(330, 24)
+    p.secureSpot:SetSize(238, 24)
     p.secureSpot:SetPoint("BOTTOMRIGHT")
+    -- The rank to move them to. A plain button: picking a rank only changes
+    -- what the secure Set rank button next to it will do.
+    p.rankPick = W.Button(p, "", 150, 24, C.text2)
+    p.rankPick:SetPoint("RIGHT", p.secureSpot, "LEFT", -8, 0)
+    p.rankPick:Hide()
+    p.rankPick:SetScript("OnClick", function(s)
+        local rec = p.rec
+        local my = PGM.MyRankIndex and PGM:MyRankIndex()
+        if not (rec and my) or InCombatLockdown() then return end
+        local num = GuildControlGetNumRanks and PGM.Plain(GuildControlGetNumRanks()) or 0
+        local can = perms()
+        local entries = {}
+        for i = my + 1, (num or 0) - 1 do
+            local allowed = (i < rec.rankIndex and can.promote) or (i > rec.rankIndex and can.demote) or i == rec.rankIndex
+            entries[#entries + 1] = { rankName(i) .. (i == rec.rankIndex and " (now)" or ""),
+                function() p.targetRank = i UI:RefreshProfile() end, disabled = not allowed }
+        end
+        W.Menu(s, "Move " .. (rec.short or "them") .. " to", entries)
+    end)
     p.combatNote = W.FS(p, 11, C.text3, "RIGHT")
     p.combatNote:SetPoint("BOTTOMRIGHT", 0, 6)
 
@@ -248,6 +296,7 @@ function UI:OpenProfile(guid)
     -- them) before this page covers it.
     self.profile.mine:ClearFocus()
     self:HideSecure()
+    if self.profile.guid ~= guid then self.profile.targetRank = nil end
     self.profile.guid = guid
     self.profile.mine:SetText("")
     local g = PGM.GuildDB()
@@ -393,12 +442,14 @@ function UI:RefreshProfile()
     -- Secure rank buttons.
     if InCombatLockdown() then
         p.combatNote:SetText("Rank actions return after combat.")
+        p.rankPick:Hide()
         return
     end
     p.combatNote:SetText("")
     local can = perms()
     if not (can.promote or can.demote or can.remove) or p.guid == PGM:MyGuid() then
         UI:HideSecure()
+        p.rankPick:Hide()
         return
     end
     local h = buildSecure()
@@ -406,11 +457,29 @@ function UI:RefreshProfile()
     -- Remove, or "Confirm remove" could reset under your cursor.
     if h.target ~= rec.name then UI:DisarmRemove() end
     h.target = rec.name
-    h.promote:SetAttribute("macrotext", "/gpromote " .. rec.name)
-    h.demote:SetAttribute("macrotext", "/gdemote " .. rec.name)
-    -- Nobody outranks the guild master.
-    h.promote:SetShown(can.promote and (rec.rankIndex or 0) > 0)
-    h.demote:SetShown(can.demote)
+    -- Only someone below your own rank can be moved, and only to a rank
+    -- below yours (the game refuses anything else).
+    local my = PGM.MyRankIndex and PGM:MyRankIndex()
+    local movable = my and rec.rankIndex and rec.rankIndex > my and (can.promote or can.demote)
+    local target = p.targetRank
+    if not movable or not target or target <= my then target = rec.rankIndex end
+    p.rankPick:SetShown(movable and true or false)
+    p.rankPick:SetLabel((target and rankName(target) or "?") .. "  v")
+    local text
+    if movable and target ~= rec.rankIndex then
+        local promoting = target < rec.rankIndex
+        if (promoting and can.promote) or (not promoting and can.demote) then
+            text = rankMacro(rec.name, rec.rankIndex, target)
+            h.setRank:SetLabel(promoting and "Promote" or "Demote")
+        else
+            h.setRank:SetLabel(promoting and "Can't promote" or "Can't demote")
+        end
+    else
+        h.setRank:SetLabel("Set rank")
+    end
+    h.setRank:SetAttribute("macrotext", text)
+    h.setRank:SetAlpha(text and 1 or 0.5)
+    h.setRank:SetShown(movable and true or false)
     h.remove:SetShown(can.remove)
     -- Right after the page first shows, its layout may not be resolved yet;
     -- try again on the next frame.
