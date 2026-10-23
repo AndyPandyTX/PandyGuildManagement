@@ -131,8 +131,22 @@ function PGM.SplitName(full)
 end
 
 -- Guild names are unique per realm, so name+realm files a guild across sessions.
+-- Asked thousands of times a refresh (every GuildDB call), so the answer is
+-- kept until the game says our guild changed, and at most 30 seconds.
+local keyCache, nameCache, keyAt
+function PGM.ForgetGuildKey()
+    keyCache, nameCache, keyAt = nil, nil, nil
+end
+
 function PGM.GuildKey()
     if not IsInGuild() then return nil end
+    if keyCache and GetTime() - keyAt < 30 then return keyCache, nameCache end
+    local key, name = PGM.ReadGuildKey()
+    if key then keyCache, nameCache, keyAt = key, name, GetTime() end
+    return key, name
+end
+
+function PGM.ReadGuildKey()
     local name, _, _, realm = GetGuildInfo("player")
     name, realm = PGM.Plain(name), PGM.Plain(realm)
     if not name or name == "" then return nil end
@@ -334,6 +348,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if not ok then geterrorhandler()(err) end
     end
 end)
+
+-- Joining, leaving or changing guilds (or logging in) means a new key.
+PGM:RegisterEvent("PLAYER_GUILD_UPDATE", function() PGM.ForgetGuildKey() end)
+PGM:RegisterEvent("PLAYER_ENTERING_WORLD", function() PGM.ForgetGuildKey() end)
 
 PGM:RegisterEvent("ADDON_LOADED", function(_, name)
     if name ~= ADDON then return end

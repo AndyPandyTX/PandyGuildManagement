@@ -169,9 +169,17 @@ end)
 UI:On("MOVED", function()
     if wantArmed and PGM:BulkRunning() and page and page:IsVisible() then UI:BulkArm(false) end
 end)
+-- The button gets its next batch at once; the page repaints at most every
+-- quarter second however many presses, confirmations and roster reads land.
+local repaintQueued = false
 PGM:On("BULK", function()
     if armed then UI:BulkLoad() end
-    UI:Refresh()
+    if repaintQueued then return end
+    repaintQueued = true
+    C_Timer.After(0.25, function()
+        repaintQueued = false
+        UI:Refresh()
+    end)
 end)
 
 -- ============================================================
@@ -360,7 +368,7 @@ local function ruleUpdate(r, rule)
     r.check:Sync()
     local sel = rule.id == state.rule
     r.name:SetText((sel and PGM.Hex(C.accent) or "") .. (rule.name or "Rule") .. (sel and "|r" or ""))
-    r.count:SetText(rule.on and tostring(PGM:BulkRuleCount(state.action, rule)) or "off")
+    r.count:SetText(rule.on and tostring(page and page.counts and page.counts[rule.id] or 0) or "off")
 end
 
 local STATE_TEXT = {
@@ -647,6 +655,10 @@ local function refresh(p)
     p.perms:SetText(#can > 0 and ("Your rank can " .. table.concat(can, ", ") .. ". Only ranks below yours are listed.")
         or "Your rank can't kick, promote or demote.")
 
+    -- One pass over the guild for both the list and each rule's count.
+    local matched, counts = PGM:BulkMatches(action)
+    p.counts = counts
+
     -- Rules.
     local rules = PGM:BulkRules(action)
     if not selectedRule() then state.rule = rules[1] and rules[1].id or nil end
@@ -679,7 +691,7 @@ local function refresh(p)
     end
 
     -- Queue: the run's own list while one is going, else a live preview.
-    local items = running == action and PGM.Bulk.queue or PGM:BulkMatches(action)
+    local items = running == action and PGM.Bulk.queue or matched
     local included = 0
     for _, it in ipairs(items) do if not it.ignored then included = included + 1 end end
     p.queue:SetData(items, true)

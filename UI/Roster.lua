@@ -97,8 +97,10 @@ local function buildList()
         end
     end
     local key, asc = state.sort, state.asc
+    -- Each row's value once, not twice per comparison (thousands of them).
+    for _, it in ipairs(out) do it.sortValue = sortValue(it, key) end
     table.sort(out, function(a, b)
-        local va, vb = sortValue(a, key), sortValue(b, key)
+        local va, vb = a.sortValue, b.sortValue
         if va == vb then return PGM.NameLess(a.rec.short, b.rec.short) end
         if asc then return va < vb end
         return va > vb

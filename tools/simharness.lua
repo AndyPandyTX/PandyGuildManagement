@@ -611,6 +611,13 @@ check(not e3.by and not e4.by, "(no messages for these)")
 A.fire("GUILD_EVENT_LOG_UPDATE")
 check(e3.by == "Dazibanu", "the event log credits the newest matching promotion")
 check(P.LogText(e4):find("(invited by Deathsquaad)", 1, true), "...and who invited a new member")
+-- A Guild Finder join has only a "join" event: settled, nobody credited.
+GUILD_EVENTS[#GUILD_EVENTS + 1] = { "join", "Finderjoin", nil, nil, 0, 0, 0, 0 }
+GUILD_EVENTS[#GUILD_EVENTS + 1] = { "join", "Freshface", nil, nil, 0, 0, 0, 0 }
+local e5 = P:AddLog(g, "join", { guid = gid(43), short = "Finderjoin", class = "MAGE" })
+A.fire("GUILD_EVENT_LOG_UPDATE")
+check(e5.credited and not e5.by, "a Guild Finder join is settled without an inviter")
+check(e4.by == "Deathsquaad", "...and an invited join keeps its inviter")
 
 print("-- leaving lists the characters still here")
 local snap = {}

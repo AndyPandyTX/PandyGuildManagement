@@ -106,14 +106,6 @@ end
 
 local CREDIT = { promote = true, demote = true, leave = true, join = true, rejoin = true }
 
--- What kind of event credits this kind of entry.
-local function wants(kind, typ)
-    if kind == "promote" or kind == "demote" then return typ == kind end
-    if kind == "leave" then return typ == "remove" or typ == "quit" end
-    if kind == "join" or kind == "rejoin" then return typ == "invite" end
-    return false
-end
-
 local function uncredited(g, now)
     for i = #g.log, 1, -1 do
         local e = g.log[i]
@@ -161,21 +153,34 @@ function PGM:CreditFromEventLog(events)
         if not e.t or now - e.t > LOOKBACK then break end
         if CREDIT[e.kind] and not e.credited then
             local who = e.name and e.name:lower()
-            for j, ev in ipairs(events) do
-                if not used[j] and ev.who == who and wants(e.kind, ev.typ)
-                    and ev.at <= e.t + 3600 and ev.at >= e.t - 7 * 86400 then
-                    used[j] = true
-                    if ev.typ == "remove" then
-                        e.removed, e.by = true, ev.by
-                    elseif ev.typ == "quit" then
-                        e.removed = nil
-                    else
-                        e.by = ev.by
-                    end
-                    e.credited = true
-                    n = n + 1
-                    break
+            local function fits(j, ev, typ)
+                return not used[j] and ev.who == who and ev.typ == typ
+                    and ev.at <= e.t + 3600 and ev.at >= e.t - 7 * 86400
+            end
+            -- The event types that explain this entry, in order of
+            -- preference: a join was an invite if there was one (it names
+            -- who invited), else a Guild Finder join with nobody to credit.
+            local order = (e.kind == "join" or e.kind == "rejoin") and { "invite", "join" }
+                or (e.kind == "leave" and { "remove", "quit" }) or { e.kind }
+            local found
+            for _, typ in ipairs(order) do
+                for j, ev in ipairs(events) do
+                    if fits(j, ev, typ) then found = j break end
                 end
+                if found then break end
+            end
+            if found then
+                local ev = events[found]
+                used[found] = true
+                if ev.typ == "remove" then
+                    e.removed, e.by = true, ev.by
+                elseif ev.typ == "quit" then
+                    e.removed = nil
+                elseif ev.typ ~= "join" then
+                    e.by = ev.by
+                end
+                e.credited = true
+                n = n + 1
             end
         end
     end

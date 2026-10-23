@@ -113,39 +113,54 @@ local function resolve(word, byName, self)
     if guid and guid ~= self then return guid end
 end
 
+-- The words in one note that could name a main, best first: what the
+-- patterns pick out, then (for a slash note that says "alt", or anyone on an
+-- alt rank) each part from the end, then (alt rank only) any word. Parsing
+-- is the slow part, and notes rarely change, so each note's list is kept;
+-- which word is a real member is decided fresh every time.
+local candidates = {}
+local candidateCount = 0
+local function noteWords(text, altRanked)
+    local key = (altRanked and "1" or "0") .. text
+    local list = candidates[key]
+    if list then return list end
+    list = {}
+    local lower = text:lower()
+    for _, pat in ipairs(PATTERNS) do
+        local word = lower:match(pat)
+        if word then list[#list + 1] = word end
+    end
+    -- The slash format: Team/Alt/ilvl/Role/Main. The main's name is usually
+    -- the last part, so look from the end.
+    if lower:find("/", 1, true) then
+        local segs, altNote = {}, false
+        for seg in lower:gmatch("[^/]+") do
+            seg = strtrim(seg)
+            segs[#segs + 1] = seg
+            if seg == "alt" then altNote = true end
+        end
+        if altNote or altRanked then
+            for i = #segs, 1, -1 do
+                for word in segs[i]:gmatch(W) do list[#list + 1] = word end
+            end
+        end
+    end
+    -- On an alt rank a bare name is the main: "NattyPandy", "Jobson".
+    if altRanked then
+        for word in lower:gmatch(W) do list[#list + 1] = word end
+    end
+    if candidateCount > 5000 then wipe(candidates) candidateCount = 0 end
+    candidates[key] = list
+    candidateCount = candidateCount + 1
+    return list
+end
+
 local function noteMain(rec, byName, altRanked)
     for _, text in ipairs({ rec.note, rec.onote }) do
         if text and text ~= "" then
-            local lower = text:lower()
-            for _, pat in ipairs(PATTERNS) do
-                local guid = resolve(lower:match(pat), byName, rec.guid)
+            for _, word in ipairs(noteWords(text, altRanked)) do
+                local guid = resolve(word, byName, rec.guid)
                 if guid then return guid end
-            end
-            -- The slash format: Team/Alt/ilvl/Role/Main. Only for a note
-            -- that says "alt" in it, or a character on an alt rank; the
-            -- main's name is usually the last part, so look from the end.
-            if lower:find("/", 1, true) then
-                local segs, altNote = {}, false
-                for seg in lower:gmatch("[^/]+") do
-                    seg = strtrim(seg)
-                    segs[#segs + 1] = seg
-                    if seg == "alt" then altNote = true end
-                end
-                if altNote or altRanked then
-                    for i = #segs, 1, -1 do
-                        for word in segs[i]:gmatch(W) do
-                            local guid = resolve(word, byName, rec.guid)
-                            if guid then return guid end
-                        end
-                    end
-                end
-            end
-            -- On an alt rank a bare name is the main: "NattyPandy", "Jobson".
-            if altRanked then
-                for word in lower:gmatch(W) do
-                    local guid = resolve(word, byName, rec.guid)
-                    if guid then return guid end
-                end
             end
         end
     end
@@ -156,6 +171,8 @@ end
 -- ============================================================
 
 function PGM:RebuildAlts()
+    local before = {}
+    for k, v in pairs(mainOf) do before[k] = v end
     wipe(mainOf); wipe(sourceOf); wipe(altsOf); wipe(rankAlt)
     local g = PGM.GuildDB()
     if not g then return end
@@ -232,6 +249,15 @@ function PGM:RebuildAlts()
             rankAlt[guid] = true
         end
     end
+
+    -- Bumped only when someone's main changed, so caches built on alt
+    -- groups (Activity's) can tell a real change from a routine rebuild.
+    local same = true
+    for k, v in pairs(mainOf) do
+        if before[k] ~= v then same = false break end
+        before[k] = nil
+    end
+    if not same or next(before) then PGM.altsVersion = (PGM.altsVersion or 0) + 1 end
 end
 
 function PGM:MainOf(guid)

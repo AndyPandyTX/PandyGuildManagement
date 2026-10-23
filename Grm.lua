@@ -171,7 +171,13 @@ function PGM:ImportGRM()
 
     table.sort(g.log, function(a, b) return (a.t or 0) < (b.t or 0) end)
     local cap = PGM.opt("logCap") or 3000
-    while #g.log > cap do table.remove(g.log, 1) end
+    -- The newest `cap`, in one pass (removing from the front one at a time
+    -- is slow enough to freeze the game on a big import).
+    if #g.log > cap then
+        local keep = {}
+        for i = #g.log - cap + 1, #g.log do keep[#keep + 1] = g.log[i] end
+        g.log = keep
+    end
 
     -- Alt groups: { {name=...}, {name=...}, main = "Name-Realm" }.
     local groups = forGuild(_G.GRM_Alts)

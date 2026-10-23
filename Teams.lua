@@ -483,11 +483,18 @@ end
 
 -- Teams set to stay in sync pick up newly tagged recruits after each roster
 -- read. (Alts are resolved first: Alts.lua listens for ROSTER before this.)
+-- Only worth redoing when notes, ranks, the roster, alt links or the teams
+-- themselves changed since last time; most roster reads change none of them.
+local importedFor
+PGM:On("TEAMS", function() importedFor = nil end)
 PGM:On("ROSTER", function()
     if not canEdit() then return end
     -- Not until this login's catch-up is in: before it, a member another
     -- officer removed while we were away would look new and be re-added.
     if PGM.SyncSettled and not PGM:SyncSettled() then return end
+    local v = (PGM.notesVersion or 0) .. ":" .. (PGM.altsVersion or 0)
+    if importedFor == v then return end
+    importedFor = v
     local added = 0
     for _, t in ipairs(PGM:Teams()) do
         if t.autoSync then added = added + PGM:ImportTeamFromNotes(t.id, true) end

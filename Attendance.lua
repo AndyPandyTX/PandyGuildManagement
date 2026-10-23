@@ -268,11 +268,19 @@ end
 -- any of their alts, attend? Returns present, possible, and a history strip
 -- (newest first, true = there). With teamId, only that team's raid nights
 -- ("none": only nights tagged to no team).
--- Answers are cached until the roster, raids or teams change, since every
--- list on screen asks for every member.
+-- Answers are cached until the raids, the teams, the members or their alt
+-- links change, since every list on screen asks for every member. (Not on
+-- every roster read: most only change who's online.)
 local attCache = {}
 local function clearCache() wipe(attCache) end
-PGM:On("ROSTER", clearCache)
+local cachedFor
+PGM:On("ROSTER", function()
+    local v = (PGM.membersVersion or 0) .. ":" .. (PGM.altsVersion or 0)
+    if v ~= cachedFor then
+        cachedFor = v
+        clearCache()
+    end
+end)
 PGM:On("RAIDS", clearCache)
 PGM:On("TEAMS", clearCache)
 
