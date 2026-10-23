@@ -156,7 +156,7 @@ local function rosterOf(t)
         if sa ~= sb then return sa < sb end
         local ra, rb = ROLE_ORDER[a.entry.role] or 9, ROLE_ORDER[b.entry.role] or 9
         if ra ~= rb then return ra < rb end
-        return (a.rec.short or "") < (b.rec.short or "")
+        return PGM.NameLess(a.rec.short, b.rec.short)
     end)
     return out
 end

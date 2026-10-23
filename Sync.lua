@@ -1004,7 +1004,7 @@ function PGM:AddonUsers()
     for _, it in ipairs(out) do it.outdated = PGM.NewerVersion(latest, it.v) end
     table.sort(out, function(a, b)
         if a.rec.online ~= b.rec.online then return a.rec.online end
-        return (a.rec.short or "") < (b.rec.short or "")
+        return PGM.NameLess(a.rec.short, b.rec.short)
     end)
     return out, latest
 end

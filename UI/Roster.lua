@@ -43,7 +43,7 @@ local FILTERS = {
 
 local function sortValue(it, key)
     local rec = it.rec
-    if key == "name" then return (rec.short or ""):lower()
+    if key == "name" then return PGM.SortKey(rec.short)
     elseif key == "level" then return rec.level or 0
     elseif key == "rank" then return rec.rankIndex or 99
     elseif key == "seen" then return rec.online and math.huge or (rec.lastOnline or 0)
@@ -99,7 +99,7 @@ local function buildList()
     local key, asc = state.sort, state.asc
     table.sort(out, function(a, b)
         local va, vb = sortValue(a, key), sortValue(b, key)
-        if va == vb then return (a.rec.short or "") < (b.rec.short or "") end
+        if va == vb then return PGM.NameLess(a.rec.short, b.rec.short) end
         if asc then return va < vb end
         return va > vb
     end)

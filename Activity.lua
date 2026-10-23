@@ -327,7 +327,7 @@ function PGM:ComputeActivity(days, mainsOnly)
     end
     table.sort(o.people, function(x, y)
         if x.hours ~= y.hours then return x.hours > y.hours end
-        return (x.rec.short or "") < (y.rec.short or "")
+        return PGM.NameLess(x.rec.short, y.rec.short)
     end)
     cache, cacheKey = o, key
     return o

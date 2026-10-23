@@ -59,7 +59,7 @@ local function memberList(id)
         if a.rec.online ~= b.rec.online then return a.rec.online end
         local la, lb = a.rec.lastOnline or 0, b.rec.lastOnline or 0
         if la ~= lb then return la > lb end
-        return (a.rec.short or "") < (b.rec.short or "")
+        return PGM.NameLess(a.rec.short, b.rec.short)
     end)
     return out
 end

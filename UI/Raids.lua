@@ -243,7 +243,7 @@ local function refresh(p)
             local pb = b.possible > 0 and b.present / b.possible or -1
             if pa ~= pb then return pa > pb end
             if a.present ~= b.present then return a.present > b.present end
-            return (a.rec.short or "") < (b.rec.short or "")
+            return PGM.NameLess(a.rec.short, b.rec.short)
         end)
     end
     p.board:SetData(board, true)

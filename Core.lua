@@ -178,6 +178,53 @@ function PGM.MaxLevel()
     return PGM.IS_FOREVER and 60 or 90
 end
 
+-- Names sort as if accents weren't there, so "Ühtréd" sits among the U's
+-- rather than after Z (byte order puts every accented letter past z). Covers
+-- Latin-1 and Latin Extended-A, which is what character names can use.
+local FOLD = {}
+do
+    local ranges = {
+        { 0xC0, 0xC5, "a" }, { 0xC6, 0xC6, "ae" }, { 0xC7, 0xC7, "c" }, { 0xC8, 0xCB, "e" },
+        { 0xCC, 0xCF, "i" }, { 0xD0, 0xD0, "d" }, { 0xD1, 0xD1, "n" }, { 0xD2, 0xD6, "o" },
+        { 0xD8, 0xD8, "o" }, { 0xD9, 0xDC, "u" }, { 0xDD, 0xDD, "y" }, { 0xDE, 0xDE, "th" },
+        { 0xDF, 0xDF, "ss" },
+        { 0xE0, 0xE5, "a" }, { 0xE6, 0xE6, "ae" }, { 0xE7, 0xE7, "c" }, { 0xE8, 0xEB, "e" },
+        { 0xEC, 0xEF, "i" }, { 0xF0, 0xF0, "d" }, { 0xF1, 0xF1, "n" }, { 0xF2, 0xF6, "o" },
+        { 0xF8, 0xF8, "o" }, { 0xF9, 0xFC, "u" }, { 0xFD, 0xFD, "y" }, { 0xFE, 0xFE, "th" },
+        { 0xFF, 0xFF, "y" },
+        { 0x100, 0x105, "a" }, { 0x106, 0x10D, "c" }, { 0x10E, 0x111, "d" }, { 0x112, 0x11B, "e" },
+        { 0x11C, 0x123, "g" }, { 0x124, 0x127, "h" }, { 0x128, 0x131, "i" }, { 0x132, 0x133, "ij" },
+        { 0x134, 0x135, "j" }, { 0x136, 0x138, "k" }, { 0x139, 0x142, "l" }, { 0x143, 0x14B, "n" },
+        { 0x14C, 0x151, "o" }, { 0x152, 0x153, "oe" }, { 0x154, 0x159, "r" }, { 0x15A, 0x161, "s" },
+        { 0x162, 0x167, "t" }, { 0x168, 0x173, "u" }, { 0x174, 0x175, "w" }, { 0x176, 0x178, "y" },
+        { 0x179, 0x17E, "z" },
+    }
+    for _, r in ipairs(ranges) do
+        for cp = r[1], r[2] do
+            FOLD[string.char(0xC0 + math.floor(cp / 64), 0x80 + cp % 64)] = r[3]
+        end
+    end
+end
+
+local sortKeys = {}
+function PGM.SortKey(name)
+    name = name or ""
+    local key = sortKeys[name]
+    if not key then
+        key = name:lower():gsub("[\195-\197][\128-\191]", FOLD)
+        sortKeys[name] = key
+    end
+    return key
+end
+
+-- For table.sort: by name ignoring accents, then exactly, so the order
+-- never depends on the sort's mood.
+function PGM.NameLess(a, b)
+    local ka, kb = PGM.SortKey(a), PGM.SortKey(b)
+    if ka ~= kb then return ka < kb end
+    return (a or "") < (b or "")
+end
+
 function PGM.ClassColor(classFile)
     local c = classFile and C_ClassColor and C_ClassColor.GetClassColor(classFile)
     if c then return c.r, c.g, c.b end
