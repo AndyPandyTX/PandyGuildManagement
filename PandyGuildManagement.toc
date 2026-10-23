@@ -7,7 +7,7 @@
 ## X-License: MIT
 ## OptionalDeps: RaiderIO
 ## SavedVariables: PandyGuildDB
-## IconTexture: Interface\Icons\Achievement_Character_Pandaren_Female
+## IconTexture: Interface\AddOns\PandyGuildManagement\Media\Logo
 ## AddonCompartmentFunc: PandyGuildManagement_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: PandyGuildManagement_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: PandyGuildManagement_OnCompartmentLeave

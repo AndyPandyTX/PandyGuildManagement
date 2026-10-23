@@ -134,7 +134,7 @@ function UI:Create()
     header:SetScript("OnDragStart", f:GetScript("OnDragStart"))
     header:SetScript("OnDragStop", f:GetScript("OnDragStop"))
 
-    local portrait = W.FramedIcon(header, 42, "Interface\\Icons\\Achievement_Character_Pandaren_Female")
+    local portrait = W.FramedIcon(header, 42, "Interface\\AddOns\\PandyGuildManagement\\Media\\Logo")
     portrait:SetPoint("LEFT", 6, 0)
 
     local title = W.FS(header, 17, C.text)
