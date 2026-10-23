@@ -38,6 +38,42 @@ function GU.Header(p, y, cols)
     return header
 end
 
+-- A header strip whose columns sort when clicked: { { label, x, key } }.
+-- get() returns the sort key and whether it's reversed; set(key, reversed).
+-- Clicking the column already sorting flips it.
+function GU.SortHeader(p, y, cols, get, set)
+    local header = GU.Header(p, y, {})
+    header.cols = {}
+    for _, c in ipairs(cols) do
+        local b = CreateFrame("Button", nil, header)
+        b:SetPoint("LEFT", c[2], 0)
+        b:SetHeight(20)
+        b.fs = W.FS(b, 11, C.text2)
+        b.fs:SetPoint("LEFT")
+        b.key, b.label = c[3], c[1]
+        b:SetScript("OnClick", function(s)
+            local key, rev = get()
+            set(s.key, key == s.key and not rev)
+            UI:Refresh()
+        end)
+        b:SetScript("OnEnter", function(s) s.fs:SetTextColor(C.text[1], C.text[2], C.text[3]) end)
+        b:SetScript("OnLeave", function(s) header:Update() end)
+        header.cols[#header.cols + 1] = b
+    end
+    function header:Update()
+        local key, rev = get()
+        for _, b in ipairs(self.cols) do
+            local on = b.key == key
+            b.fs:SetText(b.label .. (on and (rev and "  ^" or "  v") or ""))
+            local col = on and C.accent or C.text2
+            b.fs:SetTextColor(col[1], col[2], col[3])
+            b:SetWidth(b.fs:GetStringWidth() + 8)
+        end
+    end
+    header:Update()
+    return header
+end
+
 -- A small "- n +" stepper with a label in front.
 function GU.Stepper(parent, label, col, onChange)
     local f = CreateFrame("Frame", nil, parent)

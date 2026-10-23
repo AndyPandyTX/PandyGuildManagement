@@ -570,6 +570,113 @@ function G:BoardPlaystyles()
 end
 
 -- ============================================================
+-- TELLING THE GUILD, AND LISTING MY KEY
+-- ============================================================
+
+-- The keystone in my bags, as a chat link, or nil.
+function G.MyKeyLink()
+    if not (C_Container and C_Item and C_Item.IsItemKeystoneByID) then return nil end
+    for bag = 0, 4 do
+        for slot = 1, num(call(C_Container.GetContainerNumSlots, bag)) or 0 do
+            local id = num(call(C_Container.GetContainerItemID, bag, slot))
+            if id and P(call(C_Item.IsItemKeystoneByID, id)) then
+                return str(call(C_Container.GetContainerItemLink, bag, slot))
+            end
+        end
+    end
+end
+
+-- "1 Tank, 2 DPS", for chat: no colours or icons.
+local function needsPlain(need)
+    local parts = {}
+    for _, r in ipairs(G.ROLES) do
+        local n = need[r] or 0
+        if n > 0 then parts[#parts + 1] = n .. " " .. PGM.ROLE_LABEL[G.ROLE_KEY[r]] end
+    end
+    return #parts > 0 and table.concat(parts, ", ") or "anyone"
+end
+
+-- The guild chat line for my group, from the template in settings. {key}
+-- is my keystone's link when the group is for it.
+function G:AnnounceText(p)
+    p = p or G.mine
+    if not p then return nil end
+    local key = G.PostTitle(p)
+    if p.kind == "M" then
+        local map = G.ReadMyKey()
+        local dungeon = map and G.DungeonName(map)
+        local link = G.MyKeyLink()
+        if link and dungeon and (p.what or ""):find(dungeon, 1, true) then key = link end
+    end
+    local name = UnitName("player")
+    name = str(name) or ""
+    local text = G.opt("announce")
+    if not text or strtrim(text) == "" then text = "{key} - needs {needs}. Whisper me to join!" end
+    -- Functions, not strings, as replacements: a link is full of "|" and
+    -- a name can't be trusted to be free of "%".
+    text = text:gsub("{key}", function() return key end)
+    text = text:gsub("{needs}", function() return needsPlain(p.need) end)
+    text = text:gsub("{name}", function() return name end)
+    return text
+end
+
+-- Say it in guild chat. From a click (or /pgg tell), at most once a minute.
+local lastAnnounce = -1000
+function G:Announce()
+    local text = G:AnnounceText()
+    if not text then
+        PGM.Print("Nothing to tell the guild: list a group, or post one, first.")
+        return false
+    end
+    if GetTime() - lastAnnounce < 60 then
+        PGM.Print("You told the guild under a minute ago.")
+        return false
+    end
+    if PGM.SyncBlocked() then
+        PGM.Print("Chat to the guild is blocked inside an instance.")
+        return false
+    end
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    local ok = send and pcall(send, text, "GUILD")
+    if not ok then
+        PGM.Print("The game wouldn't send that to guild chat.")
+        return false
+    end
+    lastAnnounce = GetTime()
+    return true
+end
+
+-- Open the Group Finder's Start a Group on my keystone, from a click.
+-- Creating the listing itself is Blizzard's List Group button: the game
+-- doesn't let addons list a group.
+function G:ListMyKey()
+    if listed() then
+        PGM.Print("You're already listed in the Group Finder.")
+        return
+    end
+    local act, groupID
+    if LFG.GetOwnedKeystoneActivityAndGroupAndLevel then
+        local ok, a, g = pcall(LFG.GetOwnedKeystoneActivityAndGroupAndLevel)
+        if ok then act, groupID = num(a), num(g) end
+    end
+    if PVEFrame_ShowFrame then pcall(PVEFrame_ShowFrame, "GroupFinderFrame", "LFGListPVEStub") end
+    local frame = LFGListFrame
+    local ec = frame and frame.EntryCreation
+    local filters = bor(mask("CurrentSeason", 0x40), mask("PvE"))
+    local shown = false
+    if ec and act and LFGListEntryCreation_Show and LFGListEntryCreation_Select then
+        local ok1 = pcall(LFGListEntryCreation_Show, ec, frame.baseFilters or mask("PvE"), 2, filters)
+        local ok2 = ok1 and pcall(LFGListEntryCreation_Select, ec, filters, 2, groupID, act)
+        shown = ok2 and ec:IsShown() or false
+    end
+    if shown then
+        PGM.Print("Start a Group is open on your keystone. Check it, then click List Group.")
+    else
+        PGM.Print("Group Finder is open: Dungeons, Start a Group, your keystone, then List Group.")
+    end
+end
+
+-- ============================================================
 -- BLIZZARD'S WINDOWS
 -- ============================================================
 

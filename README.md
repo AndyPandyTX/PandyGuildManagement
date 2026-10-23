@@ -86,8 +86,19 @@ posts behave:
 without the module. Role, item level, M+ score, keystone and zone. Tick
 **I'm up for a group** (and for what) to show as looking.
 
-**Keystones.** Everyone's key this week, highest first or by dungeon, with
-alts under their main. **Post a group** on your own key fills in the form.
+**Keystones.** Everyone's key this week. Click a column to sort by key
+level, dungeon, who, M+ score or when it was seen (click again to flip it).
+**Online only** is on to start with, and **Mine first** keeps your own
+characters' keys on top. On your own key:
+- **List** opens the Group Finder's Start a Group on that keystone. You
+  click List Group there: the game doesn't let addons list a group.
+- **Post** fills in a guild post for it.
+
+**Tell the guild** (on My group, or `/pgg tell`) says in guild chat, with
+your keystone's link: "[Keystone: The Blinding Vale (14)] - needs 1 Tank, 2
+DPS. Whisper me to join!" Change the wording on Post a group: `{key}`,
+`{needs}` and `{name}` are filled in. At most once a minute, and never from
+inside an instance. `/pgg list` opens Start a Group on your key.
 Guildies without this module show up too if they run anything with
 LibKeystone (BigWigs, LittleWigs, EllesmereUI and others): the page asks
 them, at most every two minutes. A key someone hides from the guild stays

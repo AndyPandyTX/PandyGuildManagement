@@ -241,6 +241,23 @@ local function buildSettings(card)
     help:SetText("Listing in Blizzard's Group Finder posts the group here by itself. Use this form for a group "
         .. "you'd rather keep in the guild first, or one that starts later: type a start like 20:30, Sat 20:30 "
         .. "or +30 and guildies sign up instead.")
+
+    -- Tell the guild: the chat line, as a template.
+    local h = W.Heading(card, "Tell the guild")
+    h:SetPoint("TOPLEFT", x, -246)
+    form.announce = W.EditBox(card, 10, 22, "{key} - needs {needs}. Whisper me to join!")
+    form.announce:SetPoint("TOPLEFT", x, -262)
+    form.announce:SetPoint("RIGHT", -12, 0)
+    form.announce:SetMaxLetters(200)
+    form.announce.onChange = function(s)
+        G.setOpt("announce", s:GetText())
+        UI:Refresh()
+    end
+    form.preview = W.FS(card, 11, C.text2)
+    form.preview:SetPoint("TOPLEFT", x, -292)
+    form.preview:SetPoint("RIGHT", -12, 0)
+    form.preview:SetWordWrap(true)
+    form.preview:SetJustifyV("TOP")
 end
 
 -- ============================================================
@@ -393,6 +410,11 @@ local function buildMine(v)
     mineUI.status = W.FS(card, 11, C.jade, "RIGHT")
     mineUI.status:SetPoint("TOPRIGHT", -12, -48)
     mineUI.status:SetWidth(220)
+    mineUI.tell = W.Button(card, "Tell the guild", 104, 24, C.jade)
+    mineUI.tell:SetScript("OnClick", function() G:Announce() end)
+    mineUI.listKey = W.Button(card, "List my key", 96, 24)
+    mineUI.listKey:SetScript("OnClick", function() G:ListMyKey() end)
+    mineUI.listKey.tip = "Opens the Group Finder's Start a Group on your keystone. You click List Group there."
 
     local cols = {}
     for i, c in ipairs(COLS) do cols[i] = { c[1], c[2] } end
@@ -422,7 +444,7 @@ local function refreshMine()
             mineUI.info:SetText("List a group in the Group Finder, or Post a group, and who's asking shows here.")
         end
         mineUI.status:SetText("")
-        shown.edit, shown.close, shown.pugs = false, false, false
+        shown.listKey = not listed and G.ReadMyKey() ~= nil
     else
         mineUI.card.title:SetText(G.PostTitle(p))
         mineUI.card.sub:SetText(G.KIND_LABEL[p.kind] .. (p.fromLFG and "  -  from your Group Finder listing" or "")
@@ -442,7 +464,8 @@ local function refreshMine()
             mineUI.info:SetText("Guild first is over: Find PuGs to fill the rest."
                 .. (p.note ~= "" and ("  " .. PGM.Hex(C.text3) .. p.note .. "|r") or ""))
         end
-        shown.edit, shown.close, shown.pugs = not p.fromLFG, true, not p.lfg
+        shown.edit, shown.close, shown.pugs, shown.tell = not p.fromLFG, true, not p.lfg, true
+        mineUI.tell.tip = "Says in guild chat:\n" .. (G:AnnounceText(p) or "")
         local canFind = left <= 0
         mineUI.pugs:SetEnabled(canFind)
         mineUI.pugs:SetAlpha(canFind and 1 or 0.45)
@@ -450,7 +473,7 @@ local function refreshMine()
     end
     -- Buttons pack to the right, whichever are shown.
     local anchor
-    for _, key in ipairs({ "pugs", "close", "edit" }) do
+    for _, key in ipairs({ "tell", "pugs", "close", "edit", "listKey" }) do
         local b = mineUI[key]
         b:SetShown(shown[key])
         if shown[key] then
@@ -912,6 +935,11 @@ local function refresh(p)
         for k, chip in pairs(form.pingChips) do chip:SetActive(G.opt("pingKinds")[k] and true or false) end
         form.ping:Sync()
         form.share:Sync()
+        if not form.announce:HasFocus() then form.announce:SetText(G.opt("announce") or "") end
+        local sample = G:AnnounceText(G.mine or { kind = "M", what = "The Blinding Vale", level = "14",
+            need = { T = 1, H = 0, D = 2 } })
+        form.preview:SetText("{key}, {needs} and {name} are filled in. Right now it would say:\n"
+            .. PGM.Hex(C.text) .. (sample or "") .. "|r")
     end
 end
 

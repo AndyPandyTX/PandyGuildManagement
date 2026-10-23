@@ -62,6 +62,12 @@ local DEFAULTS = {
     freeMaxOnly = true,
     freeAddonOnly = false,
     keysSort = "level",
+    keysReverse = false,
+    keysOnline = true,
+    keysMineFirst = true,
+    -- Tell the guild: {key} is the keystone link (or what the group is),
+    -- {needs} the roles still open, {name} your character.
+    announce = "{key} - needs {needs}. Whisper me to join!",
     -- The Groups page's Browse filters (playstyle unset means any).
     board = {
         guildFirst = true, guildOnly = false, scheduled = true, sort = "newest",
@@ -479,6 +485,10 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
         PGM.UI:Show("keys")
     elseif cmd == "close" and G.CloseMine then
         G:CloseMine("c")
+    elseif cmd == "tell" or cmd == "announce" then
+        G:Announce()
+    elseif cmd == "list" then
+        G:ListMyKey()
     else
         PGM.Print("Guild Groups v" .. G.VERSION .. ":")
         PGM.Print("  /pgg - guild groups")
@@ -486,5 +496,7 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
         PGM.Print("  /pgg free - who's free")
         PGM.Print("  /pgg keys - everyone's keystone")
         PGM.Print("  /pgg close - close your post")
+        PGM.Print("  /pgg tell - tell guild chat about your group")
+        PGM.Print("  /pgg list - list your keystone in the Group Finder")
     end
 end
