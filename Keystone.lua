@@ -6,6 +6,7 @@
 -- it missed ("W"); one copy that has newer ones volunteers ("V", so the rest
 -- stand down) and sends them packed. Keys are low stakes, so anyone may relay
 -- them: newest wins, and a key from before the weekly reset is dropped.
+-- Guildies without the module are heard through LibKeystone (below).
 --
 -- WIRE (inside "1G"):
 --   K guid u map level [guid u map level ...]   keys (map 0 = no key)
@@ -169,6 +170,46 @@ function G.handlers.V(f)
 end
 
 -- ============================================================
+-- LIBKEYSTONE
+-- ============================================================
+
+-- BigWigs, LittleWigs, EllesmereUI and others carry LibKeystone, which
+-- answers a guild request ("R") with "level,map,rating" on its own prefix.
+-- So guildies without this module still show their key. We speak its
+-- protocol rather than embed it: replies arrive whether or not a copy of the
+-- library is loaded here. A key someone hides from the guild comes as
+-- "-1,-1,rating" and is left alone.
+local LKS = "LibKS"
+if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+    C_ChatInfo.RegisterAddonMessagePrefix(LKS)
+end
+
+-- Every LibKeystone user online answers, so at most every two minutes.
+local lksAsked = -1000
+function G:RequestLibKeystone()
+    if PGM.IS_FOREVER or GetTime() - lksAsked < 120 or not G.CanTalk() then return end
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return end
+    lksAsked = GetTime()
+    pcall(C_ChatInfo.SendAddonMessage, LKS, "R", "GUILD")
+end
+
+G:RegisterEvent("CHAT_MSG_ADDON", function(_, prefix, msg, channel, sender)
+    prefix, msg, channel, sender = P(prefix), P(msg), P(channel), P(sender)
+    if prefix ~= LKS or channel ~= "GUILD" or not (msg and sender) then return end
+    local level, map = msg:match("^(%d+),(%d+),%d+$")
+    level, map = tonumber(level), tonumber(map)
+    if not (level and map) or level >= 100 then return end
+    local rec = G.RecByName(sender)
+    local d = G.DB()
+    if not (rec and d) or rec.guid == PGM:MyGuid() then return end
+    local cur = d.keys[rec.guid]
+    -- The same key again keeps its stamp, so catch-ups don't resend it.
+    if cur and cur.map == map and cur.level == level and (cur.u or 0) >= G.LastReset() then return end
+    d.keys[rec.guid] = { map = map, level = level, u = PGM.Stamp(cur and cur.u) }
+    G:Fire("KEYS")
+end)
+
+-- ============================================================
 -- WHEN
 -- ============================================================
 
@@ -185,6 +226,7 @@ G:On("READY", function()
         end
         G.Send(true, "W", newest)
     end)
+    C_Timer.After(45, function() G:RequestLibKeystone() end)
 end)
 
 -- Keys change in bags (a run ends, a key is traded down or rerolled).

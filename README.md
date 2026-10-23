@@ -40,6 +40,10 @@ without the module. Role, item level, M+ score, keystone and zone. Tick
 
 **Keystones.** Everyone's key this week, highest first or by dungeon, with
 alts under their main. **Post a group** on your own key fills in the form.
+Guildies without this module show up too if they run anything with
+LibKeystone (BigWigs, LittleWigs, EllesmereUI and others): the page asks
+them, at most every two minutes. A key someone hides from the guild stays
+hidden.
 
 ## How posts clean up
 

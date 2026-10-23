@@ -104,6 +104,11 @@ sub-type, then fields joined by `\031`.
   leader. Keystones are low stakes, so a `K` counts from anyone (that's
   what lets a catch-up relay them): newest wins, a stamp can't run more
   than 5 minutes ahead, and keys from before the weekly reset are dropped.
+- **LibKeystone.** Outside PGM's sync: an `R` on LibKeystone's own `LibKS`
+  prefix, to the guild, at login and when the Keystones page opens (at most
+  every two minutes). Every guildie running BigWigs, LittleWigs, EllesmereUI
+  and the like answers `level,map,rating`, so their keys show without this
+  module. A hidden key (`-1,-1`) is skipped.
 - **Merging.** `u` is a PGM stamp; newest wins, per post and per signup.
   Seeing a message twice changes nothing.
 - **Budget.** A post is one message, re-sent when it changes and every 4

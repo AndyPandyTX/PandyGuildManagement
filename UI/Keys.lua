@@ -103,6 +103,7 @@ local function refresh(p)
         p.empty:SetText("")
         return
     end
+    G:RequestLibKeystone()   -- at most every two minutes
     local myMain = PGM:MainOf(PGM:MyGuid() or "")
     local list = {}
     for _, it in ipairs(G:KeyList()) do
@@ -117,11 +118,11 @@ local function refresh(p)
         return PGM.NameLess(a.rec.short, b.rec.short)
     end)
     p.title:SetText(("Keystones this week: %d"):format(#list))
-    p.sub:SetText("Each copy shares its own character's key, and the keys its other characters had when last played.")
+    p.sub:SetText("From guildies running this module (with their alts' keys), or BigWigs, LittleWigs or EllesmereUI (LibKeystone).")
     p.sortLevel:SetActive(not byMap)
     p.sortMap:SetActive(byMap)
     p.list:SetData(list, true)
-    p.empty:SetText(#list == 0 and "No keys heard yet. They arrive as guildies running Pandy Guild Groups log in." or "")
+    p.empty:SetText(#list == 0 and "No keys heard yet. They arrive as guildies log in, and from anyone running BigWigs or EllesmereUI." or "")
 end
 
 UI:AddTab({ id = "keys", label = "Keystones", build = build, refresh = refresh, module = true,
