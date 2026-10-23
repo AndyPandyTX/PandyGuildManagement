@@ -42,7 +42,7 @@ Type **/pgm** to open it, or click it in the AddOns button on the minimap.
 - Click a name to open the game's recipe view for that person
 
 **Member profiles**
-- Join date, M+ score, raid progress, professions, teams, notes and their characters
+- Join date, M+ score, raid progress (with RaiderIO installed), professions, teams, notes and their characters
 - Last 10 raids, history, and a private note only you can see
 - Promote, demote and remove buttons, if your rank allows it
 
@@ -55,9 +55,9 @@ Everyone running the addon shares one set of data, over hidden guild addon messa
 
 - **Shared:** raid teams, raid nights, alt links, join dates and play-time activity
 - **Never shared:** private notes and your settings
-- **Only officers can edit.** By default that's the Guild Master and any rank named Officer or Leader, including officer alts and Raid Leadership. The Guild Master can choose a different cut-off rank instead.
+- **Only officers can edit** teams, raid nights and alt links. By default that's the Guild Master and any rank named Officer or Leader, including officer alts and Raid Leadership. The Guild Master can choose a different cut-off rank instead.
 - **Checked by every copy:** each copy checks the sender's guild rank before accepting a change, so an edited copy can't push changes.
-- **Catches up:** anyone who logs in late gets caught up by an officer who's online
+- **Catches up:** anyone who logs in late gets caught up by an officer who's online, and play-time hours fill in from any copy
 - **Light on traffic:** about one message a second, and nothing is sent inside instances
 
 Open **Addon Users** to see who's running it and who needs to update.
