@@ -45,7 +45,7 @@ Type **/pgm** to open it, click it in the AddOns button on the minimap, or use t
 **Member profiles**
 - Join date, M+ score, raid progress (with RaiderIO installed), professions, teams, notes and their characters
 - Last 10 raids, history, and a private note only you can see
-- Promote, demote and remove buttons, if your rank allows it
+- Pick any rank below yours and set it in one click, or remove them, if your rank allows it
 
 **Bulk actions** (officers)
 - Kick, promote or demote by rules: time away, rank, level, time in the guild, note text
