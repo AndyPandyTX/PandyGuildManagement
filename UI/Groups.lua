@@ -414,7 +414,7 @@ local function buildMine(v)
     mineUI.tell:SetScript("OnClick", function() G:Announce() end)
     mineUI.listKey = W.Button(card, "List my key", 96, 24)
     mineUI.listKey:SetScript("OnClick", function() G:ListMyKey() end)
-    mineUI.listKey.tip = "Opens the Group Finder's Start a Group on your keystone. You click List Group there."
+    mineUI.listKey.tip = "Opens the Group Finder. Click Dungeons, then Start a Group: it fills in your keystone. Then List Group."
 
     local cols = {}
     for i, c in ipairs(COLS) do cols[i] = { c[1], c[2] } end

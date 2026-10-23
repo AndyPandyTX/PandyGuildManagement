@@ -646,34 +646,21 @@ function G:Announce()
     return true
 end
 
--- Open the Group Finder's Start a Group on my keystone, from a click.
--- Creating the listing itself is Blizzard's List Group button: the game
--- doesn't let addons list a group.
+-- Open the Group Finder's premade groups, from a click, to list my key.
+-- That's as far as an addon may go: Start a Group's form is protected (it
+-- sets the listing's title), and filling it in from addon code gets the
+-- call blocked. Blizzard fills in the player's own keystone when they pick
+-- Dungeons and Start a Group themselves.
 function G:ListMyKey()
     if listed() then
         PGM.Print("You're already listed in the Group Finder.")
         return
     end
-    local act, groupID
-    if LFG.GetOwnedKeystoneActivityAndGroupAndLevel then
-        local ok, a, g = pcall(LFG.GetOwnedKeystoneActivityAndGroupAndLevel)
-        if ok then act, groupID = num(a), num(g) end
-    end
     if PVEFrame_ShowFrame then pcall(PVEFrame_ShowFrame, "GroupFinderFrame", "LFGListPVEStub") end
-    local frame = LFGListFrame
-    local ec = frame and frame.EntryCreation
-    local filters = bor(mask("CurrentSeason", 0x40), mask("PvE"))
-    local shown = false
-    if ec and act and LFGListEntryCreation_Show and LFGListEntryCreation_Select then
-        local ok1 = pcall(LFGListEntryCreation_Show, ec, frame.baseFilters or mask("PvE"), 2, filters)
-        local ok2 = ok1 and pcall(LFGListEntryCreation_Select, ec, filters, 2, groupID, act)
-        shown = ok2 and ec:IsShown() or false
-    end
-    if shown then
-        PGM.Print("Start a Group is open on your keystone. Check it, then click List Group.")
-    else
-        PGM.Print("Group Finder is open: Dungeons, Start a Group, your keystone, then List Group.")
-    end
+    local map, level = G.ReadMyKey()
+    local key = map and (" (+" .. level .. " " .. (G.DungeonName(map) or "your key") .. ")") or ""
+    PGM.Print("Group Finder is open: click Dungeons, then Start a Group. It fills in your keystone" .. key
+        .. ", then List Group.")
 end
 
 -- ============================================================

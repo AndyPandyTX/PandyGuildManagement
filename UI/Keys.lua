@@ -88,7 +88,7 @@ local function updateRow(r, it)
         r.b1:Show()
         r.b1:SetLabel("List")
         enable(r.b1, not G:IsListed(), G:IsListed() and "You're already listed." or
-            "Opens the Group Finder's Start a Group on this key. You click List Group there.")
+            "Opens the Group Finder. Click Dungeons, then Start a Group: it fills in your keystone. Then List Group.")
         r.b2:SetLabel("Post")
         enable(r.b2, not G.mine, G.mine and "Close the group you have posted first." or
             "A guild-only post for this key (or a scheduled one).")

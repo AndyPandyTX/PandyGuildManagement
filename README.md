@@ -91,15 +91,17 @@ level, dungeon, who, M+ score or when it was seen (click again to flip it).
 **Online only** is on to start with, and hides offline characters, yours
 included. **Mine first** (off to start with) pins your own characters' keys
 to the top, tinted so it's clear why they're out of order. On your own key:
-- **List** opens the Group Finder's Start a Group on that keystone. You
-  click List Group there: the game doesn't let addons list a group.
+- **List** opens the Group Finder. Click Dungeons, then Start a Group, and
+  Blizzard fills in your keystone; then List Group. That's as far as an
+  addon may go: Start a Group's form is protected, and filling it in from
+  addon code gets blocked.
 - **Post** fills in a guild post for it.
 
 **Tell the guild** (on My group, or `/pgg tell`) says in guild chat, with
 your keystone's link: "[Keystone: The Blinding Vale (14)] - needs 1 Tank, 2
 DPS. Whisper me to join!" Change the wording on Post a group: `{key}`,
 `{needs}` and `{name}` are filled in. At most once a minute, and never from
-inside an instance. `/pgg list` opens Start a Group on your key.
+inside an instance. `/pgg list` opens the Group Finder to list your key.
 Guildies without this module show up too if they run anything with
 LibKeystone (BigWigs, LittleWigs, EllesmereUI and others): the page asks
 them, at most every two minutes. A key someone hides from the guild stays
