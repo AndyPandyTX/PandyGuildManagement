@@ -17,6 +17,8 @@ A guild manager for retail WoW (Midnight), built for big raiding guilds:
 
 Type `/pgm` (or `/pandy`) to open it, or click it in Blizzard's AddOns button on the minimap.
 
+![Overview](screenshots/01-overview.png)
+
 ## Install
 
 1. Open the [latest release](https://github.com/AndyPandyTX/PandyGuildManagement/releases/latest)
@@ -50,6 +52,8 @@ and away 30d+. It shows alts, M+ score and raid attendance; hover a row for
 professions and raid teams. Click someone to open their profile; right-click
 to whisper or invite.
 
+![Roster](screenshots/02-roster.png)
+
 **Activity.** When the guild plays, and who plays when:
 - tiles for average online, peak online (and when), the busiest time of the
   week, and how many hours have been observed
@@ -65,10 +69,14 @@ finished hour is shared once, and logging in after time away catches up on up
 to a week. Everything is shown in your local time. Each profile also shows
 that member's play time.
 
+![Activity](screenshots/04-activity.png)
+
 **Professions.** Pick a profession and see everyone who has it. Online
 members are listed first, so finding a crafter right now takes one click.
 Click anyone to open the game's recipe view for them, showing every recipe
 they know and don't. Alts are marked with their main's name.
+
+![Professions](screenshots/05-professions.png)
 
 **Raid Teams.** Run as many teams as you like:
 - Each team has a name, a schedule note and a roster.
@@ -76,6 +84,8 @@ they know and don't. Alts are marked with their main's name.
 - Shows the team's makeup and which raid buffs it's missing (Arcane Intellect, Fortitude, Battle Shout and so on).
 - Shows each member's attendance at that team's raids only.
 - Add people by name, or use "Add my group" during a raid.
+
+![Raid Teams](screenshots/06-raid-teams.png)
 
 **Profile.** Shows:
 - Race and class, status, join date, M+ score and raid progress
@@ -86,8 +96,12 @@ they know and don't. Alts are marked with their main's name.
 - Their history
 - Buttons to add them to a raid team, and Promote / Demote / Remove buttons if your rank allows it
 
+![Profile](screenshots/03-profile.png)
+
 **History.** Every join, rejoin, leave, promotion, demotion, rename and
 max-level ding, with filters.
+
+![History](screenshots/08-history.png)
 
 **Raids.** Raid nights are recorded automatically when you're in a raid
 instance with enough guildies. Each night is tagged to the raid team that
@@ -95,14 +109,20 @@ showed up (half or more of its non-bench roster). Right-click a night to
 retag it, and use "Match past raids" on the Raid Teams page to tag older ones.
 Filter by team; a team's view lists its whole roster, so no-shows appear too.
 
+![Raids](screenshots/07-raids.png)
+
 **Addon Users.** Everyone in the guild running Pandy Guild Management, with
 their version, and who needs to update. The Roster also has a "Has addon"
 filter.
+
+![Addon Users](screenshots/09-addon-users.png)
 
 **Settings.** Choose which changes get announced in chat (only to you, never
 to guild chat), how many guildies a raid needs to count, window scale, accent
 colour and your main. Guild sync status and the officer cut-off live here, as
 does the GRM import.
+
+![Settings](screenshots/10-settings.png)
 
 ## Coming from GRM?
 

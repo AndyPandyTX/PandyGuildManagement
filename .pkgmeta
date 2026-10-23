@@ -4,6 +4,7 @@ package-as: PandyGuildManagement
 
 ignore:
   - preview
+  - screenshots
   - .github
   - .gitignore
   - .pkgmeta
