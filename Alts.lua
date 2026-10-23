@@ -3,6 +3,9 @@
 -- Sources, strongest first:
 --   manual   - an officer or the player linked them in the profile
 --   account  - characters on this account that are in the same guild
+--   player   - another player's copy said so: each character announces its
+--              account's main, and a link counts only when that main has
+--              announced itself as a main too (see Sync.lua, record B)
 --   note     - the public or officer note names the main: "alt of X",
 --              "X's alt", "main: X", the slash format many guilds use
 --              ("VA/Alt/258/Crafter/Anvar"), or, on an alt rank, just "X"
@@ -14,7 +17,7 @@ local _, NS = ...
 local PGM = NS.PGM
 
 local mainOf = {}    -- [altGuid] = mainGuid, rebuilt after every roster change
-local sourceOf = {}  -- [altGuid] = "manual" | "account" | "note"
+local sourceOf = {}  -- [altGuid] = "manual" | "account" | "player" | "note"
 local altsOf = {}    -- [mainGuid] = { altGuid, ... }
 local rankAlt = {}   -- [guid] = true: alt by rank, main unknown
 
@@ -45,6 +48,40 @@ function PGM:SetMyMain(guid)
     PandyGuildDB.myMain = guid
     PGM:RebuildAlts()
     PGM:Fire("ROSTER")
+    if PGM.SyncMyMain then PGM:SyncMyMain() end
+end
+
+-- This account's characters in this guild and which one is the main: the
+-- one picked in Settings, else one on a non-alt rank, then the best M+ score,
+-- then the highest level. (Not the alphabet: that once made a main into an
+-- alt of its own alt.) Returns the main and the list, or nil.
+function PGM:AccountMain(members)
+    if not members then
+        local g = PGM.GuildDB()
+        members = g and g.members
+        if not members then return nil end
+    end
+    local mine = {}
+    local key = PGM.GuildKey()
+    for guid, c in pairs(PandyGuildDB.chars) do
+        if c.guild == key and members[guid] then mine[#mine + 1] = guid end
+    end
+    if #mine == 0 then return nil end
+    local main = PandyGuildDB.myMain
+    if not (main and members[main] and tContains(mine, main)) then
+        table.sort(mine, function(a, b)
+            local ra, rb = members[a], members[b]
+            local aa, ab = PGM.IsAltRank(ra), PGM.IsAltRank(rb)
+            if aa ~= ab then return ab end
+            local sa, sb = ra.score or 0, rb.score or 0
+            if sa ~= sb then return sa > sb end
+            local la, lb = ra.level or 0, rb.level or 0
+            if la ~= lb then return la > lb end
+            return (ra.short or "") < (rb.short or "")
+        end)
+        main = mine[1]
+    end
+    return main, mine
 end
 
 -- ============================================================
@@ -147,30 +184,21 @@ function PGM:RebuildAlts()
         if m then raw[guid], src[guid] = m, "note" end
     end
 
-    -- My own characters in this guild: one main, the rest alts.
-    local mine = {}
-    local key = PGM.GuildKey()
-    for guid, c in pairs(PandyGuildDB.chars) do
-        if c.guild == key and members[guid] then mine[#mine + 1] = guid end
-    end
-    if #mine > 1 then
-        local main = PandyGuildDB.myMain
-        if not (main and members[main]) then
-            -- No main picked: a character on a non-alt rank, then the best
-            -- M+ score, then the highest level. (Not the alphabet: that once
-            -- made a main into an alt of its own alt.)
-            table.sort(mine, function(a, b)
-                local ra, rb = members[a], members[b]
-                local aa, ab = PGM.IsAltRank(ra), PGM.IsAltRank(rb)
-                if aa ~= ab then return ab end
-                local sa, sb = ra.score or 0, rb.score or 0
-                if sa ~= sb then return sa > sb end
-                local la, lb = ra.level or 0, rb.level or 0
-                if la ~= lb then return la > lb end
-                return (ra.short or "") < (rb.short or "")
-            end)
-            main = mine[1]
+    -- What other players' copies told us about their own characters. A claim
+    -- "A's main is M" counts only if M claims to be a main itself, so nobody
+    -- can pull someone else's characters under their own. (The worst a false
+    -- claim does is attach the claimer's own character to a stranger's main,
+    -- and an officer's link or "Not an alt" overrides it.)
+    local claims = g.claims or {}
+    for guid, main in pairs(claims) do
+        if main ~= guid and members[guid] and members[main] and claims[main] == main then
+            raw[guid], src[guid] = main, "player"
         end
+    end
+
+    -- My own characters in this guild: one main, the rest alts.
+    local main, mine = PGM:AccountMain(members)
+    if mine and #mine > 1 then
         for _, guid in ipairs(mine) do
             if guid ~= main then raw[guid], src[guid] = main, "account" end
         end

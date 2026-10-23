@@ -302,11 +302,11 @@ local function refresh(p)
         or (cut and "Set by the guild master." or "Ranks named Officer, Leader or Guild Master (including officer alts) until the guild master sets a rank."))
     -- The scale can change from the window's corner grabber too.
     for _, sync in ipairs(p.syncers) do sync() end
-    local mainGuid = PandyGuildDB.myMain
+    local mainGuid = PGM:AccountMain()
     local c = mainGuid and PandyGuildDB.chars[mainGuid]
-    p.mainText:SetText(c and ("Main: %s%s|r. Your other characters in this guild are linked to it as alts automatically."):format(
-        PGM.ClassHex(c.class), c.name or "?")
-        or "No main picked, so your highest-level character in this guild counts as your main.")
+    p.mainText:SetText(c and ("Main: %s%s|r%s. Your other characters here are its alts, shared with the guild once you've logged into each."):format(
+        PGM.ClassHex(c.class), c.name or "?", PandyGuildDB.myMain == mainGuid and "" or " (picked for you)")
+        or "Your characters in this guild are linked as alts of your main, shared with the guild once you've logged into each.")
 end
 
 UI:AddTab({ id = "settings", label = "Settings", build = build, refresh = refresh })

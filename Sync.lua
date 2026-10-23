@@ -7,7 +7,9 @@
 -- in the receiver's own guild roster, so an edited copy of the addon on a
 -- member's PC can't push changes. The guild master decides which ranks count
 -- as officers (Settings); until then, ranks named like "Officer", "Leader" or
--- "Guild Master" do.
+-- "Guild Master" do. One exception: anyone may say which of their own
+-- characters is their main (record B), but only about the character sending
+-- it; officers may relay everyone's during a catch-up.
 --
 -- HOW IT MERGES: every record carries the time it was made, and newest wins,
 -- record by record (one team member, one alt link). A raid night's attendees
@@ -41,6 +43,8 @@
 --   D id u                                          raid night deleted
 --   C u officerRank                                 guild master's officer cut-off
 --   J guid u joined [guid u joined ...]             join dates (e.g. from GRM)
+--   B guid u main [guid u main ...]                 "this character's main is main"
+--                                                   (itself, if it's the main)
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -78,6 +82,8 @@ local function store()
     s.joinU = s.joinU or {}
     g.linkU = g.linkU or {}
     g.users = g.users or {}
+    g.claims = g.claims or {}
+    g.claimU = g.claimU or {}
     return g, s
 end
 
@@ -407,6 +413,24 @@ function PGM:SyncJoins(guids)
     sendPacked("1J", rows, true)
 end
 
+-- Tell the guild which character is this account's main. Each character
+-- speaks only for itself, so every alt needs logging in once; a main says
+-- it's a main, which is what lets its alts' claims count. Sent once a
+-- session and whenever the main changes. Claims don't move `newest`: every
+-- character repeats its own each login, so they never need a catch-up.
+function PGM:SyncMyMain()
+    local g = store()
+    local me = PGM:MyGuid()
+    if not (g and me and g.members[me] and enabled()) then return end
+    local main = PGM:AccountMain(g.members) or me
+    if g.claims[me] ~= main or not g.claimU[me] then
+        g.claims[me] = main
+        g.claimU[me] = PGM.Stamp(g.claimU[me])
+        PGM:RebuildAlts()
+    end
+    sendPacked("1B", { { me, g.claimU[me], main } }, false)
+end
+
 function PGM:SyncOfficerRank(rank)
     local _, s = store()
     if not s then return end
@@ -472,6 +496,11 @@ local function dump(target, since)
         if u > since and rec and rec.joined then joins[#joins + 1] = { guid, u, rec.joined } n = n + 1 end
     end
     sendPacked("1J", joins, true)
+    local claims = {}
+    for guid, u in pairs(g.claimU) do
+        if u > since and g.claims[guid] then claims[#claims + 1] = { guid, u, g.claims[guid] } n = n + 1 end
+    end
+    sendPacked("1B", claims, true)
     send("1E", target, n)   -- bulk too, so it arrives after what it follows
     bulkMode = false
 end
@@ -697,6 +726,25 @@ function handlers.J(f)
     end
 end
 
+-- A player about their own character, or an officer relaying claims in a
+-- catch-up. Anything else about someone else's character is ignored.
+function handlers.B(f, sender, rec)
+    if not rec then return end
+    local g = store()
+    local relay = PGM:IsOfficerRec(rec)
+    for i = 2, #f, 3 do
+        local guid, u, main = f[i], clampU(f[i + 1]), f[i + 2]
+        if (guid == rec.guid or relay) and isGuid(guid) and isGuid(main) and u
+            and g.members[guid] and g.members[main] and u > (g.claimU[guid] or 0) then
+            g.claims[guid] = main
+            g.claimU[guid] = u
+            Sync.applied = Sync.applied + 1
+            Sync.lastApplied = PGM.Now()
+            changed("ROSTER")
+        end
+    end
+end
+
 function handlers.C(f, sender, rec)
     if not (rec and rec.rankIndex == 0) then return end   -- the guild master's call alone
     local u = clampU(f[2])
@@ -850,6 +898,7 @@ PGM:On("ROSTER", function()
     end
     C_Timer.After(8, sendHello)
     C_Timer.NewTicker(HELLO_EVERY, sendHello)
+    C_Timer.After(15, function() PGM:SyncMyMain() end)
     -- Re-announce the officer cut-off so newcomers get it.
     C_Timer.After(12, function()
         local _, s = store()

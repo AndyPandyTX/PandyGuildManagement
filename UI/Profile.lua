@@ -6,7 +6,8 @@ local C = PGM.C
 local UI = PGM.UI
 local W = UI.W
 
-local SOURCE_LABEL = { manual = "linked by hand", account = "same account", note = "from guild note", rank = "by rank" }
+local SOURCE_LABEL = { manual = "linked by an officer", account = "same account", player = "set by the player",
+    note = "from guild note", rank = "by rank" }
 
 local function perms()
     local function can(fn)

@@ -34,8 +34,9 @@ Type **/pgm** to open it, or click it in the AddOns button on the minimap.
 - Every copy of the addon fills in the hours the others missed
 
 **Alts**
-- Found from alt ranks, common guild-note formats ("alt of Natty", "VA/Alt/.../Natty") and your own account
-- Link, unlink or pick a main by hand. Your choice always wins.
+- Found from alt ranks and common guild-note formats ("alt of Natty", "VA/Alt/.../Natty")
+- Players link their own characters just by logging into each one, and the whole guild sees it
+- Officers can link, unlink or pick a main by hand, and that always wins
 
 **Professions**
 - Pick a profession and see everyone who has it, with online crafters first
@@ -55,7 +56,7 @@ Everyone running the addon shares one set of data, over hidden guild addon messa
 
 - **Shared:** raid teams, raid nights, alt links, join dates and play-time activity
 - **Never shared:** private notes and your settings
-- **Only officers can edit** teams, raid nights and alt links. By default that's the Guild Master and any rank named Officer or Leader, including officer alts and Raid Leadership. The Guild Master can choose a different cut-off rank instead.
+- **Only officers can edit** teams, raid nights and alt links. Players can only link their own characters. By default that's the Guild Master and any rank named Officer or Leader, including officer alts and Raid Leadership. The Guild Master can choose a different cut-off rank instead.
 - **Checked by every copy:** each copy checks the sender's guild rank before accepting a change, so an edited copy can't push changes.
 - **Catches up:** anyone who logs in late gets caught up by an officer who's online, and play-time hours fill in from any copy
 - **Light on traffic:** about one message a second, and nothing is sent inside instances

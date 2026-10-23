@@ -163,7 +163,12 @@ raid nights or alts.
 
 1. **Your own characters:** any characters on your account in the same guild
    are linked automatically. Your main is the one on a non-alt rank with the
-   best M+ score, unless you pick one in Settings.
+   best M+ score, unless you pick one in Settings. Each character tells the
+   guild who its main is, so once you've logged into each of them with the
+   addon, everyone sees them linked ("set by the player" on the profile).
+   Each character can only speak for itself, and a link only counts once
+   the main has also said it's a main, so nobody can claim someone else's
+   characters.
 2. **Guild notes:** all of these name the main:
    - "alt of Natty", "Natty's alt" and "main: Natty"
    - the slash format many guilds use, like "VA/Alt/258/Crafter/Anvar"
@@ -172,8 +177,9 @@ raid nights or alts.
    The name has to be a real guild member.
 3. **Alt ranks:** anyone on a rank like "Raider Alts" or "Officer Alt" counts
    as an alt even when no note names the main. Link them by hand to say whose.
-4. **By hand:** link someone from their profile. Linking by hand always wins,
-   and "Not an alt" overrides the rank.
+4. **By an officer:** link someone from their profile. An officer's link
+   always wins, and "Not an alt" overrides the rank and the player's own
+   link.
 
 ## Midnight notes
 
@@ -193,10 +199,12 @@ Everyone in the guild running the addon shares one set of data, over hidden
 guild addon messages.
 
 - **Shared with everyone:** raid teams (members, roles, status, note tags,
-  schedule), recorded raid nights, and alt links made by hand.
+  schedule), recorded raid nights, alt links made by officers, and which of
+  their own characters players have linked.
 - **Never shared:** private notes, settings and your accent colour.
 - **Who can edit:** officers only. Everyone else sees shared teams and raid
-  nights read-only, with the edit buttons hidden.
+  nights read-only, with the edit buttons hidden. The one thing anyone can
+  share is their own characters' main.
   - By default, "officer" means the Guild Master and any rank whose name
     contains Officer or Leader. That covers Officer, Officer Alt, Event Officer
     and Raid Leadership.
