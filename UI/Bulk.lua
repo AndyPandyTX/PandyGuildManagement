@@ -401,7 +401,11 @@ end
 
 local function queueUpdate(r, it)
     r.item = it
-    local rec = it.rec
+    -- The roster swaps in fresh records on every read; show the current one
+    -- (so a finished demotion shows its new rank), or the last known if
+    -- they've left.
+    local g = PGM.GuildDB()
+    local rec = (g and g.members[it.guid]) or it.rec
     local running = PGM:BulkRunning()
     r.tick.fill:SetShown(not it.ignored)
     r.tick:SetShown(not running)
