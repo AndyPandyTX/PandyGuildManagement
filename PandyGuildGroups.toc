@@ -13,6 +13,7 @@ Core.lua
 Keystone.lua
 Status.lua
 Posts.lua
+GroupFinder.lua
 
 UI\Common.lua
 UI\Groups.lua

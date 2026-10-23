@@ -95,6 +95,17 @@ function GU.Cycle(parent, prefix, choices, onChange)
     return b
 end
 
+-- A row's tooltip for a member (row.it.rec): who, and all their M+ scores
+-- with the roles they were earned on.
+function GU.MemberTooltip(row)
+    local rec = row.it and row.it.rec
+    if not rec then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    GameTooltip:SetText(G.WhoText(rec))
+    G.AddScoreLines(GameTooltip, G.Scores(rec.short, rec.realm, PGM:MPlusScore(rec)))
+    GameTooltip:Show()
+end
+
 -- "Sat 20:30", or "Today 20:30", in local time from a server-time stamp.
 function G.StartText(start)
     local t = start - (PGM.Now() - time())

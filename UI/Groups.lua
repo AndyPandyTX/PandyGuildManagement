@@ -11,7 +11,7 @@ local UI = PGM.UI
 local W = UI.W
 local GU = G.UI
 
-local LEFT_W = 300
+local LEFT_W = 330
 local state = { kinds = {}, myRole = false, editing = false }
 
 local WHAT_HINT = { M = "Dungeon", R = "Raid", D = "Delve", O = "What you're doing" }
@@ -183,15 +183,19 @@ local function buildForm(card)
 
     -- Pings.
     local div = W.Divider(card)
-    div:SetPoint("TOPLEFT", x, -420)
-    div:SetPoint("TOPRIGHT", -12, -420)
-    local h = W.Heading(card, "Pings")
-    h:SetPoint("TOPLEFT", x, -430)
+    div:SetPoint("TOPLEFT", x, -416)
+    div:SetPoint("TOPRIGHT", -12, -416)
+    local h = W.Heading(card, "Group Finder and pings")
+    h:SetPoint("TOPLEFT", x, -424)
+    form.share = W.Check(card, "Post my Group Finder listing to the guild",
+        function() return G.opt("shareListing") end, function(v) G.setOpt("shareListing", v) end)
+    form.share:SetPoint("TOPLEFT", x, -436)
+    form.share:SetWidth(LEFT_W - 28)
     form.ping = W.Check(card, "Ping me when a group needs my role",
         function() return G.opt("ping") end, function(v) G.setOpt("ping", v) end)
-    form.ping:SetPoint("TOPLEFT", x, -444)
+    form.ping:SetPoint("TOPLEFT", x, -460)
     form.ping:SetWidth(LEFT_W - 28)
-    label(card, "I play", x, -474)
+    label(card, "I play", x, -492)
     form.roleChips = {}
     prev = nil
     for _, r in ipairs(G.ROLES) do
@@ -203,11 +207,11 @@ local function buildForm(card)
             UI:Refresh()
         end)
         chip.tip = "None ticked: whatever your spec is."
-        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 6, 0) else chip:SetPoint("TOPLEFT", x + 44, -470) end
+        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 6, 0) else chip:SetPoint("TOPLEFT", x + 44, -488) end
         form.roleChips[r] = chip
         prev = chip
     end
-    label(card, "For", x, -502)
+    label(card, "For", x, -518)
     form.pingChips = {}
     prev = nil
     for _, k in ipairs(G.KINDS) do
@@ -216,7 +220,7 @@ local function buildForm(card)
             t[k] = not t[k]
             s:SetActive(t[k])
         end)
-        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 4, 0) else chip:SetPoint("TOPLEFT", x + 44, -498) end
+        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 4, 0) else chip:SetPoint("TOPLEFT", x + 44, -514) end
         form.pingChips[k] = chip
         prev = chip
     end
@@ -233,28 +237,36 @@ local function askRow(list)
     local r = W.Row(list)
     r.name = W.FS(r, 12, C.text)
     r.name:SetPoint("TOPLEFT", 8, -5)
-    r.name:SetPoint("TOPRIGHT", -8, -5)
+    r.name:SetPoint("TOPRIGHT", -124, -5)
     r.info = W.FS(r, 11, C.text2)
-    r.info:SetPoint("BOTTOMLEFT", 8, 5)
-    r.info:SetPoint("BOTTOMRIGHT", -124, 5)
-    r.invite = W.Button(r, "Invite", 56, 20, C.jade)
-    r.invite:SetPoint("BOTTOMRIGHT", -64, 3)
+    r.info:SetPoint("LEFT", 8, -1)
+    r.info:SetPoint("RIGHT", -8, -1)
+    r.score = W.FS(r, 11, C.text)
+    r.score:SetPoint("BOTTOMLEFT", 8, 5)
+    r.score:SetPoint("BOTTOMRIGHT", -8, 5)
+    r.invite = W.Button(r, "Invite", 56, 18, C.jade)
+    r.invite:SetPoint("TOPRIGHT", -64, -3)
     r.invite:SetScript("OnClick", function(s) G:InviteAsk(s:GetParent().it.key) end)
-    r.decline = W.Button(r, "Decline", 56, 20, C.red)
-    r.decline:SetPoint("BOTTOMRIGHT", -4, 3)
+    r.decline = W.Button(r, "Decline", 56, 18, C.red)
+    r.decline:SetPoint("TOPRIGHT", -4, -3)
     r.decline:SetScript("OnClick", function(s) G:DeclineAsk(s:GetParent().it.key) end)
     r.done = W.FS(r, 11, C.jade, "RIGHT")
-    r.done:SetPoint("BOTTOMRIGHT", -8, 6)
+    r.done:SetPoint("TOPRIGHT", -8, -6)
     r:SetScript("OnClick", function(s, button)
         local rec = s.it.rec
         if rec and button == "RightButton" then UI:MemberMenu(s, rec.guid)
         elseif rec then UI:OpenProfile(rec.guid) end
     end)
     r.onEnter = function(s)
-        local a = s.it.ask
-        if a.note == "" then return end
+        local it = s.it
+        local a = it.ask
         GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
-        GameTooltip:SetText(a.note, 1, 1, 1, 1, true)
+        GameTooltip:SetText(a.name or "?")
+        if a.note ~= "" then GameTooltip:AddLine(a.note, 0.85, 0.85, 0.85, true) end
+        G.AddScoreLines(GameTooltip, it.scores or {})
+        if (a.members or 1) > 1 then
+            GameTooltip:AddLine(("Applied as a group of %d: Invite brings them all."):format(a.members), 0.6, 0.6, 0.6, true)
+        end
         GameTooltip:Show()
     end
     return r
@@ -269,15 +281,38 @@ end
 local function askUpdate(r, it)
     r.it = it
     local a, rec = it.ask, it.rec
-    r.name:SetText(rec and G.WhoText(rec) or (a.name or "?"))
-    local parts = { G.RoleText(a.role, true) }
+    local name
+    if rec then
+        name = G.WhoText(rec) .. "  " .. PGM.Hex(C.jade) .. "Guild|r"
+    else
+        name = PGM.ClassHex(a.class) .. (a.short or a.name or "?") .. "|r"
+            .. (a.realm and (PGM.Hex(C.text3) .. "-" .. a.realm .. "|r") or "")
+    end
+    if it.app then name = name .. "  " .. PGM.Hex(C.text3) .. "Group Finder|r" end
+    if (a.members or 1) > 1 then name = name .. PGM.Hex(C.text3) .. (" (group of %d)"):format(a.members) .. "|r" end
+    r.name:SetText(name)
+
+    -- Every role they offered; the one they'll play is bright.
+    local roles = ""
+    if a.offers then
+        for _, role in ipairs(G.ROLES) do
+            if a.offers[role] then roles = roles .. G.RoleIcon(role, role ~= a.role) end
+        end
+    end
+    local parts = { roles ~= "" and roles or G.RoleText(a.role, true) }
     local spec = specName(a.spec)
     if spec then parts[#parts + 1] = spec end
     if a.ilvl > 0 then parts[#parts + 1] = a.ilvl .. " ilvl" end
-    local score = rec and G.ScoreText(rec)
-    if score then parts[#parts + 1] = score end
     if a.note ~= "" then parts[#parts + 1] = PGM.Hex(C.text3) .. a.note .. "|r" end
     r.info:SetText(table.concat(parts, "   "))
+
+    if it.app then
+        it.scores = G.Scores(a.short, a.realm, a.score)
+    else
+        it.scores = rec and G.Scores(rec.short, rec.realm, PGM:MPlusScore(rec)) or {}
+    end
+    r.score:SetText(G.ScoreLine(it.scores))
+
     local open = a.state == "new"
     r.invite:SetShown(open)
     r.decline:SetShown(open)
@@ -310,34 +345,60 @@ local function buildMine(card)
 
     local h = W.Heading(card, "Asking to join")
     h:SetPoint("TOPLEFT", 14, -134)
-    mineUI.list = W.List(card, 40, askRow, askUpdate)
+    mineUI.list = W.List(card, 54, askRow, askUpdate)
     mineUI.list:SetPoint("TOPLEFT", 10, -150)
     mineUI.list:SetPoint("BOTTOMRIGHT", -8, 10)
     mineUI.empty = W.FS(card, 11, C.text3)
     mineUI.empty:SetPoint("TOPLEFT", 14, -154)
     mineUI.empty:SetPoint("TOPRIGHT", -12, -154)
     mineUI.empty:SetWordWrap(true)
-    mineUI.empty:SetText("Nobody yet. Guildies running Pandy Guild Groups see your post and can ask in one click.")
+    mineUI.empty:SetText("Nobody yet. Guildies running Pandy Guild Groups can ask in one click, and Group Finder applicants show here too.")
 end
 
 local function refreshMine()
     local p = G.mine
-    mineUI.card.title:SetText(G.PostTitle(p))
-    mineUI.card.sub:SetText(G.KIND_LABEL[p.kind] .. ((G.TeamName(p.team) and ("  -  " .. G.TeamName(p.team) .. " only")) or ""))
-    mineUI.needs:SetText(G.NeedText(p.need) .. PGM.Hex(C.text3) .. ("   %d/%d|r"):format(p.have or 1, p.size))
-    local left = (p.pugAt or 0) - PGM.Now()
-    local info
-    if left > 0 then
-        info = "Guild only for " .. G.Clock(left) .. ", then Find PuGs lights up."
-    elseif p.lfg then
-        info = "Listed in Group Finder too."
+    if not p then
+        -- Listed in the Group Finder, but not on the guild board.
+        mineUI.card.title:SetText("Your Group Finder listing")
+        mineUI.card.sub:SetText("Not on the guild board")
+        mineUI.needs:SetText("")
+        mineUI.info:SetText(G.opt("shareListing") == false
+            and "Tick Post my Group Finder listing to the guild (on Post a group) to share it."
+            or "Taken off the guild board. Delist and list again to post it.")
+        mineUI.edit:Hide()
+        mineUI.close:Hide()
+        mineUI.pugs:Hide()
     else
-        info = "Guild first is over: Find PuGs to fill the rest."
+        mineUI.card.title:SetText(G.PostTitle(p))
+        mineUI.card.sub:SetText(G.KIND_LABEL[p.kind] .. (p.fromLFG and "  -  from your Group Finder listing" or "")
+            .. ((G.TeamName(p.team) and ("  -  " .. G.TeamName(p.team) .. " only")) or ""))
+        mineUI.needs:SetText(G.NeedText(p.need) .. PGM.Hex(C.text3) .. ("   %d/%d|r"):format(p.have or 1, p.size))
+        local left = (p.pugAt or 0) - PGM.Now()
+        local info
+        if p.lfg then
+            info = "Listed in the Group Finder: guildies who apply are listed first."
+        elseif left > 0 then
+            info = "Guild only for " .. G.Clock(left) .. ", then Find PuGs lights up."
+        else
+            info = "Guild first is over: Find PuGs to fill the rest."
+        end
+        if p.note ~= "" then info = info .. "  " .. PGM.Hex(C.text3) .. p.note .. "|r" end
+        mineUI.info:SetText(info)
+        mineUI.edit:SetShown(not p.fromLFG)
+        mineUI.close:Show()
+        mineUI.close.tip = p.fromLFG and "Takes it off the guild board. Your Group Finder listing stays." or nil
+        mineUI.close:ClearAllPoints()
+        if p.fromLFG then
+            mineUI.close:SetPoint("TOPLEFT", 14, -96)
+        else
+            mineUI.close:SetPoint("LEFT", mineUI.edit, "RIGHT", 6, 0)
+        end
+        mineUI.pugs:Show()
+        local canFind = left <= 0 and not p.lfg
+        mineUI.pugs:SetLabel(p.lfg and "Listed" or "Find PuGs")
+        mineUI.pugs:SetEnabled(canFind)
+        mineUI.pugs:SetAlpha(canFind and 1 or 0.45)
     end
-    if p.note ~= "" then info = info .. "  " .. PGM.Hex(C.text3) .. p.note .. "|r" end
-    mineUI.info:SetText(info)
-    mineUI.pugs:SetEnabled(left <= 0)
-    mineUI.pugs:SetAlpha(left <= 0 and 1 or 0.45)
     local asks = G:Asks()
     mineUI.list:SetData(asks, true)
     mineUI.empty:SetShown(#asks == 0)
@@ -545,7 +606,7 @@ local function build(p)
     p.ticker = 0
     p:SetScript("OnUpdate", function(s, elapsed)
         s.ticker = s.ticker + elapsed
-        if s.ticker >= 1 and G.mine and s.mineCard:IsShown() then
+        if s.ticker >= 1 and s.mineCard:IsShown() then
             s.ticker = 0
             refreshMine()
         end
@@ -553,7 +614,7 @@ local function build(p)
 end
 
 local function refresh(p)
-    local showMine = G.mine ~= nil and not state.editing
+    local showMine = (G.mine ~= nil or G:IsListed()) and not state.editing
     p.mineCard:SetShown(showMine)
     p.formCard:SetShown(not showMine)
     if showMine then refreshMine() end
@@ -563,6 +624,7 @@ local function refresh(p)
     for r, chip in pairs(form.roleChips) do chip:SetActive(G.opt("roles")[r] == true) end
     for k, chip in pairs(form.pingChips) do chip:SetActive(G.opt("pingKinds")[k] and true or false) end
     form.ping:Sync()
+    form.share:Sync()
 
     local anyKind = next(state.kinds) ~= nil
     local roles = G.MyRoles()

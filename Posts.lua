@@ -26,7 +26,6 @@ local _, NS = ...
 local G = NS.G
 if not G.ok then return end
 local PGM = G.PGM
-local P = PGM.Plain
 
 local TTL = 10 * 60
 local HEARTBEAT = 4 * 60
@@ -105,6 +104,8 @@ local function sendPost(p, quiet)
         p.lfg and 1 or 0, G.Clean(p.note, 70))
 end
 
+G.SendPost = sendPost
+
 local counter = 0
 local function newId()
     counter = counter + 1
@@ -151,6 +152,8 @@ function G:Post(spec)
         d.sched[p.id] = p
     else
         p.have = G.GroupSize()
+        if spec.lfg ~= nil then p.lfg = spec.lfg end
+        p.fromLFG = spec.fromLFG or p.fromLFG
         if not old then
             p.pugAt = now + 60 * (tonumber(spec.guildFirst) or G.opt("guildFirst") or 0)
             p.asks, p.counted, p.base = {}, {}, {}
@@ -246,20 +249,33 @@ end
 -- ANSWERING (the leader's side)
 -- ============================================================
 
--- Asks on my live post, newest last: { key, ask, rec }.
+-- Everyone asking to join, oldest first with guildies ahead of the rest:
+-- asks on my post through the guild ({ key, ask, rec }), and applicants to
+-- my Group Finder listing ({ key, ask, rec, app = true }, from
+-- GroupFinder.lua). Someone who did both is listed once, as an applicant.
 function G:Asks()
-    local out = {}
-    local p = G.mine
-    if not p then return out end
-    for key, a in pairs(p.asks) do
-        if a.state ~= "declined" then out[#out + 1] = { key = key, ask = a, rec = G.RecByName(a.name) } end
+    local out, seen = {}, {}
+    for _, it in ipairs(G.Applicants and G:Applicants() or {}) do
+        out[#out + 1] = it
+        seen[PGM.SyncNorm(it.ask.name)] = true
     end
-    table.sort(out, function(a, b) return a.ask.at < b.ask.at end)
+    local p = G.mine
+    for key, a in pairs(p and p.asks or {}) do
+        if a.state ~= "declined" and not seen[key] then
+            out[#out + 1] = { key = key, ask = a, rec = G.RecByName(a.name) }
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.rec ~= nil) ~= (b.rec ~= nil) then return a.rec ~= nil end
+        return (a.ask.at or 0) < (b.ask.at or 0)
+    end)
     return out
 end
 
--- From a click: the game invites only from one.
+-- From a click: the game invites only from one. A Group Finder applicant
+-- is invited through the Group Finder (their whole application at once).
 function G:InviteAsk(key)
+    if G.InviteApplicant and G:InviteApplicant(key) then return end
     local p = G.mine
     local a = p and p.asks[key]
     if not a then return end
@@ -270,6 +286,7 @@ function G:InviteAsk(key)
 end
 
 function G:DeclineAsk(key)
+    if G.DeclineApplicant and G:DeclineApplicant(key) then return end
     local p = G.mine
     local a = p and p.asks[key]
     if not a then return end
@@ -541,20 +558,6 @@ G:RegisterEvent("GROUP_ROSTER_UPDATE", function()
         recountTimer = nil
         recount()
     end)
-end)
-
--- Listed in Blizzard's Group Finder too: say so on the post.
-G:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE", function()
-    local p = G.mine
-    if not (p and C_LFGList and C_LFGList.HasActiveEntryInfo) then return end
-    local ok, has = pcall(C_LFGList.HasActiveEntryInfo)
-    has = ok and P(has) and true or false
-    if has ~= (p.lfg or false) then
-        p.lfg = has
-        p.u = PGM.Stamp(p.u)
-        sendPost(p, true)
-        G:Fire("POSTS")
-    end
 end)
 
 -- ============================================================

@@ -11,6 +11,29 @@ Type `/pgg`, or open `/pgm` and look under **Modules** in the sidebar.
 Needs Pandy Guild Management 0.9.0 or newer. Works on retail (Midnight) and WoW
 Forever (no keystones there).
 
+## With Blizzard's Group Finder
+
+- **List once.** List a group in the Group Finder and it goes on the guild
+  board too: the dungeon, your key's level and the roles still open, worked
+  out from who's in your group. Delisting takes it off. Closing it on the
+  guild board (or it filling) leaves your listing alone. Turn this off with
+  "Post my Group Finder listing to the guild".
+- **Applicants on the Groups page.** Everyone who applies is listed under
+  "Asking to join" with guild asks, guildies first, each marked Guild or
+  Group Finder. Invite and Decline go through the Group Finder.
+- **Guild in Blizzard's windows.** Search results led by a guildie, or with
+  guildies in them, get a jade edge, and their tooltip says who leads it.
+  Guildies in your applicant list get the same edge. Sorting is left to
+  Blizzard and Premade Groups Filter, so they never fight.
+
+## M+ scores
+
+Everywhere a score shows (requests, applicants, tooltips on Who's Free and
+Keystones) it's written out like RaiderIO does: the character's own score,
+then their main's and their warband's when higher, each with the role icons
+it was earned on. A dimmed icon is a role that only partly earned it. The
+character's score comes from the game; main, warband and roles need RaiderIO.
+
 ## Pages
 
 **Groups.** The board.

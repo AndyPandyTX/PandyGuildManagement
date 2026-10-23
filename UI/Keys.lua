@@ -42,6 +42,7 @@ local function buildRow(list)
     r:SetScript("OnClick", function(s, button)
         if button == "RightButton" then UI:MemberMenu(s, s.it.guid) else UI:OpenProfile(s.it.guid) end
     end)
+    r.onEnter = G.UI.MemberTooltip
     return r
 end
 

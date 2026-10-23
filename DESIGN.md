@@ -169,6 +169,30 @@ sub-type, then fields joined by `\031`.
      `UI:MemberMenu`, `UI:OpenProfile`, `UI:Whisper`, `UI:Invite`, and
      the widgets in `UI.W`
 
+## Blizzard's Group Finder
+
+Added after the first build (GroupFinder.lua):
+
+- **Listing -> post.** On `LFG_LIST_ACTIVE_ENTRY_UPDATE` (and group
+  changes), the active entry's activity becomes a post marked `fromLFG`:
+  kind from the activity (M+, raid, delve), level from my keystone or the
+  raid difficulty, needs from the kind's usual roles minus my group's
+  roles. Guild first is skipped, since the listing is already public. It's
+  re-sent only when something in it changes. Delisting sends `X`. Closing
+  it by hand, or it filling, stops it being posted again until delisted.
+- **Applicants.** `C_LFGList.GetApplicants` and its member info, read on
+  `LFG_LIST_APPLICANT_*`, join the guild asks on the Groups page, guildies
+  first. One name is listed once. Invite and Decline call
+  `C_LFGList.InviteApplicant` / `DeclineApplicant`, from a click.
+- **Blizzard's rows.** `hooksecurefunc` on `LFGListSearchEntry_Update`,
+  `LFGListUtil_SetSearchEntryTooltip` and
+  `LFGListApplicationViewer_UpdateApplicantMember`: a jade edge on guild
+  rows, and guild lines in the tooltips. No sorting: Premade Groups Filter
+  owns that.
+- **Scores.** `G.Scores` reads RaiderIO's `mplusCurrent`, `mplusMainCurrent`
+  and `mplusWarbandCurrent` (score and roles, full or partial), preferring
+  the game's own score for the character.
+
 ## Files
 
 ```
@@ -177,6 +201,7 @@ Core.lua               namespace, saved data, API check, slash command
 Keystone.lua           my keystone, everyone's keystones, K/W/V
 Status.lua             my state (free / looking / grouped), S beacons, who's free
 Posts.lua              posts, asks, answers, signups, cleanup, pings
+GroupFinder.lua        listing -> post, applicants, marks in Blizzard's windows
 UI/Common.lua          shared page pieces, start-time parsing
 UI/Groups.lua          the Groups page
 UI/Free.lua            the Who's free page

@@ -56,6 +56,7 @@ local DEFAULTS = {
     pingKinds = { M = true, R = true, D = true, O = true },
     roles = {},             -- roles I'll play; empty means "my spec's"
     guildFirst = 5,         -- minutes before Find PuGs lights up
+    shareListing = true,    -- post my Group Finder listing to the guild
     looking = false,        -- "I'm up for a group"
     lookingKinds = { M = true, R = false, D = true, O = false },
     freeMaxOnly = true,
@@ -156,27 +157,91 @@ function G.WhoText(rec)
     return text
 end
 
--- Their warband's best M+ score this season, from RaiderIO when it's
--- installed, or nil. Shown next to the character's own when higher.
-function G.WarbandScore(rec)
-    if PGM.IS_FOREVER or not (rec and rec.short and RaiderIO and RaiderIO.GetProfile) then return nil end
-    local ok, profile = pcall(RaiderIO.GetProfile, rec.short, ((rec.realm or ""):gsub("%s+", "")))
-    local mp = ok and type(profile) == "table" and profile.mythicKeystoneProfile
-    local score = type(mp) == "table" and tonumber(mp.warbandCurrentScore)
-    if score and score > 0 then return math.floor(score + 0.5) end
+-- ============================================================
+-- M+ SCORES
+-- ============================================================
+
+-- Role icons from the game's role sheet, dimmed for a role that only
+-- partly earned a score (RaiderIO's "partial").
+local ROLE_COORDS = { T = "0:19:22:41", H = "20:39:1:20", D = "20:39:22:41" }
+function G.RoleIcon(r, dim)
+    local coords = ROLE_COORDS[r]
+    if not coords then return "" end
+    return "|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:13:13:0:0:64:64:" .. coords
+        .. (dim and ":110:110:110" or "") .. "|t"
 end
 
--- "2650 M+", or "2650 M+ (warband 3146)" when the warband's is higher.
-function G.ScoreText(rec)
-    local score = PGM:MPlusScore(rec)
-    local wb = G.WarbandScore(rec)
-    local parts = {}
-    if score then parts[#parts + 1] = PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r M+" end
-    if wb and wb > (score or 0) then
-        parts[#parts + 1] = PGM.Hex(PGM.C.text3) .. "(warband |r" .. PGM.Hex(PGM:ScoreColor(wb)) .. wb .. "|r"
-            .. PGM.Hex(PGM.C.text3) .. ")|r"
+local RIO_ROLE = { tank = "T", healer = "H", dps = "D" }
+
+-- RaiderIO's roles list ({ {"dps","full"}, {"healer","partial"} }) as icons.
+local function rioRoles(list)
+    local out = ""
+    for _, it in ipairs(type(list) == "table" and list or {}) do
+        local r = type(it) == "table" and RIO_ROLE[it[1]]
+        if r then out = out .. G.RoleIcon(r, it[2] ~= "full") end
     end
-    return #parts > 0 and table.concat(parts, " ") or nil
+    return out
+end
+
+local function rioProfile(name, realm)
+    if PGM.IS_FOREVER or not (name and RaiderIO and RaiderIO.GetProfile) then return nil end
+    realm = ((realm and realm ~= "") and realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or ""):gsub("%s+", "")
+    local ok, profile = pcall(RaiderIO.GetProfile, name, realm)
+    local mp = ok and type(profile) == "table" and profile.mythicKeystoneProfile
+    return type(mp) == "table" and mp or nil
+end
+
+-- A character's M+ scores, like RaiderIO shows them: their own, their
+-- main's and their warband's, each with the roles it was earned on.
+-- live: the score the game itself gives (roster, applicant), preferred.
+-- { char = { score, roles }, main = {...}, warband = {...} }; parts may be nil.
+function G.Scores(name, realm, live)
+    local mp = rioProfile(name, realm)
+    local function part(t, fallback)
+        local score = tonumber(fallback) or (type(t) == "table" and tonumber(t.score)) or 0
+        if score <= 0 then return nil end
+        return { score = math.floor(score + 0.5), roles = type(t) == "table" and rioRoles(t.roles) or "" }
+    end
+    live = tonumber(live)
+    return {
+        char = part(mp and mp.mplusCurrent, (live and live > 0) and live or nil),
+        main = part(mp and mp.mplusMainCurrent),
+        warband = part(mp and mp.mplusWarbandCurrent),
+    }
+end
+
+-- "2650 [D][h]   Main 2900 [T]   Warband 3146 [D]". Main and warband show
+-- only when they're higher than the character's own.
+function G.ScoreLine(s)
+    local own = s.char and s.char.score or 0
+    local function piece(label, p)
+        return (label and (PGM.Hex(PGM.C.text3) .. label .. "|r ") or "")
+            .. PGM.Hex(PGM:ScoreColor(p.score)) .. p.score .. "|r" .. (p.roles ~= "" and (" " .. p.roles) or "")
+    end
+    local parts = {}
+    parts[#parts + 1] = s.char and piece(nil, s.char) or (PGM.Hex(PGM.C.text3) .. "No M+ score|r")
+    if s.main and s.main.score > own then parts[#parts + 1] = piece("Main", s.main) end
+    if s.warband and s.warband.score > own then parts[#parts + 1] = piece("Warband", s.warband) end
+    return table.concat(parts, "   ")
+end
+
+-- The score line for a guild member.
+function G.ScoreText(rec)
+    if not rec then return nil end
+    return G.ScoreLine(G.Scores(rec.short, rec.realm, PGM:MPlusScore(rec)))
+end
+
+-- Score lines in a tooltip, one per kind, for hovering.
+function G.AddScoreLines(tooltip, s)
+    local function line(label, p)
+        if p then
+            tooltip:AddDoubleLine(label, PGM.Hex(PGM:ScoreColor(p.score)) .. p.score .. "|r " .. p.roles,
+                0.7, 0.73, 0.77, 1, 1, 1)
+        end
+    end
+    line("M+ score", s.char)
+    line("Main's", s.main)
+    line("Warband's", s.warband)
 end
 
 -- My spec's role letter (T, H or D), or D when the game won't say.
