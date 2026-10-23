@@ -2,7 +2,7 @@
 
 A guild manager for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
 
-Type **/pgm** to open it, or click it in the AddOns button on the minimap.
+Type **/pgm** to open it, click it in the AddOns button on the minimap, or use the buttons under the Guild & Communities window.
 
 ## Features
 
@@ -55,6 +55,8 @@ Type **/pgm** to open it, or click it in the AddOns button on the minimap.
 
 **History**
 - Every join, rejoin, leave, promotion, demotion, rename and max-level ding, with filters
+- Shows who did it: "demoted by Natty", "removed from the guild by Natty", "invited by Natty", even for changes made while you were offline
+- When someone leaves or is removed, lists their characters still in the guild
 
 ## Guild sync
 
