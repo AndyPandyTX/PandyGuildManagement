@@ -10,6 +10,8 @@ A guild manager for retail WoW (Midnight), built for big raiding guilds:
   the addon, editable only by officers and raid leaders
 - **Alts:** detected from alt ranks, guild-note formats and your own account
 - **Raid attendance:** recorded automatically, no setup
+- **Play-time activity:** average and peak online, the guild's busiest times,
+  and when each member usually plays
 - **Roster, professions and history:** searchable, sortable, with safe
   promote/demote buttons
 
@@ -47,6 +49,21 @@ notes, class, race and profession. Filters for online, max level, mains only
 and away 30d+. It shows alts, M+ score and raid attendance; hover a row for
 professions and raid teams. Click someone to open their profile; right-click
 to whisper or invite.
+
+**Activity.** When the guild plays, and who plays when:
+- tiles for average online, peak online (and when), the busiest time of the
+  week, and how many hours have been observed
+- a chart of average online by hour of day, and a weekday × hour grid that
+  lights up at the busiest times
+- each member's hours played, usual play time and most active day
+- 7, 30 or 90 days, with alts folded into their main
+
+Every copy notes who's in game every 5 minutes; the mobile app doesn't count.
+The guild roster shows everyone's online status, so one copy covers the whole
+guild while its player is on. Other copies fill in the hours you're not: each
+finished hour is shared once, and logging in after time away catches up on up
+to a week. Everything is shown in your local time. Each profile also shows
+that member's play time.
 
 **Professions.** Pick a profession and see everyone who has it. Online
 members are listed first, so finding a crafter right now takes one click.

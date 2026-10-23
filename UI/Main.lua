@@ -14,7 +14,7 @@ local WIDTH, HEIGHT, SIDE_W = 1020, 660, 210
 
 -- Sidebar sections, in order. A page not listed lands in the last one.
 local NAV = {
-    { heading = "Guild",   ids = { "overview", "roster", "professions" } },
+    { heading = "Guild",   ids = { "overview", "roster", "activity", "professions" } },
     { heading = "Raiding", ids = { "teams", "raids" } },
     { heading = "Records", ids = { "log", "users", "settings" } },
 }
@@ -23,6 +23,7 @@ local NAV_ICONS = {
     overview    = "Interface\\Icons\\INV_Misc_Spyglass_03",
     roster      = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend",
     professions = "Interface\\Icons\\Trade_BlackSmithing",
+    activity    = "Interface\\Icons\\INV_Misc_PocketWatch_02",
     teams       = "Interface\\Icons\\INV_Misc_GroupNeedMore",
     raids       = "Interface\\Icons\\Achievement_Boss_Ragnaros",
     log         = "Interface\\Icons\\INV_Scroll_03",
@@ -315,6 +316,7 @@ PGM:On("ROSTER", queueRefresh)
 PGM:On("RAIDS", queueRefresh)
 PGM:On("TEAMS", queueRefresh)
 PGM:On("SYNC", queueRefresh)
+PGM:On("ACTIVITY", queueRefresh)
 
 -- UI-only messages (window moved, and so on).
 local uiListeners = {}

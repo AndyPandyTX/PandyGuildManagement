@@ -224,6 +224,15 @@ end
 
 -- While a catch-up is being sent, everything it sends is bulk too.
 local bulkMode = false
+-- For other modules: queue a record (fields joined like every other record).
+function PGM.SyncSend(bulk, ...)
+    enqueue(table.concat({ ... }, SEP), bulk)
+end
+PGM.SyncNorm = norm
+function PGM.SyncIsMe(name)
+    return norm(name) == norm(myFullName())
+end
+
 local function send(...)
     enqueue(table.concat({ ... }, SEP), bulkMode)
 end
@@ -522,6 +531,9 @@ local function findRaid(id, instance, start)
 end
 
 local handlers = {}
+-- Other modules (Activity.lua) add their own record types here. Records they
+-- add aren't in WRITES, so any guild member's copy may send them.
+PGM.SyncHandlers = handlers
 
 function handlers.T(f)
     local id, u = f[2], clampU(f[3])

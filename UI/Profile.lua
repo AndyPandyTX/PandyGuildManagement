@@ -182,17 +182,21 @@ local function build()
         p.strip[i] = t
     end
 
+    p.played = W.FS(right, 12, C.text2)
+    p.played:SetPoint("TOPLEFT", 0, -62)
+    p.played:SetPoint("TOPRIGHT", 0, -62)
+
     local hl = W.FS(right, 13, C.accent)
-    hl:SetPoint("TOPLEFT", 0, -72)
+    hl:SetPoint("TOPLEFT", 0, -92)
     hl:SetText("History")
     p.history = {}
     for i = 1, 14 do
         local d = W.FS(right, 11, C.text3)
-        d:SetPoint("TOPLEFT", 0, -92 - (i - 1) * 18)
+        d:SetPoint("TOPLEFT", 0, -112 - (i - 1) * 18)
         d:SetWidth(80)
         local t = W.FS(right, 12, C.text)
-        t:SetPoint("TOPLEFT", 84, -92 - (i - 1) * 18)
-        t:SetPoint("TOPRIGHT", 0, -92 - (i - 1) * 18)
+        t:SetPoint("TOPLEFT", 84, -112 - (i - 1) * 18)
+        t:SetPoint("TOPRIGHT", 0, -112 - (i - 1) * 18)
         p.history[i] = { date = d, text = t }
     end
 
@@ -263,7 +267,7 @@ function UI:RefreshProfile()
         local former = g and g.former[p.guid]
         p.name:SetText(former and PGM.ColorName(former) or "?")
         p.sub:SetText(PGM.Hex(C.text3) .. "No longer in the guild|r")
-        for _, fs in ipairs({ p.status, p.joined, p.mplus, p.raid, p.profs, p.teams, p.note, p.onote, p.attText }) do fs:SetText("") end
+        for _, fs in ipairs({ p.status, p.joined, p.mplus, p.raid, p.profs, p.teams, p.note, p.onote, p.attText, p.played }) do fs:SetText("") end
         for _, fs in ipairs(p.altLines) do fs:SetText("") end
         for _, line in ipairs(p.history) do line.date:SetText("") line.text:SetText("") end
         for _, t in ipairs(p.strip) do t:SetColorTexture(C.line[1], C.line[2], C.line[3], 0.35) end
@@ -350,6 +354,11 @@ function UI:RefreshProfile()
             t:SetColorTexture(C.red[1], C.red[2], C.red[3], 0.6)
         end
     end
+
+    -- Play time, last 30 days, alts included.
+    local act = PGM:ActivityFor(p.guid)
+    p.played:SetText(act and ("Played %dh in the last 30 days, usually %s, most often on %s."):format(
+        act.hours, PGM.UsualTime(act), PGM.TopDay(act)) or "No play time recorded in the last 30 days.")
 
     -- History for the whole group, newest first.
     local inGroup = {}
