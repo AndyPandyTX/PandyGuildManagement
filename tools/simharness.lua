@@ -677,6 +677,47 @@ do
     check(#abyss(C) == 1, "...and the Heroic night is untouched")
 end
 
+print("-- sync hardening")
+do
+    -- "gm" only as its own word (checked without the GM's cut-off).
+    local cut = A.g.sync.officerRank
+    A.g.sync.officerRank = nil
+    check(not A.PGM:IsOfficerRec({ rankIndex = 5, rank = "Sigma" }), "a rank called Sigma isn't an officer rank")
+    check(A.PGM:IsOfficerRec({ rankIndex = 3, rank = "GM Alt" }), "...but GM Alt is")
+    A.g.sync.officerRank = cut
+
+    -- A member asking for full catch-ups nobody offered gets nothing.
+    local before = B.sent or 0
+    for _ = 1, 3 do C.PGM.SyncSend(false, "1R", "Magicpayne-MalGanis", 0) end
+    C.PGM.SyncSend(false, "1R", "", 0)
+    run(40)
+    check((B.sent or 0) - before < 5, "unrequested catch-up requests are ignored (officer sent " .. ((B.sent or 0) - before) .. ")")
+
+    -- Two players logging in together both get caught up.
+    local X = newClient(gid(23), "Selwyne")
+    local Y = newClient(gid(22), "Funkyshade")
+    check(not X.PGM:SyncSettled(), "a fresh login isn't settled before its catch-up")
+    run(150)
+    local function names(cl) local t = {} for _, x in ipairs(cl.g.teams or {}) do t[#t + 1] = x.name end return table.concat(t, "/") end
+    check(names(X) == names(A) and names(Y) == names(A), "two logins at once are both caught up (" .. names(X) .. ")")
+    check(X.PGM:SyncSettled(), "...and settled after it")
+
+    -- An officer who edits right after logging in is still caught up.
+    local G = newClient(gid(1), "Deathsquaad")
+    G.PGM:CreateTeam("Scratch")
+    run(150)
+    check(teamNamed(G, "Team Mercy") ~= nil and teamNamed(G, "Team Zenith") ~= nil, "an edit right after login doesn't skip the catch-up")
+
+    -- Wild activity numbers are kept within what's possible.
+    local hour = math.floor((BASE + T) / 3600) - 3
+    C.PGM.SyncSend(false, "1W", hour, 4000, 99999, 99999, "")
+    C.PGM.SyncSend(false, "1W", hour + 10, 5, 50, 12, "")
+    run(5)
+    local ha = A.g.activity and A.g.activity.hours or {}
+    check(not (ha[hour] and (ha[hour].p or 0) >= 4000), "a peak bigger than the guild is ignored")
+    check(not ha[hour + 10], "an hour in the future is ignored")
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)

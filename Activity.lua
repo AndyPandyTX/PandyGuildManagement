@@ -171,9 +171,18 @@ end
 
 local handlers = PGM.SyncHandlers or {}
 
+-- Anyone may send these, so keep the numbers possible: no more samples than
+-- an hour holds, no more online than the guild has, and an average no
+-- higher than the peak. One wild record can't pin an hour's figures.
+local MAX_SAMPLES = math.floor(3600 / SAMPLE_EVERY) + 1
 function handlers.W(f)
     local key, peak, avg10, samples = tonumber(f[2]), tonumber(f[3]), tonumber(f[4]), tonumber(f[5])
-    if not (key and peak and peak >= 0 and peak < 5000) then return end
+    if not (key and peak and peak >= 0) then return end
+    local members = PGM.CountMembers and PGM:CountMembers() or 0
+    if members > 0 and peak > members then return end
+    if key > hourOf(PGM.Now()) then return end
+    samples = samples and math.max(0, math.min(math.floor(samples), MAX_SAMPLES)) or nil
+    avg10 = avg10 and math.max(0, math.min(avg10, peak * 10)) or nil
     mergeHour(key, peak, avg10, samples, f[6])
 end
 

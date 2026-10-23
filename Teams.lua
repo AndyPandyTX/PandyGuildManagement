@@ -485,6 +485,9 @@ end
 -- read. (Alts are resolved first: Alts.lua listens for ROSTER before this.)
 PGM:On("ROSTER", function()
     if not canEdit() then return end
+    -- Not until this login's catch-up is in: before it, a member another
+    -- officer removed while we were away would look new and be re-added.
+    if PGM.SyncSettled and not PGM:SyncSettled() then return end
     local added = 0
     for _, t in ipairs(PGM:Teams()) do
         if t.autoSync then added = added + PGM:ImportTeamFromNotes(t.id, true) end
