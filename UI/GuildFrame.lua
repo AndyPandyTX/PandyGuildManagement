@@ -1,8 +1,7 @@
 -- GuildFrame.lua (UI): quick buttons above Blizzard's Guild & Communities
 -- window: open Pandy Guild Management, jump to History, and (for officers)
--- Bulk Actions. They sit over the window's top-left corner, so they don't
--- collide with other addons' buttons on the right, and show only while the
--- guild itself is the community being viewed.
+-- Bulk Actions. They sit just under the window's bottom-right corner, and
+-- show only while the guild itself is the community being viewed.
 --
 -- They're plain buttons parented to the window, so they show and hide with
 -- it; nothing of Blizzard's is changed or re-anchored.
@@ -23,11 +22,26 @@ local function guildSelected(cf)
     return not (selected and guild) or selected == guild
 end
 
+-- Right-aligned: lay the shown buttons out from the right edge, so hiding
+-- Bulk Actions for a non-officer leaves no gap.
+local function layout()
+    local prev
+    for i = #bar.buttons, 1, -1 do
+        local b = bar.buttons[i]
+        b:ClearAllPoints()
+        if b:IsShown() then
+            if prev then b:SetPoint("RIGHT", prev, "LEFT", -4, 0) else b:SetPoint("RIGHT") end
+            prev = b
+        end
+    end
+end
+
 local function sync()
     if not bar then return end
     local cf = CommunitiesFrame
     bar:SetShown(cf ~= nil and guildSelected(cf))
     bar.bulk:SetShown(PGM.CanEdit ~= nil and PGM:CanEdit() or false)
+    layout()
 end
 
 local function build()
@@ -35,16 +49,17 @@ local function build()
     if bar or not cf then return end
     bar = CreateFrame("Frame", nil, cf)
     bar:SetSize(1, 22)
-    bar:SetPoint("BOTTOMLEFT", cf, "TOPLEFT", 4, 2)
-    local function add(label, w, page, prev)
+    bar:SetPoint("TOPRIGHT", cf, "BOTTOMRIGHT", -4, -2)
+    bar.buttons = {}
+    local function add(label, w, page)
         local b = W.Button(bar, label, w, 22)
-        if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("LEFT") end
         b:SetScript("OnClick", function() UI:Show(page) end)
+        bar.buttons[#bar.buttons + 1] = b
         return b
     end
     bar.main = add("Pandy Guild", 104)
-    bar.history = add("History", 72, "log", bar.main)
-    bar.bulk = add("Bulk Actions", 104, "bulk", bar.history)
+    bar.history = add("History", 72, "log")
+    bar.bulk = add("Bulk Actions", 104, "bulk")
     cf:HookScript("OnShow", sync)
     if cf.SelectClub then hooksecurefunc(cf, "SelectClub", sync) end
     sync()
