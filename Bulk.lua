@@ -46,14 +46,17 @@ function PGM:MyRankIndex()
     return me and me.rankIndex
 end
 
--- What this character's rank allows, straight from the game.
+-- What this character may do here: officers only (the same people who can
+-- edit raid teams), and then only what the game lets their rank do.
 function PGM:BulkAllowed()
+    local officer = PGM.CanEdit ~= nil and PGM:CanEdit()
     local function can(fn)
-        if type(_G[fn]) ~= "function" then return false end
+        if not officer or type(_G[fn]) ~= "function" then return false end
         local ok, res = pcall(_G[fn])
         return ok and PGM.Plain(res) and true or false
     end
-    return { kick = can("CanGuildRemove"), promote = can("CanGuildPromote"), demote = can("CanGuildDemote") }
+    return { officer = officer, kick = can("CanGuildRemove"), promote = can("CanGuildPromote"),
+             demote = can("CanGuildDemote") }
 end
 
 -- ============================================================
@@ -79,7 +82,7 @@ end
 
 function PGM:BulkNewRule(action)
     local _, b = store()
-    if not b then return nil end
+    if not b or not (PGM.CanEdit and PGM:CanEdit()) then return nil end
     local r = { id = ("%d-%d"):format(PGM.Now(), math.random(1000, 9999)), on = true, skipTeams = true }
     if action == "kick" then
         r.name, r.awayDays, r.keepIfGroupActive = "Away 60+ days", 60, true
@@ -261,6 +264,7 @@ PGM:On("ROSTER", resolve)
 -- Start a run over everyone the rules pick, minus the ignored. Returns how
 -- many are queued.
 function PGM:BulkStart(action)
+    if not (PGM.CanEdit and PGM:CanEdit()) then return 0 end
     local queue = {}
     for _, it in ipairs(PGM:BulkMatches(action)) do
         if not it.ignored then queue[#queue + 1] = it end

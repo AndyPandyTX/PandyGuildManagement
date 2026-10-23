@@ -117,7 +117,9 @@ filter.
 
 ![Addon Users](screenshots/09-addon-users.png)
 
-**Bulk Actions.** Kick, promote or demote many members at once, by rules:
+**Bulk Actions.** Kick, promote or demote many members at once, by rules.
+Officers only (the same people who can edit raid teams), and only what the
+game lets your rank do:
 - Make rules for each action: away at least N days (or online within N
   days, for promotions), ranks, level range, days in the guild, text in
   their notes, and the rank to move them to.

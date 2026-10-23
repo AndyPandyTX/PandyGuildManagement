@@ -578,6 +578,25 @@ local function refresh(p)
     local running = PGM:BulkRunning()
     local allowed = PGM:BulkAllowed()
     for a, chip in pairs(p.chips) do chip:SetActive(a == action) end
+    -- Officers only: everyone else just sees why.
+    p.newRule:SetShown(allowed.officer)
+    p.keyBtn:SetShown(allowed.officer)
+    if not allowed.officer then
+        p.perms:SetText("")
+        p.editor:Hide()
+        p.rules:SetData({})
+        p.noRules:SetText("")
+        p.queue:SetData({})
+        p.qHead:SetText("")
+        p.ignored:SetText("")
+        p.clearIgnored:Hide()
+        p.empty:SetText("Bulk Actions is for officers: the same people who can edit raid teams.")
+        p.status:SetText("")
+        p.start:Hide()
+        p.stop:Hide()
+        p.keyText:SetText("")
+        return
+    end
     local can = {}
     for _, a in ipairs(PGM.BULK_ACTIONS) do if allowed[a] then can[#can + 1] = VERB_ING[a] end end
     p.perms:SetText(#can > 0 and ("Your rank can " .. table.concat(can, ", ") .. ". Only ranks below yours are listed.")
