@@ -256,6 +256,39 @@ guild addon messages.
   them. A first-time catch-up can take a few minutes, and brings the 30 most
   recent raid nights.
 
+## Modules
+
+A module is a separate addon that builds on this one: it lists
+`## Dependencies: PandyGuildManagement` in its `.toc` and adds pages to this
+window, under a **Modules** heading at the bottom of the sidebar.
+
+- **Register:** `PGM.RegisterModule({ name, version, api = 1, slash })`
+  returns false if this copy is older than the API the module needs.
+- **Pages:** `UI:AddTab({ id, label, build, refresh, module = true, icon })`.
+  `/pgm <id>` opens it. `UI:QueueRefresh()` repaints soon after the
+  module's own data changes.
+- **Sync:** `PGM.SyncRegister(letter, fn)` claims a record letter and
+  `PGM.SyncSend(bulk, "1" .. letter, ...)` sends one on the shared queue.
+  The core uses `H V O R E T K M A S P D C J B W Y Z`. `G` is Pandy Guild
+  Groups', and `F I L N Q U X` are kept for other modules. Module records
+  aren't officer-only, so a module checks its own senders. `PGM.SyncBlocked()`
+  says when nothing can go out (inside instances).
+
+Within one `PGM.API` number these keep their names, arguments and results:
+
+| Area | Functions |
+|---|---|
+| Values | `PGM.Plain`, `PGM.Now`, `PGM.Stamp`, `PGM.Print`, `PGM.Debug`, `PGM.GuildDB`, `PGM.GuildKey`, `PGM.opt`, `PGM.IS_FOREVER`, `PGM.MaxLevel`, `PGM.NameLess`, `PGM.SplitName` |
+| Look | `PGM.C`, `PGM.Hex`, `PGM.ClassHex`, `PGM.ClassColor`, `PGM.ColorName`, `PGM.AgoText`, `PGM.Date`, `PGM.ROLE_LABEL`, `PGM.ROLE_COLOR` |
+| Members | `PGM:MyGuid`, `PGM:MainOf`, `PGM:KnownMain`, `PGM:IsAlt`, `PGM:GroupOf`, `PGM:FindMember`, `PGM:MPlusScore`, `PGM:ScoreColor` |
+| Teams | `PGM:Teams`, `PGM:TeamById`, `PGM:TeamsOf` |
+| Officers | `PGM:CanEdit`, `PGM:IsOfficerRec` |
+| Events | `PGM:On` with `LOGIN`, `ROSTER`, `TEAMS`, `SYNC` |
+| Sync | `PGM.SyncSend`, `PGM.SyncRegister`, `PGM.SyncBlocked`, `PGM.SyncNorm`, `PGM.SyncIsMe`, `PGM.SyncHandlers` |
+| Window | `UI:AddTab`, `UI:Show`, `UI:Refresh`, `UI:QueueRefresh`, `UI:MemberMenu`, `UI:OpenProfile`, `UI:Whisper`, `UI:Invite`, the widgets in `UI.W` |
+
+`PGM` is the global `PandyGuildManagement`, and `UI` is `PGM.UI`.
+
 ## Not included (yet)
 
 - **Recipe-level lookups** ("who can craft this exact item"). Only profession names are shown.

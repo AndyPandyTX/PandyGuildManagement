@@ -36,9 +36,13 @@ UI.tabs = {}
 UI.order = {}
 
 -- Pages register themselves: { id, label, build(panel), refresh(panel) }.
+-- A module's page adds module = true (it goes under a "Modules" heading)
+-- and its own sidebar icon.
 function UI:AddTab(tab)
     self.tabs[tab.id] = tab
     table.insert(self.order, tab.id)
+    -- A module loading after the window was built: lay the sidebar out again.
+    if self.frame then self:BuildNav() end
 end
 
 local function savePosition(f)
@@ -54,7 +58,7 @@ local function knownIcon(path)
     return path
 end
 
-local function navTab(parent, id, label)
+local function navTab(parent, id, label, iconPath)
     local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
     b:SetSize(SIDE_W - 22, 28)
     W.Backdrop(b, C.side, C.side, 1)
@@ -67,7 +71,7 @@ local function navTab(parent, id, label)
     b.mark:SetPoint("BOTTOMLEFT", 1, 1)
     b.mark:SetWidth(3)
     b.mark:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-    local icon = knownIcon(NAV_ICONS[id])
+    local icon = knownIcon(iconPath or NAV_ICONS[id])
     if icon then
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetSize(16, 16)
@@ -95,6 +99,62 @@ local function navTab(parent, id, label)
     end
     b:SetScript("OnClick", function() UI:Show(id) end)
     return b
+end
+
+-- The sidebar: each section's heading over its tabs. A page not in NAV
+-- lands in the last section, or under "Modules" if a module added it. Run
+-- again whenever a page is added, reusing the buttons it already made.
+function UI:BuildNav()
+    local f = self.frame
+    local side = f.side
+    local sections, placed = {}, {}
+    for _, sec in ipairs(NAV) do
+        local ids = {}
+        for _, id in ipairs(sec.ids) do
+            ids[#ids + 1] = id
+            placed[id] = true
+        end
+        sections[#sections + 1] = { heading = sec.heading, ids = ids }
+    end
+    local modules = { heading = "Modules", ids = {} }
+    for _, id in ipairs(self.order) do
+        if not placed[id] then
+            local ids = self.tabs[id].module and modules.ids or sections[#sections].ids
+            ids[#ids + 1] = id
+        end
+    end
+    sections[#sections + 1] = modules
+
+    f.navButtons = f.navButtons or {}
+    f.navHeads = f.navHeads or {}
+    for _, h in ipairs(f.navHeads) do h:Hide() end
+    local y, heads = -12, 0
+    for _, sec in ipairs(sections) do
+        local any = false
+        for _, id in ipairs(sec.ids) do if self.tabs[id] then any = true end end
+        if any then
+            heads = heads + 1
+            local h = f.navHeads[heads] or W.Heading(side, "", 10)
+            f.navHeads[heads] = h
+            h:SetText(sec.heading:upper())
+            h:ClearAllPoints()
+            h:SetPoint("TOPLEFT", 14, y)
+            h:Show()
+            y = y - 17
+            for _, id in ipairs(sec.ids) do
+                local tab = self.tabs[id]
+                if tab then
+                    local b = f.navButtons[id] or navTab(side, id, tab.label, tab.icon)
+                    f.navButtons[id] = b
+                    b:ClearAllPoints()
+                    b:SetPoint("TOPLEFT", 11, y)
+                    b:SetSelected(id == self.current)
+                    y = y - 30
+                end
+            end
+            y = y - 10
+        end
+    end
 end
 
 function UI:Create()
@@ -165,35 +225,8 @@ function UI:Create()
     side:SetWidth(SIDE_W)
     W.Backdrop(side, C.side, C.frame, 1)
 
-    local placed = {}
-    for _, sec in ipairs(NAV) do
-        for _, id in ipairs(sec.ids) do placed[id] = true end
-    end
-    for _, id in ipairs(self.order) do
-        if not placed[id] then table.insert(NAV[#NAV].ids, id) end
-    end
-
-    f.navButtons = {}
-    local y = -12
-    for _, sec in ipairs(NAV) do
-        local any = false
-        for _, id in ipairs(sec.ids) do if self.tabs[id] then any = true end end
-        if any then
-            local h = W.Heading(side, sec.heading, 10)
-            h:SetPoint("TOPLEFT", 14, y)
-            y = y - 17
-            for _, id in ipairs(sec.ids) do
-                local tab = self.tabs[id]
-                if tab then
-                    local b = navTab(side, id, tab.label)
-                    b:SetPoint("TOPLEFT", 11, y)
-                    f.navButtons[id] = b
-                    y = y - 30
-                end
-            end
-            y = y - 10
-        end
-    end
+    f.side = side
+    self:BuildNav()
 
     local foot = W.FS(side, 10, C.text3, "CENTER")
     foot:SetPoint("BOTTOM", 0, 12)
@@ -313,6 +346,8 @@ local function queueRefresh()
         UI:Refresh()
     end)
 end
+-- For modules: repaint soon, after their own data changes.
+function UI:QueueRefresh() queueRefresh() end
 PGM:On("ROSTER", queueRefresh)
 PGM:On("RAIDS", queueRefresh)
 PGM:On("TEAMS", queueRefresh)

@@ -45,6 +45,12 @@
 --   J guid u joined [guid u joined ...]             join dates (e.g. from GRM)
 --   B guid u main [guid u main ...]                 "this character's main is main"
 --                                                   (itself, if it's the main)
+--   W Y Z                                           play-time hours (Activity.lua)
+--
+-- MODULES: the letters above are the core's. Modules claim one of their own
+-- with PGM.SyncRegister: G is Pandy Guild Groups', and F I L N Q U X are
+-- kept free for others. A module's records aren't officer-only and aren't
+-- kept at logout, so each module checks its own senders.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -191,6 +197,9 @@ local function blocked()
     local inInstance, kind = IsInInstance()
     return P(inInstance) and (P(kind) == "raid" or P(kind) == "party") or false
 end
+-- For modules: true while nothing can reach the guild, so they can say so
+-- rather than queue something that goes out stale an hour later.
+PGM.SyncBlocked = blocked
 
 -- Two queues: live edits go first; bulk work (an import, a catch-up) only
 -- uses the gaps, so an officer's change never waits behind 300 join dates.
@@ -563,6 +572,21 @@ local handlers = {}
 -- Other modules (Activity.lua) add their own record types here. Records they
 -- add aren't in WRITES, so any guild member's copy may send them.
 PGM.SyncHandlers = handlers
+
+-- Record letters the core uses, and the ones kept for modules (see WIRE).
+local CORE_KINDS = "HVORETKMASPDCJBWYZ"
+
+-- A module claims a record letter: fn(fields, sender, senderRec) gets each
+-- record of that kind from a guild member, never one of our own. False if
+-- the letter is the core's or already taken.
+function PGM.SyncRegister(kind, fn)
+    if type(kind) ~= "string" or #kind ~= 1 or CORE_KINDS:find(kind, 1, true) or handlers[kind] then
+        PGM.Debug("sync: record letter refused", tostring(kind))
+        return false
+    end
+    handlers[kind] = fn
+    return true
+end
 
 function handlers.T(f)
     local id, u = f[2], clampU(f[3])

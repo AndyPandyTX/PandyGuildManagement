@@ -15,6 +15,23 @@ PandyGuildManagement = PGM
 PGM.NAME = "Pandy Guild Management"
 PGM.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 
+-- Modules (separate addons that list this one in ## Dependencies) build on
+-- the functions in the README's "Modules" section. Within one API number
+-- those keep their names, arguments and results; a change that breaks one
+-- moves the number up, and a module asking for a newer one is told to update.
+PGM.API = 1
+PGM.Modules = {}
+
+-- info: { name, version, api, slash }. False when this copy is too old.
+function PGM.RegisterModule(info)
+    if (info.api or 1) > PGM.API then
+        PGM.Print(("%s needs a newer Pandy Guild Management. Please update it."):format(info.name or "A module"))
+        return false
+    end
+    PGM.Modules[#PGM.Modules + 1] = info
+    return true
+end
+
 -- WoW Forever (game version 1.60, "Camelot" in the game's own constants) runs
 -- the same engine and API as Midnight with Classic content: level cap 60, no
 -- Mythic+, and Classic raids. The project constant is the proper way to ask;
@@ -374,6 +391,8 @@ SlashCmdList.PANDYGUILD = function(input)
         PGM.UI:Toggle()
     elseif TAB_ALIASES[cmd] then
         PGM.UI:Show(TAB_ALIASES[cmd])
+    elseif PGM.UI.tabs[cmd] then
+        PGM.UI:Show(cmd)   -- any page by its id, modules' included
     elseif cmd == "scan" then
         PGM:RequestRoster(true)
         PGM.Print("Asked the server for a fresh roster.")
@@ -388,6 +407,9 @@ SlashCmdList.PANDYGUILD = function(input)
         PGM.Print("  /pgm overview | roster | professions | teams | log | raids | settings - open a page")
         PGM.Print("  /pgm export - roster as CSV")
         PGM.Print("  /pgm scan - refresh the roster now")
+        for _, m in ipairs(PGM.Modules) do
+            if m.slash then PGM.Print("  " .. m.slash .. " - " .. (m.name or "module")) end
+        end
     end
 end
 
