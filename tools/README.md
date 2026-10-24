@@ -14,8 +14,7 @@ Checks to run before a release. They need Node.js; run `npm install` here once.
   invite, fill and close them, schedule and sign up, share keystones (and
   LibKeystone's), list in a fake Group Finder, search, apply, filter and
   switch it off, with records going through the real `Sync.lua`, and every
-  page drawn against a stand-in window. It's skipped while there's no
-  `Groups\` folder; `npm run test:groups` runs it against the separate
-  `PandyGuildGroups` folder next to this addon instead.
+  page drawn against a stand-in window. `npm run test:groups` runs just
+  that part.
 
 This folder isn't part of the addon: `.pkgmeta` keeps it out of the release zip.

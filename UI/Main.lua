@@ -16,6 +16,7 @@ local WIDTH, HEIGHT, SIDE_W = 1020, 660, 210
 local NAV = {
     { heading = "Guild",   ids = { "overview", "roster", "activity", "professions" } },
     { heading = "Raiding", ids = { "teams", "raids" } },
+    { heading = "Groups",  ids = { "groups", "free", "keys" } },   -- the group finder (Groups\)
     { heading = "Records", ids = { "log", "users", "bulk", "settings" } },
 }
 
@@ -102,8 +103,9 @@ local function navTab(parent, id, label, iconPath)
 end
 
 -- The sidebar: each section's heading over its tabs. A page not in NAV
--- lands in the last section, or under "Modules" if a module added it. Run
--- again whenever a page is added, reusing the buttons it already made.
+-- lands in the last section, or under "Modules" if a module added it. A page
+-- whose hidden() says so is left out (the group finder, when switched off).
+-- Run again whenever a page is added or hidden, reusing its buttons.
 function UI:BuildNav()
     local f = self.frame
     local side = f.side
@@ -128,10 +130,15 @@ function UI:BuildNav()
     f.navButtons = f.navButtons or {}
     f.navHeads = f.navHeads or {}
     for _, h in ipairs(f.navHeads) do h:Hide() end
+    local function shown(id)
+        local tab = self.tabs[id]
+        return tab ~= nil and not (tab.hidden and tab.hidden())
+    end
+    for id, b in pairs(f.navButtons) do b:SetShown(shown(id)) end
     local y, heads = -12, 0
     for _, sec in ipairs(sections) do
         local any = false
-        for _, id in ipairs(sec.ids) do if self.tabs[id] then any = true end end
+        for _, id in ipairs(sec.ids) do if shown(id) then any = true end end
         if any then
             heads = heads + 1
             local h = f.navHeads[heads] or W.Heading(side, "", 10)
@@ -143,7 +150,7 @@ function UI:BuildNav()
             y = y - 17
             for _, id in ipairs(sec.ids) do
                 local tab = self.tabs[id]
-                if tab then
+                if shown(id) then
                     local b = f.navButtons[id] or navTab(side, id, tab.label, tab.icon)
                     f.navButtons[id] = b
                     b:ClearAllPoints()

@@ -1,15 +1,15 @@
-# Pandy Guild Groups
+# Guild group finder
 
-A guild group finder, as a module for
-[Pandy Guild Management](https://github.com/AndyPandyTX/PandyGuildManagement).
-Post a Mythic+ key, a raid or a delve, and guildies running the module see it
-and ask to join in one click. You see who's asking (role, item level, M+ score,
-and whose alt they are) and invite with a click.
+Part of [Pandy Guild Management](../README.md) since 0.9.0 (it began as a
+separate addon, Pandy Guild Groups). Post a Mythic+ key, a raid or a delve,
+and guildies running Pandy Guild Management see it and ask to join in one
+click. You see who's asking (role, item level, M+ score, and whose alt they
+are) and invite with a click.
 
-Type `/pgg`, or open `/pgm` and look under **Modules** in the sidebar.
-
-Needs Pandy Guild Management 0.9.0 or newer. Works on retail (Midnight) and WoW
-Forever (no keystones there).
+Type `/pgg`, or open `/pgm` and look under **Groups** in the sidebar. Turn it
+off in Settings (Group finder) or with `/pgg off`; its pages then leave the
+sidebar and it stops sending and listening. Works on retail (Midnight) and
+WoW Forever (no keystones there).
 
 ## With Blizzard's Group Finder
 

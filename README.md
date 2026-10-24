@@ -141,6 +141,16 @@ filter.
 
 ![Addon Users](screenshots/09-addon-users.png)
 
+**Groups, Who's Free and Keystones.** The guild group finder:
+- Post a Mythic+ key, a raid or a delve; guildies see it and ask to join in
+  one click, and you see each asker's role, item level, M+ score and whose
+  alt they are before inviting.
+- List in Blizzard's Group Finder and it goes on the guild board too; guild
+  groups and guild applicants are marked in Blizzard's own windows.
+- Who's Free shows guildies up for a group; Keystones shows everyone's key.
+- `/pgg` opens it. Turn it off in Settings or with `/pgg off`.
+- The full guide: [Groups/README.md](Groups/README.md).
+
 **Bulk Actions.** Kick, promote or demote many members at once, by rules.
 Officers only (the same people who can edit raid teams), and only what the
 game lets your rank do:

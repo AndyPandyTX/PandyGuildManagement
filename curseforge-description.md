@@ -49,6 +49,13 @@ Type **/pgm** to open it, click it in the AddOns button on the minimap, or use t
 - Last 10 raids, history, and a private note only you can see
 - Pick any rank below yours and set it in one click, or remove them, if your rank allows it
 
+**Group finder**
+- Post a Mythic+ key, raid or delve; guildies ask to join in one click
+- See each asker's role, item level, M+ score and whose alt they are, then invite
+- Your Group Finder listing goes on the guild board too, and guild groups stand out in Blizzard's windows
+- Who's Free and everyone's Keystones, at a glance
+- /pgg, and it can be switched off in Settings
+
 **Bulk actions** (officers)
 - Kick, promote or demote by rules: time away, rank, level, time in the guild, note text
 - Review everyone it picks and untick anyone to spare

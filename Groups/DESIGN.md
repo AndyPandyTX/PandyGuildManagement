@@ -5,13 +5,14 @@ post a group (a Mythic+ key, a raid, a delve, anything), everyone running the
 module sees it, and one click asks to join. The leader sees who's asking
 (role, item level, M+ score, and whose alt they are) and invites with a click.
 
-It's a module, not a fork: it needs PGM (`## Dependencies`), reuses its roster,
-alts, teams, scores, officer check, window and guild sync, and adds pages to
-PGM's window under a new **Modules** heading.
+It began as a separate module and was folded into PGM in 0.9.0 (it lives in
+`Groups\`, loaded after all of PGM's files). It still reuses only PGM's stable
+functions: roster, alts, teams, scores, officer check, window and guild sync.
+Its pages sit under their own **Groups** heading in the sidebar.
 
 ## Screens
 
-All three are pages in the PGM window, in the sidebar's **Modules** section.
+All three are pages in the PGM window, in the sidebar's **Groups** section.
 `/pgg` opens the first one.
 
 ### Groups

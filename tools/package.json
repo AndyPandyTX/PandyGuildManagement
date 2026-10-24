@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "node lint.js ..",
     "test": "node simrun.js .. && node simrun.js .. forever && node simrun.js .. groups",
-    "test:groups": "node simrun.js .. groups ../../PandyGuildGroups"
+    "test:groups": "node simrun.js .. groups"
   },
   "dependencies": {
     "fengari": "^0.1.4",

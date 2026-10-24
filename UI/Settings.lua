@@ -225,6 +225,25 @@ local function build(p)
     p.grmButton = W.Button(p, "Import from GRM", 130, 22)
     p.grmButton:SetPoint("TOPLEFT", X, -400)
     p.grmButton.tip = "Brings over GRM's alt groups, join dates, rank history and custom notes for this guild. Safe to run again; anything set by hand is kept."
+    -- The group finder (Groups\) can be switched off: its pages leave the
+    -- sidebar and it stops sending and listening.
+    heading(p, "Group finder", 0):SetPoint("TOPLEFT", X, -444)
+    p.groupsCheck = W.Check(p, "Use the guild group finder",
+        function() return PandyGuildGroups and PandyGuildGroups:IsEnabled() end,
+        function(v)
+            if not PandyGuildGroups then return end
+            PandyGuildGroups:SetEnabled(v)
+            UI:BuildNav()
+            UI:Refresh()
+        end)
+    p.groupsCheck:SetPoint("TOPLEFT", X, -468)
+    p.groupsCheck:SetWidth(310)
+    p.groupsNote = W.FS(p, 11, C.text3)
+    p.groupsNote:SetPoint("TOPLEFT", X, -492)
+    p.groupsNote:SetWidth(310)
+    p.groupsNote:SetWordWrap(true)
+    p.groupsNote:SetText("Groups, Who's Free and Keystones. Off hides them and stops all group finder messages. Also /pgg on | off.")
+
     p.grmButton:SetScript("OnClick", function()
         local res, err = PGM:ImportGRM()
         if not res then
@@ -290,6 +309,8 @@ local function refresh(p)
     end
     p.grmText:SetText(table.concat(grmLines, "\n"))
     p.grmButton:SetShown(grmReady)
+    p.groupsCheck:SetShown(PandyGuildGroups ~= nil)
+    p.groupsCheck:Sync()
 
     local cut = g and g.sync and g.sync.officerRank
     local rankName = cut and GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(cut + 1))

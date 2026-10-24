@@ -1,9 +1,10 @@
 -- Core.lua: namespace, saved data, the "G" sync record, and the small
 -- helpers every other file uses.
 --
--- This is a module of Pandy Guild Management (PGM): it uses PGM's roster,
--- alts, teams, scores, window and guild sync, through the functions PGM's
--- README lists as stable. All guild traffic is one PGM record letter, "G",
+-- The group finder, part of Pandy Guild Management (PGM) since 0.9.0 and
+-- loaded after all of PGM's files. It was written as a module and still uses
+-- only the functions PGM's README lists as stable: roster, alts, teams,
+-- scores, window and guild sync. All guild traffic is one PGM record letter, "G",
 -- with a sub-type in the second field (see DESIGN.md for the table).
 --
 -- Everything the game hands us goes through PGM.Plain first, as in PGM: a
@@ -20,15 +21,10 @@ G.NAME = "Pandy Guild Groups"
 G.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 G.PGM = PGM
 
--- An older PGM without module support (or a newer API than ours): stay off.
-G.ok = PGM ~= nil and PGM.RegisterModule ~= nil and PGM.SyncRegister ~= nil
-    and PGM.RegisterModule({ name = G.NAME, version = G.VERSION, api = 1, slash = "/pgg" })
-if not G.ok then
-    if PGM and not PGM.RegisterModule then
-        print("|cff55d194Pandy|r Guild Groups needs Pandy Guild Management 0.9.0 or newer.")
-    end
-    return
-end
+-- Built into Pandy Guild Management (loaded after all of its files), so the
+-- module hooks are always there; registering lists /pgg under /pgm help.
+G.ok = PGM.RegisterModule({ name = G.NAME, version = G.VERSION, api = 1, slash = "/pgg" })
+if not G.ok then return end
 
 local P = PGM.Plain
 local SEP = "\031"
