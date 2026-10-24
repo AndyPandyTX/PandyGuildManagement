@@ -21,15 +21,24 @@ Type `/pgm` (or `/pandy`) to open it, or click it in Blizzard's AddOns button on
 
 ## Install
 
+**Easiest: [Pandy Guild Management on CurseForge](https://www.curseforge.com/wow/addons/pandy-guild-management).**
+Install it with the CurseForge app and it keeps itself up to date. It works
+for Midnight and WoW Forever.
+
+**Or by hand, from GitHub:**
+
 1. Open the [latest release](https://github.com/AndyPandyTX/PandyGuildManagement/releases/latest)
    and download `PandyGuildManagement-vX.Y.Z.zip` from **Assets**. Use that
    zip, not GitHub's "Source code" zip.
-2. Unzip it into `World of Warcraft\_retail_\Interface\AddOns\`. You should end
-   up with `AddOns\PandyGuildManagement\PandyGuildManagement.toc`.
+2. Unzip it into `World of Warcraft\_retail_\Interface\AddOns\` (or
+   `_classic_beta_` for WoW Forever). You should end up with
+   `AddOns\PandyGuildManagement\PandyGuildManagement.toc`.
 3. Restart WoW, or type `/reload` if it's already running.
 
-To update, do the same with the newer zip, replacing the old folder. Your data
-isn't in this folder (it's in WoW's `WTF` folder), so updating never loses it.
+To update by hand, do the same with the newer zip, replacing the old folder.
+The addon tells you in chat when a guildie has a newer version than yours.
+Your data isn't in this folder (it's in WoW's `WTF` folder), so updating
+never loses it.
 
 ## Pages
 
