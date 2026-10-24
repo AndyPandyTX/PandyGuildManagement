@@ -4,8 +4,6 @@ A guild manager for Midnight and WoW Forever, built for big raiding guilds. See 
 
 Type **/pgm** to open it (or **/pgg** for the group finder), click the panda button on the minimap, or use the buttons under the Guild & Communities window.
 
-The minimap button can be dragged anywhere around the minimap and works with minimap button collectors. It's also a LibDataBroker launcher, so Titan Panel, ChocolateBar, ElvUI data texts and other broker bars can show it too. Turn it off in Settings or with **/pgm minimap**.
-
 ## Features
 
 **Guild overview**
@@ -17,6 +15,13 @@ The minimap button can be dragged anywhere around the minimap and works with min
 - Search by name, rank, zone, notes, class, race or profession
 - Sortable columns, plus filters for online, max level, mains only, away 30d+ and "has the addon"
 - Right-click anyone to whisper or invite, or click to open their profile
+
+**Group finder**
+- Post a Mythic+ key, raid or delve; guildies ask to join in one click
+- See each asker's role, item level, M+ score and whose alt they are, then invite
+- Your Group Finder listing goes on the guild board too, and guild groups stand out in Blizzard's windows
+- Who's Free and everyone's Keystones, at a glance
+- /pgg, and it can be switched off in Settings
 
 **Raid teams**
 - As many teams as you like, each with a schedule, roles and Core / Trial / Bench status
@@ -53,13 +58,6 @@ The minimap button can be dragged anywhere around the minimap and works with min
 - Last 10 raids, history, and a private note only you can see
 - Pick any rank below yours and set it in one click, or remove them, if your rank allows it
 
-**Group finder**
-- Post a Mythic+ key, raid or delve; guildies ask to join in one click
-- See each asker's role, item level, M+ score and whose alt they are, then invite
-- Your Group Finder listing goes on the guild board too, and guild groups stand out in Blizzard's windows
-- Who's Free and everyone's Keystones, at a glance
-- /pgg, and it can be switched off in Settings
-
 **Bulk actions** (officers)
 - Kick, promote or demote by rules: time away, rank, level, time in the guild, note text
 - Review everyone it picks and untick anyone to spare
@@ -95,13 +93,6 @@ The same download runs on WoW Forever. Everything above works there too, with a 
 ## Coming from Guild Roster Manager?
 
 With GRM still enabled, click **Import from GRM** in Settings. It brings over alt groups, join dates, rank history and custom notes. Anything you set by hand is kept, and running it again is safe.
-
-## Midnight notes
-
-- Midnight has no combat log for addons, so raid attendance checks the raid group once a minute and at every boss kill.
-- Promote, demote and remove use Blizzard's own commands through buttons you click.
-- When the game hides roster data (in some instanced content), the addon skips that read rather than guessing.
-- Addons can't write guild notes or the MOTD, which is why there's a private note.
 
 ## Feedback
 
