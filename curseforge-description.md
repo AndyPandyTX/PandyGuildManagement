@@ -1,8 +1,8 @@
 # Pandy Guild Management
 
-A guild manager for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
+A guild manager for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, find a group with guildies first, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
 
-Type **/pgm** to open it, click it in the AddOns button on the minimap, or use the buttons under the Guild & Communities window.
+Type **/pgm** to open it (or **/pgg** for the group finder), click it in the AddOns button on the minimap, or use the buttons under the Guild & Communities window.
 
 ## Features
 
