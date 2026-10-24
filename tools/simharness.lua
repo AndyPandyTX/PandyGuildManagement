@@ -761,6 +761,30 @@ do
     P:RebuildAlts()
 end
 
+print("-- telling you when your copy is out of date")
+do
+    local P = A.PGM
+    local saved = P.VERSION
+    P.VERSION = "0.8.2"
+    A.chat = ""
+    C.PGM.SyncSend(false, "1V", "0.8.1")
+    run(3)
+    check(not A.chat:find("is out", 1, true) and not P:UpdateAvailable(), "an older guildie's copy says nothing")
+    C.PGM.SyncSend(false, "1V", "0.9.0")
+    run(3)
+    check(A.chat:find("v0.9.0 is out (you have v0.8.2)", 1, true) ~= nil, "a newer copy is mentioned in chat")
+    check(P:UpdateAvailable() == "0.9.0", "...and kept for the footer")
+    A.chat = ""
+    C.PGM.SyncSend(false, "1V", "0.9.1")
+    run(3)
+    check(not A.chat:find("is out", 1, true), "...but only once a session")
+    check(P:UpdateAvailable() == "0.9.1", "...while the footer shows the newest")
+    C.PGM.SyncSend(false, "1V", "dev")
+    run(3)
+    check(P:UpdateAvailable() == "0.9.1", "a dev build is never compared")
+    P.VERSION = saved
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)

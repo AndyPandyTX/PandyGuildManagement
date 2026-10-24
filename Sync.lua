@@ -852,6 +852,7 @@ local function noteUser(rec, version)
     u.v = (version and version ~= "") and clean(version):sub(1, 16) or u.v or "0.3"
     u.seen = PGM.Now()
     g.users[rec.guid] = u
+    PGM:NoteVersionSeen(u.v)
     changed("SYNC")
 end
 
@@ -1116,6 +1117,51 @@ function PGM.NewerVersion(a, b)
     if a2 ~= b2 then return a2 > b2 end
     return a3 > b3
 end
+
+-- ============================================================
+-- IS OURS OUT OF DATE?
+-- ============================================================
+-- A guildie's copy newer than ours means there's an update out. Said once a
+-- session, in chat and only to us (nothing ever goes to guild chat), and
+-- kept for the window's footer. Builds that aren't releases ("dev") never
+-- compare.
+
+local UPDATE_HEARD_WITHIN = 14 * 86400
+
+local function release(v)
+    return type(v) == "string" and v:match("^%d+%.%d+") ~= nil
+end
+
+function PGM:NoteVersionSeen(v)
+    if not (release(v) and release(PGM.VERSION)) then return end
+    if not PGM.NewerVersion(v, PGM.VERSION) then return end
+    if Sync.newerSeen and not PGM.NewerVersion(v, Sync.newerSeen) then return end
+    Sync.newerSeen = v
+    if not Sync.toldUpdate then
+        Sync.toldUpdate = true
+        PGM.Print(("Pandy Guild Management v%s is out (you have v%s). Update from CurseForge or GitHub.")
+            :format(v, PGM.VERSION))
+    end
+    changed("SYNC")
+end
+
+-- The newest version heard from the guild, if it's newer than ours.
+function PGM:UpdateAvailable()
+    return Sync.newerSeen
+end
+
+-- At login, versions heard in earlier sessions count too, so an update is
+-- mentioned even when nobody running it is online right now.
+PGM:On("ROSTER", function()
+    if Sync.checkedSaved then return end
+    local g = PGM.GuildDB()
+    if not (g and g.seeded) then return end
+    Sync.checkedSaved = true
+    local now = PGM.Now()
+    for _, u in pairs(g.users or {}) do
+        if u.seen and now - u.seen <= UPDATE_HEARD_WITHIN then PGM:NoteVersionSeen(u.v) end
+    end
+end)
 
 -- Members known to run the addon: { guid, rec, v, seen, outdated }, newest
 -- version first. "Latest" is the newest anyone in the guild has.
