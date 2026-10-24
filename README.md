@@ -15,7 +15,14 @@ A guild manager for retail WoW (Midnight), built for big raiding guilds:
 - **Roster, professions and history:** searchable, sortable, with safe
   promote/demote buttons
 
-Type `/pgm` (or `/pandy`) to open it, or click it in Blizzard's AddOns button on the minimap.
+Type `/pgm` (or `/pandy`) to open it, click the panda button on the minimap,
+or click it in Blizzard's AddOns button there.
+
+The minimap button can be dragged around the minimap's edge, and minimap
+button collectors pick it up. Right-click it for Settings, where it can be
+turned off (or `/pgm minimap`). It's also a LibDataBroker launcher, so
+Titan Panel, ChocolateBar, ElvUI data texts and other broker displays can
+show it, with how many guildies are online.
 
 ![Overview](screenshots/01-overview.png)
 
@@ -29,7 +36,8 @@ for Midnight and WoW Forever.
 
 1. Open the [latest release](https://github.com/AndyPandyTX/PandyGuildManagement/releases/latest)
    and download `PandyGuildManagement-vX.Y.Z.zip` from **Assets**. Use that
-   zip, not GitHub's "Source code" zip.
+   zip, not GitHub's "Source code" zip (that one is missing the libraries
+   the minimap button needs).
 2. Unzip it into `World of Warcraft\_retail_\Interface\AddOns\` (or
    `_classic_beta_` for WoW Forever). You should end up with
    `AddOns\PandyGuildManagement\PandyGuildManagement.toc`.
@@ -327,5 +335,4 @@ Within one `PGM.API` number these keep their names, arguments and results:
 
 ## Not included (yet)
 
-- **Recipe-level lookups** ("who can craft this exact item"). Only profession names are shown.
 - **Loot tracking.** Midnight doesn't really allow it.

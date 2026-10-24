@@ -90,6 +90,12 @@ local function build(p)
 
     y = y - 40
     heading(p, "Window", y)
+    -- On the heading's row, lined up with the controls below.
+    p.minimapCheck = W.Check(p, "Minimap button",
+        function() return PGM:MinimapShown() end,
+        function(v) PGM:SetMinimapShown(v) end)
+    p.minimapCheck:SetPoint("TOPLEFT", 260, y + 2)
+    p.minimapCheck:SetWidth(150)
     y = y - 28
     p.syncers[#p.syncers + 1] = stepper(p, "Scale", y,
         function() return PGM.opt("scale") end,
@@ -311,6 +317,8 @@ local function refresh(p)
     p.grmButton:SetShown(grmReady)
     p.groupsCheck:SetShown(PandyGuildGroups ~= nil)
     p.groupsCheck:Sync()
+    p.minimapCheck:SetShown(PGM.HasMinimapButton ~= nil and PGM:HasMinimapButton())
+    p.minimapCheck:Sync()
 
     local cut = g and g.sync and g.sync.officerRank
     local rankName = cut and GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(cut + 1))

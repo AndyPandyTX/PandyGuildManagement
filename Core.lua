@@ -414,6 +414,10 @@ SlashCmdList.PANDYGUILD = function(input)
     elseif cmd == "scan" then
         PGM:RequestRoster(true)
         PGM.Print("Asked the server for a fresh roster.")
+    elseif cmd == "minimap" then
+        if PGM.SetMinimapShown and PGM:SetMinimapShown(not PGM:MinimapShown()) then
+            PGM.Print("Minimap button", PGM:MinimapShown() and "shown" or "hidden")
+        end
     elseif cmd == "export" then
         PGM.UI:ShowExport("Roster CSV", PGM:RosterCSV())
     elseif cmd == "debug" then
@@ -425,6 +429,7 @@ SlashCmdList.PANDYGUILD = function(input)
         PGM.Print("  /pgm overview | roster | professions | teams | log | raids | settings - open a page")
         PGM.Print("  /pgm export - roster as CSV")
         PGM.Print("  /pgm scan - refresh the roster now")
+        PGM.Print("  /pgm minimap - show or hide the minimap button")
         for _, m in ipairs(PGM.Modules) do
             if m.slash then PGM.Print("  " .. m.slash .. " - " .. (m.name or "module")) end
         end

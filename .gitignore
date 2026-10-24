@@ -10,3 +10,6 @@ Thumbs.db
 screenshots/full/
 ~$*
 tools/node_modules/
+
+# Libraries come from .pkgmeta externals when the release is packaged
+Libs/

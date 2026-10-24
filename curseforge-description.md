@@ -2,7 +2,9 @@
 
 A guild manager for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, find a group with guildies first, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
 
-Type **/pgm** to open it (or **/pgg** for the group finder), click it in the AddOns button on the minimap, or use the buttons under the Guild & Communities window.
+Type **/pgm** to open it (or **/pgg** for the group finder), click the panda button on the minimap, or use the buttons under the Guild & Communities window.
+
+The minimap button can be dragged anywhere around the minimap and works with minimap button collectors. It's also a LibDataBroker launcher, so Titan Panel, ChocolateBar, ElvUI data texts and other broker bars can show it too. Turn it off in Settings or with **/pgm minimap**.
 
 ## Features
 

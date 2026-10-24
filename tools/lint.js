@@ -2,7 +2,7 @@ const fs = require('fs'), path = require('path');
 const luaparse = require('./node_modules/luaparse');
 const root = process.argv[2];
 const files = [];
-(function walk(d){ for (const f of fs.readdirSync(d)) { const p = path.join(d,f); if (fs.statSync(p).isDirectory()) { if (!['tools','node_modules','.git','preview'].includes(f)) walk(p); } else if (p.endsWith('.lua')) files.push(p);} })(root);
+(function walk(d){ for (const f of fs.readdirSync(d)) { const p = path.join(d,f); if (fs.statSync(p).isDirectory()) { if (!['tools','node_modules','.git','preview','Libs'].includes(f)) walk(p); } else if (p.endsWith('.lua')) files.push(p);} })(root);
 const globals = new Map(), defined = {PGM:new Set(), UI:new Set(), W:new Set()}, used = {PGM:new Map(), UI:new Map(), W:new Map()};
 let bad = 0;
 for (const f of files) {

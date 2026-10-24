@@ -13,6 +13,11 @@
 ## AddonCompartmentFuncOnEnter: PandyGuildManagement_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: PandyGuildManagement_OnCompartmentLeave
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
 Core.lua
 Club.lua
 Roster.lua
@@ -44,6 +49,7 @@ UI\Settings.lua
 UI\Export.lua
 UI\GuildFrame.lua
 UI\Crafters.lua
+UI\Minimap.lua
 
 # The group finder, after everything above (it uses all of it).
 Groups\Core.lua
