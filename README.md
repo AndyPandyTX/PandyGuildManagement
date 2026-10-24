@@ -58,14 +58,22 @@ character's score comes from the game; main, warband and roles need RaiderIO.
     hide it, or use All and None. Reset clears it all.
   - **Apply** sends a Group Finder application with your Apply as roles
     (right-click for one role). On a guild post it's **Ask to join**.
-- **My group:** your group across the top (needs, how full, listed or
-  guild only, Close), then everyone asking to join, a row each: name,
-  Guild tag and main, roles offered, spec, item level, and the
+  - **Your requests go to the top**, whatever the filters, tinted by how
+    they stand: **Pending** (amber, with a **Cancel** button), **Invited**
+    (accept Blizzard's popup), then **Joined** or **Declined** (red). A
+    decline stays on top for two minutes, then Hide declined hides it.
+  - Hover a row for each member's spec, class and role.
+- **My group:** your group across the top: its comp filling in as people
+  join (you, then each member in their class colour; hover a slot for who),
+  what it still needs, how full it is, listed or guild only, and Close.
+  Then everyone asking to join, a row each: their spec's icon by their
+  name, Guild tag and main, roles offered, spec, item level, and the
   **Character**, **Main** and **Warband** M+ scores in their own columns,
   each with the roles it was earned on. Invite and Decline on each.
 - **Post a group:** the form below, and the Group Finder and ping settings.
 
-`/pgg mine` and `/pgg post` open those views.
+Listing a group in the Group Finder opens My group; delisting goes back to
+Browse. `/pgg mine` and `/pgg post` open those views.
 
 The form and the rest of this section describe Post a group and how guild
 posts behave:

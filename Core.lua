@@ -257,6 +257,35 @@ function G.AddScoreLines(tooltip, s)
     line("Warband's", s.warband)
 end
 
+-- A spec's name and icon, by spec id, or nil.
+function G.SpecInfo(id)
+    id = tonumber(id)
+    if not (id and id > 0 and GetSpecializationInfoByID) then return nil end
+    local ok, _, name, _, icon = pcall(GetSpecializationInfoByID, id)
+    if not ok then return nil end
+    return P(name), P(icon)
+end
+
+-- "|Ticon|t Balance": a spec as an inline icon and its name.
+function G.SpecText(id, name)
+    local sname, icon = G.SpecInfo(id)
+    sname = sname or name
+    if not sname then return nil end
+    return (icon and ("|T" .. icon .. ":14:14:0:0:64:64:5:59:5:59|t ") or "") .. sname
+end
+
+-- My group as comp slots want it: me first, then everyone else, each
+-- { class, role }. Someone with no role yet counts as DPS.
+function G.MyComp()
+    local _, myClass = UnitClass("player")
+    local myRole = G.ROLE_OF[P(UnitGroupRolesAssigned("player")) or ""] or G.SpecRole()
+    local out = { { class = P(myClass), role = myRole, spec = G.SpecID(), me = true } }
+    for _, m in ipairs(G.GroupNames()) do
+        out[#out + 1] = { class = m.class, role = m.role or "D", name = m.name }
+    end
+    return out
+end
+
 -- My spec's role letter (T, H or D), or D when the game won't say.
 function G.SpecRole()
     if not (GetSpecialization and GetSpecializationRole) then return "D" end
@@ -320,8 +349,9 @@ function G.GroupNames()
         name, realm = P(name), P(realm)
         if name and not P(UnitIsUnit(unit, "player")) then
             local role = P(UnitGroupRolesAssigned(unit))
+            local _, class = UnitClass(unit)
             out[#out + 1] = { name = name .. "-" .. ((realm and realm ~= "") and realm or myRealm),
-                              role = G.ROLE_OF[role or ""] }
+                              role = G.ROLE_OF[role or ""], class = P(class) }
         end
     end
     return out

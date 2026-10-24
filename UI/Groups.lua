@@ -261,6 +261,73 @@ local function buildSettings(card)
 end
 
 -- ============================================================
+-- COMP SLOTS
+-- ============================================================
+
+-- Small role icons (the game's tiny role atlas), or the role sheet's.
+local ROLE_ATLAS = { T = "roleicon-tiny-tank", H = "roleicon-tiny-healer", D = "roleicon-tiny-dps" }
+local ROLE_COORDS = { T = { 0, 19 / 64, 22 / 64, 41 / 64 }, H = { 20 / 64, 39 / 64, 1 / 64, 20 / 64 },
+                      D = { 20 / 64, 39 / 64, 22 / 64, 41 / 64 } }
+local function setRoleIcon(tex, r)
+    if not (tex.SetAtlas and pcall(tex.SetAtlas, tex, ROLE_ATLAS[r])) then
+        tex:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+        tex:SetTexCoord(unpack(ROLE_COORDS[r]))
+    end
+end
+
+-- The comp: one slot per place in a five-player group, tanks then healers
+-- then DPS. A member's slot is their class colour with their role on it; an
+-- open slot is dark with the role it still wants, dimmed.
+local SLOTS = 5
+local function compSlots(row)
+    local out = {}
+    local byRole = { T = {}, H = {}, D = {} }
+    for _, m in ipairs(row.comp or {}) do table.insert(byRole[m.role] or byRole.D, m) end
+    for _, r in ipairs(G.ROLES) do
+        local want = #byRole[r] + (row.need[r] or 0)
+        for i = 1, want do out[#out + 1] = { role = r, member = byRole[r][i] } end
+    end
+    return out
+end
+
+local function buildSlot(parent)
+    local s = CreateFrame("Frame", nil, parent)
+    s:SetSize(16, 16)
+    s.bg = s:CreateTexture(nil, "ARTWORK")
+    s.bg:SetAllPoints()
+    s.role = s:CreateTexture(nil, "OVERLAY")
+    s.role:SetPoint("CENTER")
+    s.role:SetSize(12, 12)
+    return s
+end
+
+
+-- Paint slot frames from compSlots: a member in their class colour, an
+-- open place dark (brighter when it's a role I play). Returns how many.
+local function paintSlots(frames, slots)
+    local mine = G.MyRoles()
+    for i, s in ipairs(frames) do
+        local slot = slots and slots[i]
+        s:SetShown(slot ~= nil)
+        if slot then
+            setRoleIcon(s.role, slot.role)
+            if slot.member then
+                local cr, cg, cb = PGM.ClassColor(slot.member.class)
+                s.bg:SetColorTexture(cr, cg, cb, 0.9)
+                s.role:SetDesaturated(false)
+                s.role:SetAlpha(1)
+            else
+                local k = mine[slot.role] and 0.22 or 0.12
+                s.bg:SetColorTexture(k, k, k, 1)
+                s.role:SetDesaturated(not mine[slot.role])
+                s.role:SetAlpha(mine[slot.role] and 0.9 or 0.45)
+            end
+        end
+    end
+    return slots and math.min(#slots, #frames) or 0
+end
+
+-- ============================================================
 -- MY GROUP
 -- ============================================================
 
@@ -339,15 +406,17 @@ end
 local function askUpdate(r, it)
     r.it = it
     local a, rec = it.ask, it.rec
+    local _, specIcon = G.SpecInfo(a.spec)
+    local icon = specIcon and ("|T" .. specIcon .. ":14:14:0:0:64:64:5:59:5:59|t ") or ""
     if rec then
-        r.name:SetText(PGM.ColorName(rec))
+        r.name:SetText(icon .. PGM.ColorName(rec))
         local main = PGM:KnownMain(rec.guid)
         local g = PGM.GuildDB()
         local m = main and g and g.members[main]
         r.tag:SetText(PGM.Hex(C.jade) .. "Guild|r" .. (m and ("  alt of " .. PGM.ColorName(m)) or "")
             .. (it.app and "  -  Group Finder" or "  -  asked here"))
     else
-        r.name:SetText(PGM.ClassHex(a.class) .. (a.short or a.name or "?") .. "|r")
+        r.name:SetText(icon .. PGM.ClassHex(a.class) .. (a.short or a.name or "?") .. "|r")
         r.tag:SetText((a.realm or "") .. ((a.members or 1) > 1 and ("  -  group of " .. a.members) or ""))
     end
     r.edge:SetShown(rec ~= nil)
@@ -359,7 +428,8 @@ local function askUpdate(r, it)
         end
     end
     r.roles:SetText(roles ~= "" and roles or G.RoleIcon(a.role))
-    r.spec:SetText(specName(a.spec) or "")
+    local cls = a.class or (rec and rec.class)
+    r.spec:SetText(cls and (PGM.ClassHex(cls) .. (specName(a.spec) or "") .. "|r") or (specName(a.spec) or ""))
     r.ilvl:SetText(a.ilvl > 0 and a.ilvl or "")
 
     if it.app then
@@ -384,8 +454,24 @@ local function buildMine(v)
     card:SetPoint("TOPRIGHT")
     card:SetHeight(94)
     mineUI.card = card
+    -- My comp as it fills, five-player groups only.
+    mineUI.slots = {}
+    for i = 1, SLOTS do
+        local slot = buildSlot(card)
+        slot:SetSize(20, 20)
+        slot.role:SetSize(15, 15)
+        slot:SetPoint("TOPLEFT", 14 + (i - 1) * 23, -45)
+        slot:EnableMouse(true)
+        slot:SetScript("OnEnter", function(sl)
+            if not sl.who then return end
+            GameTooltip:SetOwner(sl, "ANCHOR_TOP")
+            GameTooltip:SetText(sl.who)
+            GameTooltip:Show()
+        end)
+        slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        mineUI.slots[i] = slot
+    end
     mineUI.needs = W.FS(card, 13, C.text)
-    mineUI.needs:SetPoint("TOPLEFT", 14, -48)
     mineUI.needs:SetPoint("TOPRIGHT", -240, -48)
     mineUI.info = W.FS(card, 11, C.text2)
     mineUI.info:SetPoint("TOPLEFT", 14, -70)
@@ -444,11 +530,23 @@ local function refreshMine()
             mineUI.info:SetText("List a group in the Group Finder, or Post a group, and who's asking shows here.")
         end
         mineUI.status:SetText("")
+        paintSlots(mineUI.slots, nil)
         shown.listKey = not listed and G.ReadMyKey() ~= nil
     else
         mineUI.card.title:SetText(G.PostTitle(p))
         mineUI.card.sub:SetText(G.KIND_LABEL[p.kind] .. (p.fromLFG and "  -  from your Group Finder listing" or "")
             .. ((G.TeamName(p.team) and ("  -  " .. G.TeamName(p.team) .. " only")) or ""))
+        local slots = p.size <= SLOTS and compSlots({ comp = G.MyComp(), need = p.need }) or nil
+        local n = paintSlots(mineUI.slots, slots)
+        for i, sl in ipairs(mineUI.slots) do
+            local slot = slots and slots[i]
+            local m = slot and slot.member
+            sl.who = m and ((m.me and "You" or (m.name or "?")) .. "  -  " .. PGM.ROLE_LABEL[G.ROLE_KEY[slot.role]])
+                or (slot and ("Open: " .. PGM.ROLE_LABEL[G.ROLE_KEY[slot.role]]))
+        end
+        mineUI.needs:ClearAllPoints()
+        mineUI.needs:SetPoint("TOPLEFT", 14 + n * 23 + (n > 0 and 8 or 0), -48)
+        mineUI.needs:SetPoint("TOPRIGHT", -240, -48)
         mineUI.needs:SetText(PGM.Hex(C.text2) .. "Needs:|r  " .. G.NeedText(p.need)
             .. PGM.Hex(C.text3) .. ("     %d/%d in the group|r"):format(p.have or 1, p.size))
         local left = (p.pugAt or 0) - PGM.Now()
@@ -513,14 +611,12 @@ local function rowAction(row)
         local n = G:SignupsLeft(p)
         return ("Invite next (%d)"):format(n), n > 0 and p.start - PGM.Now() < 1800
     end
-    if res then
-        local st = res.status
-        if not st then return "Apply", true end
-        if st == "applied" then return "Applied", true end
-        if st == "invited" then return "Invited", false end
-        if st == "inviteaccepted" then return "Joined", false end
-        return "Declined", false
-    end
+    local state = row.state
+    if state == "pending" then return "Cancel", true end
+    if state == "invited" then return "Invited", false end
+    if state == "joined" then return "Joined", false end
+    if state == "declined" then return "Declined", false end
+    if res then return "Apply", true end
     if (p.start or 0) > 0 then
         local s = p.signups and p.signups[PGM:MyGuid() or ""]
         if s and s.state == "i" then return "Signed up", true end
@@ -528,9 +624,6 @@ local function rowAction(row)
     end
     local a = G.asked[p.id]
     if not a then return "Ask to join", true end
-    if a.state == "asked" then return "Asked", true end
-    if a.state == "invited" then return "Invited", false end
-    if a.state == "declined" then return "Declined", false end
     return "Closed", false
 end
 
@@ -585,43 +678,6 @@ local function rowMenu(owner, row)
     W.Menu(owner, G.PostTitle(row), entries)
 end
 
--- Small role icons (the game's tiny role atlas), or the role sheet's.
-local ROLE_ATLAS = { T = "roleicon-tiny-tank", H = "roleicon-tiny-healer", D = "roleicon-tiny-dps" }
-local ROLE_COORDS = { T = { 0, 19 / 64, 22 / 64, 41 / 64 }, H = { 20 / 64, 39 / 64, 1 / 64, 20 / 64 },
-                      D = { 20 / 64, 39 / 64, 22 / 64, 41 / 64 } }
-local function setRoleIcon(tex, r)
-    if not (tex.SetAtlas and pcall(tex.SetAtlas, tex, ROLE_ATLAS[r])) then
-        tex:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
-        tex:SetTexCoord(unpack(ROLE_COORDS[r]))
-    end
-end
-
--- The comp: one slot per place in a five-player group, tanks then healers
--- then DPS. A member's slot is their class colour with their role on it; an
--- open slot is dark with the role it still wants, dimmed.
-local SLOTS = 5
-local function compSlots(row)
-    local out = {}
-    local byRole = { T = {}, H = {}, D = {} }
-    for _, m in ipairs(row.comp or {}) do table.insert(byRole[m.role] or byRole.D, m) end
-    for _, r in ipairs(G.ROLES) do
-        local want = #byRole[r] + (row.need[r] or 0)
-        for i = 1, want do out[#out + 1] = { role = r, member = byRole[r][i] } end
-    end
-    return out
-end
-
-local function buildSlot(parent)
-    local s = CreateFrame("Frame", nil, parent)
-    s:SetSize(16, 16)
-    s.bg = s:CreateTexture(nil, "ARTWORK")
-    s.bg:SetAllPoints()
-    s.role = s:CreateTexture(nil, "OVERLAY")
-    s.role:SetPoint("CENTER")
-    s.role:SetSize(12, 12)
-    return s
-end
-
 local function boardRow(list)
     local r = W.Row(list)
     r.wash = W.Solid(r, "BORDER", C.jade, 0.06)
@@ -670,12 +726,8 @@ local function boardRow(list)
             GameTooltip:AddLine(" ")
             for _, m in ipairs(row.comp) do
                 local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[m.class]) or m.class
-                local spec
-                if m.spec and GetSpecializationInfoByID then
-                    local ok, _, sname = pcall(GetSpecializationInfoByID, m.spec)
-                    spec = ok and PGM.Plain(sname) or nil
-                end
-                GameTooltip:AddLine(G.RoleIcon(m.role) .. " " .. PGM.ClassHex(m.class) .. (spec and (spec .. " ") or "")
+                local spec = G.SpecText(m.spec, m.specName)
+                GameTooltip:AddLine(G.RoleIcon(m.role) .. " " .. (spec and (spec .. " ") or "") .. PGM.ClassHex(m.class)
                     .. name .. "|r" .. (m.leader and PGM.Hex(C.text3) .. "  leader|r" or ""))
             end
         end
@@ -690,10 +742,20 @@ local function boardRow(list)
     return r
 end
 
+-- How a row looks once I've asked to join: its colour and its tag.
+local STATE_LOOK = {
+    pending = { C.amber, "Pending" }, invited = { C.jade, "Invited: accept the popup" },
+    joined = { C.jade, "Joined" }, declined = { C.red, "Declined" },
+}
+
 local function boardUpdate(r, row)
     r.row = row
-    r.wash:SetShown(row.guild)
-    r.edge:SetShown(row.guild)
+    local look = row.state and STATE_LOOK[row.state]
+    local col = look and look[1] or C.jade
+    r.wash:SetColorTexture(col[1], col[2], col[3], look and 0.10 or 0.06)
+    r.edge:SetColorTexture(col[1], col[2], col[3], 1)
+    r.wash:SetShown(look ~= nil or row.guild)
+    r.edge:SetShown(look ~= nil or row.guild)
     r.icon.icon:SetTexture(row.icon or G.KIND_ICON[row.kind])
 
     local leader
@@ -710,27 +772,9 @@ local function boardUpdate(r, row)
     -- which don't know who's in them) say what they need.
     local slots = (row.size or 5) <= SLOTS and row.comp and compSlots(row) or nil
     local mine = G.MyRoles()
-    for i, s in ipairs(r.slots) do
-        local slot = slots and slots[i]
-        s:SetShown(slot ~= nil)
-        if slot then
-            setRoleIcon(s.role, slot.role)
-            if slot.member then
-                local cr, cg, cb = PGM.ClassColor(slot.member.class)
-                s.bg:SetColorTexture(cr, cg, cb, 0.9)
-                s.role:SetDesaturated(false)
-                s.role:SetAlpha(1)
-            else
-                -- Open: brighter when it's a role I play.
-                local k = mine[slot.role] and 0.22 or 0.12
-                s.bg:SetColorTexture(k, k, k, 1)
-                s.role:SetDesaturated(not mine[slot.role])
-                s.role:SetAlpha(mine[slot.role] and 0.9 or 0.45)
-            end
-        end
-    end
+    local shown = paintSlots(r.slots, slots)
     r.info:ClearAllPoints()
-    r.info:SetPoint("BOTTOMLEFT", slots and (48 + math.min(#slots, SLOTS) * 18 + 6) or 48, 7)
+    r.info:SetPoint("BOTTOMLEFT", slots and (48 + shown * 18 + 6) or 48, 7)
     r.info:SetPoint("BOTTOMRIGHT", -114, 7)
 
     local parts = {}
@@ -751,14 +795,18 @@ local function boardUpdate(r, row)
     else
         when = "live"
     end
-    r.when:SetText(source .. "  -  " .. when)
+    if look then
+        r.when:SetText(PGM.Hex(look[1]) .. look[2] .. "|r  -  " .. when)
+    else
+        r.when:SetText(source .. "  -  " .. when)
+    end
 
     local text, enabled = rowAction(row)
     r.action:SetLabel(text)
     r.action:SetEnabled(enabled)
     r.action:SetAlpha(enabled and 1 or 0.5)
-    local good = text == "Invited" or text == "Joined" or text == "Applied" or text == "Asked" or text == "Signed up"
-    r.action:SetAccent(good and C.jade or (enabled and C.accent or C.text3))
+    local good = text == "Invited" or text == "Joined" or text == "Signed up"
+    r.action:SetAccent(text == "Cancel" and C.red or (good and C.jade or (enabled and C.accent or C.text3)))
 end
 
 -- ============================================================
@@ -1049,6 +1097,12 @@ end
 -- ============================================================
 
 local VIEWS = { { "board", "Browse" }, { "mine", "My group" }, { "post", "Post a group" } }
+
+-- Listing a group opens My group, to watch who applies; delisting goes
+-- back to Browse, to find one.
+G:On("LISTED", function(on)
+    if not state.editing then state.view = on and "mine" or "board" end
+end)
 
 -- Open the Groups page on one view: "board", "mine" or "post".
 function G.UI.ShowView(view)

@@ -477,7 +477,7 @@ function G.handlers.Y(f, sender, rec)
         a.state = "invited"
         PGM.Print(("%s invited you to %s."):format(PGM.ColorName(rec), title))
     elseif f[5] == "d" then
-        a.state = "declined"
+        a.state, a.declinedAt = "declined", GetTime()
         PGM.Print(("%s's %s is going ahead without you this time."):format(PGM.ColorName(rec), title))
     end
     G:Fire("POSTS")

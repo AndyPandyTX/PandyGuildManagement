@@ -153,9 +153,17 @@ local function syncListing()
             p.lfg, p.u = false, PGM.Stamp(p.u)
             G.SendPost(p, true)
         end
+        if G.wasListed then
+            G.wasListed = false
+            G:Fire("LISTED", false)
+        end
         dismissed, lastSig = false, nil
         G:Fire("POSTS")
         return
+    end
+    if not G.wasListed then
+        G.wasListed = true
+        G:Fire("LISTED", true)
     end
     -- A post made by hand: it just says it's in the Group Finder too.
     if p and not p.fromLFG then
@@ -323,6 +331,10 @@ local BREZ = { DRUID = true, DEATHKNIGHT = true, WARLOCK = true, PALADIN = true 
 local LUST = { MAGE = true, SHAMAN = true, EVOKER = true, HUNTER = true }
 
 local results = {}
+local declinedAt = {}   -- [resultID] = when I saw it turn declined
+
+local DECLINED = { declined = true, declined_full = true, declined_delisted = true }
+local PIN_DECLINED = 120   -- a decline stays at the top this long
 
 -- My application to a result: "applied", "invited", "declined"... or nil.
 local function appStatus(id)
@@ -388,7 +400,8 @@ local function readResults()
                     local pi = readable(call(LFG.GetSearchResultPlayerInfo, id, i))
                     local class = pi and (str(pi.classFilename) or str(pi.classFileName))
                     local role = pi and str(pi.assignedRole)
-                    local spec = pi and (num(pi.specID) or num(pi.specializationID))
+                    local spec = pi and (num(pi.specID) or num(pi.specializationID) or num(pi.specId))
+                    local specName = pi and (str(pi.specName) or str(pi.specializationName) or str(pi.localizedSpecName))
                     if pi and readable(pi.lfgRoles) then
                         local lr = pi.lfgRoles
                         role = (P(lr.tank) and "TANK") or (P(lr.healer) and "HEALER") or (P(lr.dps) and "DAMAGER") or role
@@ -399,7 +412,7 @@ local function readResults()
                     end
                     if class then
                         classes[#classes + 1] = class
-                        comp[#comp + 1] = { class = class, role = G.ROLE_OF[role or ""] or "D", spec = spec,
+                        comp[#comp + 1] = { class = class, role = G.ROLE_OF[role or ""] or "D", spec = spec, specName = specName,
                                             leader = pi and P(pi.isLeader) and true or false }
                         brez = brez or BREZ[class] or false
                         lust = lust or LUST[class] or false
@@ -417,6 +430,13 @@ local function readResults()
                     status = appStatus(id),
                 }
             end
+        end
+    end
+    for _, r in ipairs(results) do
+        if DECLINED[r.status or ""] then
+            declinedAt[r.id] = declinedAt[r.id] or GetTime()
+        else
+            declinedAt[r.id] = nil
         end
     end
     G.resultsAt = GetTime()
@@ -441,17 +461,46 @@ function G:ApplyFinder(id, role)
     local roles = role and { [role] = true } or G.MyRoles()
     local ok = LFG.ApplyToGroup and pcall(LFG.ApplyToGroup, id, roles.T or false, roles.H or false, roles.D or false)
     if not ok then PGM.Print("The game wouldn't send that application. Apply from the Group Finder instead.") end
+    -- Pending at once, pinned to the top; the game's own status follows.
+    for _, r in ipairs(results) do
+        if r.id == id and ok then r.status = "applied" end
+    end
+    G:Fire("FINDER")
     queueResults()
 end
 
 function G:CancelFinder(id)
     if LFG.CancelApplication then pcall(LFG.CancelApplication, id) end
+    for _, r in ipairs(results) do
+        if r.id == id then r.status = nil end
+    end
+    G:Fire("FINDER")
     queueResults()
 end
 
 -- ============================================================
 -- THE BOARD: GUILD POSTS AND THE GROUP FINDER, TOGETHER
 -- ============================================================
+
+-- Where my own request to a row stands: "pending", "invited", "joined",
+-- "declined", or nil. Group Finder applications and guild asks alike.
+function G:RowState(row)
+    local res, p = row.result, row.post
+    if res and res.status then
+        local st = res.status
+        if st == "applied" then return "pending" end
+        if st == "invited" then return "invited" end
+        if st == "inviteaccepted" then return "joined" end
+        if DECLINED[st] then return "declined", declinedAt[res.id] end
+        return nil
+    end
+    local a = p and G.asked[p.id]
+    if a then
+        if a.state == "asked" then return "pending" end
+        if a.state == "invited" then return "invited" end
+        if a.state == "declined" then return "declined", a.declinedAt end
+    end
+end
 
 -- "10-15", "15+" or "15": a key range, or nil for any.
 local function keyRange(text)
@@ -529,16 +578,20 @@ function G:Board(f)
                 if (row.need[r] or 0) > 0 then keep = true end
             end
         end
-        local st = row.result and row.result.status
-        if keep and f.hideDeclined and (st == "declined" or st == "declined_full" or st == "declined_delisted") then
-            keep = false
-        end
-        if keep then out[#out + 1] = row end
+        -- Groups I've asked to join sit on top whatever the filters say;
+        -- a decline stays there a couple of minutes, then Hide declined
+        -- hides it like any other.
+        local state, since = G:RowState(row)
+        row.state = state
+        row.pinned = state ~= nil and (state ~= "declined" or (since and GetTime() - since < PIN_DECLINED)) or false
+        if keep and f.hideDeclined and state == "declined" then keep = false end
+        if keep or row.pinned then out[#out + 1] = row end
     end
     for _, row in ipairs(out) do
         row.icon = row.kind == "M" and G.DungeonIconByName(row.what) or nil
     end
     table.sort(out, function(a, b)
+        if a.pinned ~= b.pinned then return a.pinned end
         if f.guildFirst and a.guild ~= b.guild then return a.guild end
         if a.scheduled ~= b.scheduled then return b.scheduled end
         if a.scheduled then return a.post.start < b.post.start end
