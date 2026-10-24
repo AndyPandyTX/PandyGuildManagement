@@ -226,6 +226,131 @@ end
 -- CSV
 -- ============================================================
 
+-- ============================================================
+-- PROFESSIONS
+-- ============================================================
+-- Counted by player as well as by character: a player is a main and all
+-- their alts, so "who can craft this" means someone you can ask, even when
+-- the character with the profession is offline and they're on another one.
+
+PGM.PROF_ACTIVE_DAYS = 7
+PGM.PROF_THIN = 3   -- this few active players makes a profession thin
+
+-- The character each player is online on, if any: { [mainGuid] = rec }.
+function PGM:PlayersOnline()
+    local g = PGM.GuildDB()
+    local on = {}
+    for guid, rec in pairs(g and g.members or {}) do
+        if rec.online and not rec.mobile then
+            local main = PGM:MainOf(guid)
+            -- Prefer them on the main itself, then whichever character.
+            if not on[main] or guid == main then on[main] = rec end
+        end
+    end
+    return on
+end
+
+-- Per profession id: chars, players, activePlayers (any of their crafting
+-- characters seen in the last PROF_ACTIVE_DAYS days), atMax (characters at
+-- the level cap), onlineChars (the crafting character is on), onlinePlayers
+-- (the player is on, on any character), thin.
+function PGM:ProfessionStats()
+    local g = PGM.GuildDB()
+    local out = {}
+    if not g then return out end
+    local max = PGM.MaxLevel()
+    local online = PGM:PlayersOnline()
+    local seenPlayer = {}   -- [id] = { [main] = { active = bool } }
+    for guid, rec in pairs(g.members) do
+        for _, pr in ipairs(rec.prof or {}) do
+            local e = out[pr.id]
+            if not e then
+                e = { id = pr.id, chars = 0, players = 0, activePlayers = 0, atMax = 0,
+                      onlineChars = 0, onlinePlayers = 0 }
+                out[pr.id] = e
+                seenPlayer[pr.id] = {}
+            end
+            e.chars = e.chars + 1
+            if (rec.level or 0) >= max then e.atMax = e.atMax + 1 end
+            if rec.online then e.onlineChars = e.onlineChars + 1 end
+            local main = PGM:MainOf(guid)
+            local p = seenPlayer[pr.id][main]
+            if not p then
+                p = {}
+                seenPlayer[pr.id][main] = p
+                e.players = e.players + 1
+                if online[main] then e.onlinePlayers = e.onlinePlayers + 1 end
+            end
+            local d = rec.online and 0 or PGM.DaysSince(rec.lastOnline)
+            if not p.active and d and d <= PGM.PROF_ACTIVE_DAYS then
+                p.active = true
+                e.activePlayers = e.activePlayers + 1
+            end
+        end
+    end
+    for _, e in pairs(out) do e.thin = e.activePlayers <= PGM.PROF_THIN end
+    return out
+end
+
+-- Who has a profession. byPlayer: one entry per player (their crafting
+-- character that's online, else at the level cap, else last seen), with
+-- the rest in `others`. Each entry: guid, rec (the crafting character),
+-- main, onlineAs (the character the player is on now, if any), others.
+-- Online first (the crafter, then the player on another character), then
+-- the most recently seen.
+function PGM:ProfessionCrafters(id, byPlayer)
+    local g = PGM.GuildDB()
+    local out = {}
+    if not (g and id) then return out end
+    local online = PGM:PlayersOnline()
+    local max = PGM.MaxLevel()
+    local function better(a, b)   -- is crafting character a a better pick than b?
+        if (a.online and true or false) ~= (b.online and true or false) then return a.online and true or false end
+        local am, bm = (a.level or 0) >= max, (b.level or 0) >= max
+        if am ~= bm then return am end
+        return (a.lastOnline or 0) > (b.lastOnline or 0)
+    end
+    local byMain = {}
+    for guid, rec in pairs(g.members) do
+        for _, pr in ipairs(rec.prof or {}) do
+            if pr.id == id then
+                local main = PGM:MainOf(guid)
+                local it = { guid = guid, rec = rec, main = main, onlineAs = online[main], others = {} }
+                if byPlayer then
+                    local cur = byMain[main]
+                    if not cur then
+                        byMain[main] = it
+                        out[#out + 1] = it
+                    elseif better(rec, cur.rec) then
+                        it.others = cur.others
+                        table.insert(it.others, cur.rec)
+                        byMain[main] = it
+                        for i, x in ipairs(out) do if x == cur then out[i] = it break end end
+                    else
+                        table.insert(cur.others, rec)
+                    end
+                else
+                    out[#out + 1] = it
+                end
+                break
+            end
+        end
+    end
+    local function rank(it)
+        if it.rec.online then return 2 end
+        if it.onlineAs then return 1 end
+        return 0
+    end
+    table.sort(out, function(a, b)
+        local ra, rb = rank(a), rank(b)
+        if ra ~= rb then return ra > rb end
+        local la, lb = a.rec.lastOnline or 0, b.rec.lastOnline or 0
+        if la ~= lb then return la > lb end
+        return PGM.NameLess(a.rec.short, b.rec.short)
+    end)
+    return out
+end
+
 local function csv(v)
     v = tostring(v == nil and "" or v)
     if v:find('[,"\n]') then v = '"' .. v:gsub('"', '""') .. '"' end

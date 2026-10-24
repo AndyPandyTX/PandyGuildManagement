@@ -39,7 +39,9 @@ Type **/pgm** to open it, click it in the AddOns button on the minimap, or use t
 - Officers can link, unlink or pick a main by hand, and that always wins
 
 **Professions**
-- Pick a profession and see everyone who has it, with online crafters first
+- Pick a profession and see everyone who has it, counted by player with alts folded in
+- See how many crafters were active this week, with thin professions flagged
+- Online first, including players who are on another character right now
 - Click a name to open the game's recipe view for that person
 
 **Member profiles**
