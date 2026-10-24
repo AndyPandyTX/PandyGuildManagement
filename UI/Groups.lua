@@ -682,7 +682,7 @@ local function rowMenu(owner, row)
     W.Menu(owner, G.PostTitle(row), entries)
 end
 
-local KEY_W = 118
+local KEY_W = 132
 
 local function boardRow(list)
     local r = W.Row(list)
@@ -701,7 +701,7 @@ local function boardRow(list)
     r.key:SetWidth(KEY_W)
     r.title = W.FS(r, 13, C.text)
     r.title:SetPoint("TOPLEFT", 48 + KEY_W + 6, -6)
-    r.title:SetPoint("TOPRIGHT", -150, -6)
+    r.title:SetPoint("TOPRIGHT", -112, -6)
     r.slots = {}
     for i = 1, SLOTS do
         local s = buildSlot(r)
@@ -712,7 +712,7 @@ local function boardRow(list)
     r.info:SetPoint("BOTTOMRIGHT", -114, 7)
     r.when = W.FS(r, 10, C.text3, "RIGHT")
     r.when:SetPoint("TOPRIGHT", -8, -6)
-    r.when:SetWidth(140)
+    r.when:SetWidth(104)
     r.action = W.Button(r, "", 98, 20)
     r.action:SetPoint("BOTTOMRIGHT", -6, 4)
     r.action:SetScript("OnClick", function(s) act(s:GetParent().row) end)
@@ -790,7 +790,7 @@ local function boardUpdate(r, row)
         r.key:SetText("")
     end
     local what = (row.what or "") ~= "" and row.what or G.KIND_LABEL[row.kind]
-    r.title:SetText(what .. (leader and ("   " .. leader) or ""))
+    r.title:SetText(what)
 
     -- Five-player groups show their comp; bigger ones (and guild posts,
     -- which don't know who's in them) say what they need.
@@ -805,12 +805,15 @@ local function boardUpdate(r, row)
     if not slots then parts[#parts + 1] = PGM.Hex(C.text3) .. "Needs:|r " .. G.NeedText(row.need, mine) end
     if row.result then parts[#parts + 1] = PGM.Hex(C.text3) .. row.result.members .. "/" .. row.size .. "|r" end
     if row.score > 0 then parts[#parts + 1] = PGM.Hex(PGM:ScoreColor(row.score)) .. row.score .. "|r" end
-    if row.playstyle then parts[#parts + 1] = PGM.Hex(C.text3) .. row.playstyle .. "|r" end
+    -- The leader on this line, where there's room for the whole name (the
+    -- title carries the playstyle, and the tooltip has it too).
+    if leader then parts[#parts + 1] = leader end
     if G.TeamName(row.post and row.post.team) then parts[#parts + 1] = PGM.Hex(C.gold) .. G.TeamName(row.post.team) .. " only|r" end
     if row.note ~= "" then parts[#parts + 1] = PGM.Hex(C.text3) .. row.note .. "|r" end
     r.info:SetText(table.concat(parts, "   "))
 
-    local source = row.post and (row.result and "Guild + Finder" or "Guild post") or "Group Finder"
+    -- Group Finder is the usual case; only guild posts say where they're from.
+    local source = row.post and (row.result and "Guild + Finder" or "Guild post") or nil
     local when
     if row.scheduled then
         when = PGM.Hex(C.accent) .. G.StartText(row.post.start) .. "|r"
@@ -822,7 +825,7 @@ local function boardUpdate(r, row)
     if look then
         r.when:SetText(PGM.Hex(look[1]) .. look[2] .. "|r  -  " .. when)
     else
-        r.when:SetText(source .. "  -  " .. when)
+        r.when:SetText(source and (source .. "  -  " .. when) or when)
     end
 
     local text, enabled = rowAction(row)
@@ -1225,6 +1228,11 @@ G:On("LISTED", function(on)
     elseif not state.editing then
         state.view = "board"
     end
+end)
+
+-- Browse groups in Blizzard's window: Browse opens beside it.
+G:On("FINDER_OPENED", function()
+    if not G:IsListed() then open("board") end
 end)
 
 G:RegisterEvent("LFG_LIST_APPLICATION_STATUS_UPDATED", function(_, _, newStatus)

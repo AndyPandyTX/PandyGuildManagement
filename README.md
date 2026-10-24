@@ -81,8 +81,9 @@ character's score comes from the game; main, warband and roles need RaiderIO.
   each with the roles it was earned on. Invite and Decline on each.
 - **Post a group:** the form below, and the Group Finder and ping settings.
 
-Listing a group in the Group Finder opens the window on My group, and
-applying to one (here, in the Group Finder or in OAK) opens it on Browse.
+Listing a group in the Group Finder opens the window on My group.
+Browsing groups in Blizzard's window, or applying to one (here, in the
+Group Finder or in OAK), opens it on Browse.
 Delisting goes back to Browse. Turn the opening off with "Open Groups when
 I list or apply" on Post a group. It never opens in combat. `/pgg mine` and `/pgg post` open those views.
 

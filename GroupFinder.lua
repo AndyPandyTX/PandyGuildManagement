@@ -815,6 +815,12 @@ local function hookBlizzard()
     if LFGListApplicationViewer_UpdateApplicantMember then
         hooksecurefunc("LFGListApplicationViewer_UpdateApplicantMember", onApplicantMember)
     end
+    -- Browsing groups in Blizzard's window (its list of groups opening):
+    -- the Groups page can open beside it (see UI/Groups.lua).
+    local panel = LFGListFrame and LFGListFrame.SearchPanel
+    if panel and panel.HookScript then
+        panel:HookScript("OnShow", function() G:Fire("FINDER_OPENED") end)
+    end
 end
 hookBlizzard()
 
