@@ -433,6 +433,8 @@ local function readResults()
                 local leader = str(info.leaderName)
                 results[#results + 1] = {
                     id = id, kind = kind, what = what, level = level, size = size,
+                    -- "Heroic", "Mythic", "Tier 8": what the activity's bracket says.
+                    diff = (kind == "R" or kind == "D") and paren or nil,
                     need = need, has = has, members = members, classes = classes, comp = comp, brez = brez, lust = lust,
                     leader = leader, rec = leader and G.RecByName(leader) or nil,
                     mates = num(info.numGuildMates) or 0,
@@ -524,6 +526,7 @@ local function fromPost(p)
     return {
         post = p, kind = p.kind, what = p.what, level = p.level, size = p.size, need = p.need,
         rec = rec, guild = true, note = p.note, scheduled = (p.start or 0) > 0,
+        diff = p.kind == "R" and ({ N = "Normal", H = "Heroic", M = "Mythic" })[(p.level or ""):upper():sub(1, 1)] or nil,
         score = (rec and PGM:MPlusScore(rec)) or 0, u = p.u or 0,
     }
 end
@@ -533,6 +536,7 @@ local function fromResult(r)
         result = r, kind = r.kind, what = r.what, level = r.level, size = r.size, need = r.need, has = r.has,
         rec = r.rec, guild = r.rec ~= nil or r.mates > 0, note = r.note, score = r.score,
         playstyle = r.playstyle, brez = r.brez, lust = r.lust, comp = r.comp, u = PGM.Now() - (r.age or 0),
+        diff = r.diff,
     }
 end
 

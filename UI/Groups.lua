@@ -682,7 +682,10 @@ local function rowMenu(owner, row)
     W.Menu(owner, G.PostTitle(row), entries)
 end
 
-local KEY_W = 132
+local KEY_W = 124
+
+-- Difficulty colours, as the game's own item quality colours go.
+local DIFF_COLOR = { N = { 0.12, 1.0, 0.0 }, H = { 0.64, 0.21, 0.93 }, M = { 1.0, 0.5, 0.0 } }
 
 local function boardRow(list)
     local r = W.Row(list)
@@ -696,11 +699,11 @@ local function boardRow(list)
     r.icon:SetPoint("LEFT", 8, 0)
     -- The key (or the listing's title, which starts with it) in a column
     -- of its own, in gold, so levels line up down the list.
-    r.key = W.FS(r, 14, C.gold)
-    r.key:SetPoint("TOPLEFT", 48, -5)
+    r.key = W.FS(r, 12, C.gold)
+    r.key:SetPoint("TOPLEFT", 48, -7)
     r.key:SetWidth(KEY_W)
-    r.title = W.FS(r, 13, C.text)
-    r.title:SetPoint("TOPLEFT", 48 + KEY_W + 6, -6)
+    r.title = W.FS(r, 12, C.text)
+    r.title:SetPoint("TOPLEFT", 48 + KEY_W + 6, -7)
     r.title:SetPoint("TOPRIGHT", -112, -6)
     r.slots = {}
     for i = 1, SLOTS do
@@ -708,7 +711,7 @@ local function boardRow(list)
         s:SetPoint("BOTTOMLEFT", 48 + (i - 1) * 18, 6)
         r.slots[i] = s
     end
-    r.info = W.FS(r, 11, C.text2)
+    r.info = W.FS(r, 10, C.text2)
     r.info:SetPoint("BOTTOMRIGHT", -114, 7)
     r.when = W.FS(r, 10, C.text3, "RIGHT")
     r.when:SetPoint("TOPRIGHT", -8, -6)
@@ -789,6 +792,11 @@ local function boardUpdate(r, row)
         r.key:SetText("")
     end
     local what = (row.what or "") ~= "" and row.what or G.KIND_LABEL[row.kind]
+    -- A raid's difficulty (or a delve's tier) in its colour, by the name.
+    if row.diff and row.diff ~= "" then
+        local col = DIFF_COLOR[row.diff:sub(1, 1)] or C.text2
+        what = what .. "  " .. PGM.Hex(col) .. row.diff .. "|r"
+    end
     -- Guildies in a Group Finder group, as Blizzard's window marks them,
     -- right by the name where it can't be cut off.
     local mates = row.result and row.result.mates or 0
