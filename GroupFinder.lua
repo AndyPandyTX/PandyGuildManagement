@@ -92,12 +92,14 @@ local function activityParts(a)
     return kind, what, paren, full
 end
 
--- A listing's key level, from its title (then its comment). Titles come
--- as "14", "+14", "14+", "+ 14 Learning"...: the same patterns RaiderIO
--- reads them with, most certain first.
+-- A key level in some text: "14", "+14", "14+", "+ 14 Learning"...: the
+-- same patterns RaiderIO reads them with, most certain first. Group Finder
+-- titles and comments from other players are protected strings
+-- ("|Ks1969|k0000000000000000|k") that the game draws but addons can't
+-- read, so those are never parsed: their digits aren't the key.
 local LEVEL_PATTERNS = { "%+%s*(%d+)", "(%d+)%s*%+", "^%s*(%d+)", "(%d+)" }
 local function levelIn(text)
-    if not text or text == "" then return nil end
+    if not text or text == "" or text:find("|K", 1, true) then return nil end
     for _, pat in ipairs(LEVEL_PATTERNS) do
         local ok, lv = pcall(string.match, text, pat)
         lv = ok and tonumber(lv)
@@ -436,6 +438,8 @@ local function readResults()
                     mates = num(info.numGuildMates) or 0,
                     score = num(info.leaderOverallDungeonScore) or 0,
                     playstyle = playstyleOf(info, a), age = num(info.age) or 0,
+                    -- The title as the game gave it: only ever drawn, never read.
+                    title = str(info.name),
                     note = G.Clean(str(info.comment) or "", 60),
                     status = appStatus(id),
                 }
@@ -512,18 +516,6 @@ function G:RowState(row)
     end
 end
 
--- "10-15", "15+" or "15": a key range, or nil for any.
-local function keyRange(text)
-    text = strtrim(text or "")
-    local a, b = text:match("^(%d+)%s*%-%s*(%d+)$")
-    if a then return tonumber(a), tonumber(b) end
-    a = text:match("^(%d+)%+$")
-    if a then return tonumber(a), 99 end
-    a = text:match("^(%d+)$")
-    if a then return tonumber(a), tonumber(a) end
-end
-G.KeyRange = keyRange
-
 -- One row of the board: a guild post, a Group Finder result, or both (a
 -- guildie's listing that's also on the guild board).
 local function fromPost(p)
@@ -564,14 +556,11 @@ function G:Board(f)
         end
     end
 
-    local kmin, kmax = keyRange(f.keys)
     local roles = G.MyRoles()
     local out = {}
     for _, row in ipairs(rows) do
-        local level = tonumber(row.level) or 0
         local keep = (not f.kind or row.kind == f.kind)
             and (not f.guildOnly or row.guild)
-            and (not kmin or row.kind ~= "M" or (level >= kmin and level <= kmax))
             and ((tonumber(f.minRating) or 0) <= 0 or row.score >= tonumber(f.minRating))
             and (not f.playstyle or row.playstyle == f.playstyle)
             and not (f.skip and f.skip[row.what])
@@ -606,10 +595,6 @@ function G:Board(f)
         if a.scheduled ~= b.scheduled then return b.scheduled end
         if a.scheduled then return a.post.start < b.post.start end
         if f.sort == "rating" and a.score ~= b.score then return a.score > b.score end
-        if f.sort == "level" then
-            local la, lb = tonumber(a.level) or 0, tonumber(b.level) or 0
-            if la ~= lb then return la > lb end
-        end
         return (a.u or 0) > (b.u or 0)
     end)
     return out

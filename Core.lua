@@ -72,7 +72,7 @@ local DEFAULTS = {
     -- The Groups page's Browse filters (playstyle unset means any).
     board = {
         guildFirst = true, guildOnly = false, scheduled = true, sort = "newest",
-        keys = "", minRating = 0, skip = {},   -- skip: dungeons unticked in the list
+        minRating = 0, skip = {},   -- skip: dungeons unticked in the list
         fitsMe = false, hideDeclined = true, brez = false, lust = false,
         needTank = false, needHealer = false, needDps = false, hasTank = false, hasHealer = false,
     },
@@ -488,6 +488,12 @@ G:RegisterEvent("ADDON_LOADED", function(_, name)
     db.chars = db.chars or {}
     db.settings = db.settings or {}
     db.settings.keysMineFirst = nil   -- replaced by keysPinMine, which starts off
+    -- Group Finder titles can't be read, so the key range filter and key
+    -- level sort are gone.
+    if type(db.settings.board) == "table" then
+        db.settings.board.keys = nil
+        if db.settings.board.sort == "level" then db.settings.board.sort = "newest" end
+    end
     fillDefaults(db.settings, DEFAULTS)
     G:Fire("LOADED")
 end)

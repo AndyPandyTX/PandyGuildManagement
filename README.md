@@ -45,17 +45,23 @@ character's score comes from the game; main, warband and roles need RaiderIO.
   it still wants (brighter when it's one you play). Hover for each
   member's spec and class. Bigger groups and guild posts say
   **Needs: 1 Tank 3 DPS** instead. Guild rows have a jade edge.
-  - **Guild:** Guild first, Guild only, Scheduled, and Sort (newest, key
-    level, leader rating).
+  - **Titles:** each Group Finder row shows the listing's own title
+    ("+14 Relaxed"), as the game draws it.
+  - **Guild:** Guild first, Guild only, Scheduled, and Sort (newest or
+    leader rating).
   - **Group Finder:** Mythic+, Raids, Delves or Custom. Clicking one
     searches the Group Finder (the game only searches from a click), and
     **Refresh** runs it again.
   - **Filters** panel, like OAK's: **Apply as** (the roles Apply signs you
-    up as), playstyle, key range (10-15, 15+ or 15), leader rating, then
-    tick boxes for Fits my role, Hide declined, Need or Has tank, Need or
-    Has healer, Need DPS, Battle res and Lust. Under them, this season's
-    dungeons with their icons and your best key in each: untick one to
-    hide it, or use All and None. Reset clears it all.
+    up as), playstyle, leader rating, then tick boxes for Fits my role,
+    Hide declined, Need or Has tank, Need or Has healer, Need DPS, Battle
+    res and Lust. Under them, this season's dungeons with their icons and
+    your best key in each: untick one to hide it, or use All and None.
+    Reset clears it all.
+  - **No key level filter.** Group Finder titles and comments reach addons
+    as protected strings: the game draws them, but no addon can read the
+    number in them. To find a key level, type it in the Group Finder's own
+    search box, which searches titles on Blizzard's side.
   - **Apply** sends a Group Finder application with your Apply as roles
     (right-click for one role). On a guild post it's **Ask to join**.
   - **Your requests go to the top**, whatever the filters, tinted by how

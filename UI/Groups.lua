@@ -770,7 +770,11 @@ local function boardUpdate(r, row)
         leader = PGM.Hex(C.text) .. (short or row.result.leader) .. "|r" .. (realm and (PGM.Hex(C.text3) .. "-" .. realm .. "|r") or "")
         if row.result.mates > 0 then leader = leader .. "  " .. PGM.Hex(C.jade) .. row.result.mates .. " guildie" .. (row.result.mates == 1 and "" or "s") .. "|r" end
     end
-    r.title:SetText(G.PostTitle(row) .. (leader and ("   " .. leader) or ""))
+    -- A Group Finder title ("+14 Relaxed") is a protected string: the game
+    -- draws it, so it goes on screen as it came, never read or cut.
+    local title = row.result and row.result.title
+    r.title:SetText(G.PostTitle(row) .. (title and ("  " .. PGM.Hex(C.accent) .. title .. "|r") or "")
+        .. (leader and ("   " .. leader) or ""))
 
     -- Five-player groups show their comp; bigger ones (and guild posts,
     -- which don't know who's in them) say what they need.
@@ -914,7 +918,7 @@ local function buildPanel(v)
     reset:SetPoint("TOPRIGHT", -8, -6)
     reset:SetScript("OnClick", function()
         local f = G.opt("board")
-        f.keys, f.minRating, f.playstyle, f.skip = "", 0, nil, {}
+        f.minRating, f.playstyle, f.skip = 0, nil, {}
         for _, key in ipairs({ "fitsMe", "needTank", "needHealer", "needDps", "hasTank", "hasHealer", "brez", "lust" }) do
             f[key] = false
         end
@@ -946,21 +950,11 @@ local function buildPanel(v)
     end)
     board.playstyle:SetPoint("TOPLEFT", x, -76)
 
-    local keysLabel = W.FS(panel, 11, C.text2)
-    keysLabel:SetPoint("TOPLEFT", x, -110)
-    keysLabel:SetText("Keys")
-    board.keys = W.EditBox(panel, 56, 20, "10-15")
-    board.keys:SetPoint("TOPLEFT", x + 30, -106)
-    board.keys:SetMaxLetters(7)
-    board.keys.onChange = function(s)
-        G.opt("board").keys = s:GetText()
-        UI:Refresh()
-    end
     local ratingLabel = W.FS(panel, 11, C.text2)
-    ratingLabel:SetPoint("TOPLEFT", x + 96, -110)
-    ratingLabel:SetText("Rating")
-    board.rating = W.EditBox(panel, 56, 20, "0")
-    board.rating:SetPoint("TOPLEFT", x + 136, -106)
+    ratingLabel:SetPoint("TOPLEFT", x, -110)
+    ratingLabel:SetText("Leader rating")
+    board.rating = W.EditBox(panel, 60, 20, "0")
+    board.rating:SetPoint("TOPLEFT", x + 80, -106)
     board.rating:SetNumeric(true)
     board.rating:SetMaxLetters(4)
     board.rating.onChange = function(s)
@@ -969,10 +963,12 @@ local function buildPanel(v)
     end
     local hint = W.FS(panel, 10, C.text3)
     hint:SetPoint("TOPLEFT", x, -130)
-    hint:SetText("Keys: 10-15, 15+ or 15. Rating: the leader's.")
+    hint:SetText("Key levels: type them in the Group Finder's search box. Addons can't read titles.")
+    hint:SetPoint("RIGHT", -8, 0)
+    hint:SetWordWrap(true)
 
     board.checks = {}
-    local y = -148
+    local y = -162
     for _, pair in ipairs({
         { { "Fits my role", "fitsMe" }, { "Hide declined", "hideDeclined" } },
         { { "Need tank", "needTank" }, { "Has tank", "hasTank" } },
@@ -1028,7 +1024,7 @@ local function buildBoard(v)
     prev = chip
     chip = flagChip(v, "Scheduled", "scheduled", "Show scheduled guild groups, to sign up for.")
     chip:SetPoint("LEFT", prev, "RIGHT", 4, 0)
-    board.sort = GU.Cycle(v, "Sort: ", { { "newest", "Newest" }, { "level", "Key level" }, { "rating", "Leader rating" } },
+    board.sort = GU.Cycle(v, "Sort: ", { { "newest", "Newest" }, { "rating", "Leader rating" } },
         function(s)
             G.opt("board").sort = s:Value()
             UI:Refresh()
@@ -1071,7 +1067,6 @@ local function refreshBoard()
     for id, chip in pairs(board.cats) do chip:SetActive(id == state.cat) end
     for r, chip in pairs(board.roleChips) do chip:SetActive(G.MyRoles()[r] == true) end
     board.sort:SetValue(f.sort)
-    if not board.keys:HasFocus() then board.keys:SetText(f.keys or "") end
     if not board.rating:HasFocus() then board.rating:SetText((f.minRating or 0) > 0 and f.minRating or "") end
     local styles = { { false, "Any" } }
     for _, s in ipairs(G:BoardPlaystyles()) do styles[#styles + 1] = { s, s } end
