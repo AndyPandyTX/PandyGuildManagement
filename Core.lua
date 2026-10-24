@@ -57,6 +57,7 @@ local DEFAULTS = {
     roles = {},             -- roles I'll play; empty means "my spec's"
     guildFirst = 5,         -- minutes before Find PuGs lights up
     shareListing = true,    -- post my Group Finder listing to the guild
+    autoOpen = true,        -- open Groups when I list or apply
     looking = false,        -- "I'm up for a group"
     lookingKinds = { M = true, R = false, D = true, O = false },
     freeMaxOnly = true,

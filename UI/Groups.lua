@@ -202,9 +202,13 @@ local function buildSettings(card)
     form.share:SetPoint("RIGHT", -12, 0)
     form.ping = W.Check(card, "Ping me when a guild group needs my role",
         function() return G.opt("ping") end, function(v) G.setOpt("ping", v) end)
-    form.ping:SetPoint("TOPLEFT", x, -72)
+    form.ping:SetPoint("TOPLEFT", x, -98)
     form.ping:SetPoint("RIGHT", -12, 0)
-    label(card, "I play", x, -106)
+    form.autoOpen = W.Check(card, "Open Groups when I list or apply",
+        function() return G.opt("autoOpen") end, function(v) G.setOpt("autoOpen", v) end)
+    form.autoOpen:SetPoint("TOPLEFT", x, -72)
+    form.autoOpen:SetPoint("RIGHT", -12, 0)
+    label(card, "I play", x, -132)
     form.roleChips = {}
     local prev
     for _, r in ipairs(G.ROLES) do
@@ -216,11 +220,11 @@ local function buildSettings(card)
             UI:Refresh()
         end)
         chip.tip = "None ticked: whatever your spec is. Used for pings, Fits my role and Apply."
-        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 6, 0) else chip:SetPoint("TOPLEFT", x + 50, -102) end
+        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 6, 0) else chip:SetPoint("TOPLEFT", x + 50, -128) end
         form.roleChips[r] = chip
         prev = chip
     end
-    label(card, "Ping for", x, -136)
+    label(card, "Ping for", x, -162)
     form.pingChips = {}
     prev = nil
     for _, k in ipairs(G.KINDS) do
@@ -229,12 +233,12 @@ local function buildSettings(card)
             t[k] = not t[k]
             s:SetActive(t[k])
         end)
-        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 4, 0) else chip:SetPoint("TOPLEFT", x + 50, -132) end
+        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 4, 0) else chip:SetPoint("TOPLEFT", x + 50, -158) end
         form.pingChips[k] = chip
         prev = chip
     end
     local help = W.FS(card, 11, C.text3)
-    help:SetPoint("TOPLEFT", x, -172)
+    help:SetPoint("TOPLEFT", x, -198)
     help:SetPoint("RIGHT", -12, 0)
     help:SetWordWrap(true)
     help:SetJustifyV("TOP")
@@ -244,9 +248,9 @@ local function buildSettings(card)
 
     -- Tell the guild: the chat line, as a template.
     local h = W.Heading(card, "Tell the guild")
-    h:SetPoint("TOPLEFT", x, -246)
+    h:SetPoint("TOPLEFT", x, -272)
     form.announce = W.EditBox(card, 10, 22, "{key} - needs {needs}. Whisper me to join!")
-    form.announce:SetPoint("TOPLEFT", x, -262)
+    form.announce:SetPoint("TOPLEFT", x, -288)
     form.announce:SetPoint("RIGHT", -12, 0)
     form.announce:SetMaxLetters(200)
     form.announce.onChange = function(s)
@@ -254,7 +258,7 @@ local function buildSettings(card)
         UI:Refresh()
     end
     form.preview = W.FS(card, 11, C.text2)
-    form.preview:SetPoint("TOPLEFT", x, -292)
+    form.preview:SetPoint("TOPLEFT", x, -318)
     form.preview:SetPoint("RIGHT", -12, 0)
     form.preview:SetWordWrap(true)
     form.preview:SetJustifyV("TOP")
@@ -1099,9 +1103,27 @@ end
 local VIEWS = { { "board", "Browse" }, { "mine", "My group" }, { "post", "Post a group" } }
 
 -- Listing a group opens My group, to watch who applies; delisting goes
--- back to Browse, to find one.
+-- back to Browse, to find one. With "Open Groups when I list or apply",
+-- listing (or applying anywhere, the Group Finder's own window included)
+-- also opens the window on that view. Never in combat.
+local function open(view)
+    if not state.editing then state.view = view end
+    if G.opt("autoOpen") and not InCombatLockdown() then
+        UI:Show("groups")
+        UI:Refresh()
+    end
+end
+
 G:On("LISTED", function(on)
-    if not state.editing then state.view = on and "mine" or "board" end
+    if on then
+        open("mine")
+    elseif not state.editing then
+        state.view = "board"
+    end
+end)
+
+G:RegisterEvent("LFG_LIST_APPLICATION_STATUS_UPDATED", function(_, _, newStatus)
+    if PGM.Plain(newStatus) == "applied" then open("board") end
 end)
 
 -- Open the Groups page on one view: "board", "mine" or "post".
@@ -1193,6 +1215,7 @@ local function refresh(p)
         for k, chip in pairs(form.pingChips) do chip:SetActive(G.opt("pingKinds")[k] and true or false) end
         form.ping:Sync()
         form.share:Sync()
+        form.autoOpen:Sync()
         if not form.announce:HasFocus() then form.announce:SetText(G.opt("announce") or "") end
         local sample = G:AnnounceText(G.mine or { kind = "M", what = "The Blinding Vale", level = "14",
             need = { T = 1, H = 0, D = 2 } })

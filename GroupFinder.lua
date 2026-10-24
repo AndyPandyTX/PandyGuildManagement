@@ -92,6 +92,19 @@ local function activityParts(a)
     return kind, what, paren, full
 end
 
+-- A listing's key level, from its title (then its comment). Titles come
+-- as "14", "+14", "14+", "+ 14 Learning"...: the same patterns RaiderIO
+-- reads them with, most certain first.
+local LEVEL_PATTERNS = { "%+%s*(%d+)", "(%d+)%s*%+", "^%s*(%d+)", "(%d+)" }
+local function levelIn(text)
+    if not text or text == "" then return nil end
+    for _, pat in ipairs(LEVEL_PATTERNS) do
+        local ok, lv = pcall(string.match, text, pat)
+        lv = ok and tonumber(lv)
+        if lv and lv > 1 and lv < 40 then return lv end
+    end
+end
+
 -- A post (as G:Post takes it) for that activity.
 local function postFor(id, entry)
     local a = readable(call(LFG.GetActivityInfoTable, id))
@@ -104,8 +117,8 @@ local function postFor(id, entry)
         if mine and full:find(mine, 1, true) then
             level = tostring(keyLevel)
         else
-            local ok, lv = pcall(string.match, str(entry and entry.name) or "", "%+(%d+)")
-            level = ok and lv or ""
+            local lv = levelIn(str(entry and entry.name))
+            level = lv and tostring(lv) or ""
         end
     elseif kind == "R" and paren then
         level = paren:sub(1, 1)          -- Normal, Heroic, Mythic
@@ -344,11 +357,8 @@ local function appStatus(id)
     return (s and s ~= "none") and s or nil
 end
 
-local function keyLevelOf(info, a)
-    local text = table.concat({ str(info.name) or "", str(info.comment) or "",
-        str(a and a.shortName) or "", str(a and a.fullName) or "" }, " ")
-    local ok, lv = pcall(string.match, text, "%+(%d%d?)")
-    return ok and tonumber(lv) or 0
+local function keyLevelOf(info)
+    return levelIn(str(info.name)) or levelIn(str(info.comment)) or 0
 end
 
 local function playstyleOf(info, a)
@@ -385,7 +395,7 @@ local function readResults()
                 local size = num(a.maxNumPlayers) or G.KIND_SIZE[kind]
                 local level = ""
                 if kind == "M" then
-                    local lv = keyLevelOf(info, a)
+                    local lv = keyLevelOf(info)
                     level = lv > 0 and tostring(lv) or ""
                 elseif kind == "R" and paren then
                     level = paren:sub(1, 1)
