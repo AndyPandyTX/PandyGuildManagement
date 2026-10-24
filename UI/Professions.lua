@@ -12,7 +12,15 @@ local C = PGM.C
 local UI = PGM.UI
 local W = UI.W
 
-local state = { selected = nil, onlineOnly = false, search = "" }
+-- recipe: a recipe picked in "Who can craft..." ({ recipe, line, name });
+-- while set, the right side lists who knows it instead of a profession.
+local state = { selected = nil, onlineOnly = false, search = "", recipe = nil }
+
+-- The profession the right side is about: the picked recipe's, or the one
+-- selected on the left.
+local function currentProf()
+    return state.recipe and state.recipe.line or state.selected
+end
 
 local function byPlayer()
     return PGM.opt("profByPlayer") ~= false
@@ -20,13 +28,11 @@ end
 
 -- Blizzard's own recipe view for a guild member, the same one the guild
 -- window's "View Recipes" opens: everything they know, and don't.
+-- (No CanViewGuildRecipes check first: in Midnight it can say no for a
+-- profession whose recipe view then opens fine. The game decides.)
 local function viewRecipes(guid, professionId)
-    if not (C_GuildInfo and C_GuildInfo.QueryGuildMemberRecipes) then return end
-    if CanViewGuildRecipes and not CanViewGuildRecipes(professionId) then
-        PGM.Print("The game doesn't share guild recipes for that profession.")
-        return
-    end
-    C_GuildInfo.QueryGuildMemberRecipes(guid, professionId)
+    if not (C_GuildInfo and C_GuildInfo.QueryGuildMemberRecipes and guid and professionId) then return end
+    pcall(C_GuildInfo.QueryGuildMemberRecipes, guid, professionId)
 end
 
 local function profList()
@@ -81,6 +87,7 @@ local function profRow(list)
     r.on:SetPoint("BOTTOMRIGHT", -6, 4)
     r:SetScript("OnClick", function(s)
         state.selected = s.e.id
+        state.recipe = nil
         UI.tabs.professions.panel.members.offset = 0
         UI:Refresh()
     end)
@@ -109,7 +116,7 @@ local function profUpdate(r, e)
         or (e.activePlayers .. " active this week"))
     r.n:SetText(tostring(e.players))
     r.on:SetText(e.onlinePlayers > 0 and (e.onlinePlayers .. " on") or "")
-    r.mark:SetShown(state.selected == e.id)
+    r.mark:SetShown(not state.recipe and state.selected == e.id)
 end
 
 local function memberRow(list)
@@ -137,7 +144,7 @@ local function memberRow(list)
             for _, o in ipairs(it.others) do names[#names + 1] = (o.short or "?") .. " (" .. (o.level or "?") .. ")" end
             GameTooltip:AddLine("Also on: " .. table.concat(names, ", "), 0.8, 0.8, 0.8, true)
         end
-        GameTooltip:AddLine("Click to see " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(state.selected)
+        GameTooltip:AddLine("Click to see " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf())
             .. " recipes: what they know and don't.", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine("Right-click for more.", 0.45, 0.45, 0.45)
         GameTooltip:Show()
@@ -146,15 +153,15 @@ local function memberRow(list)
         local it = s.it
         if button == "RightButton" then
             local extra = {
-                { "View " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(state.selected) .. " recipes",
-                  function() viewRecipes(it.guid, state.selected) end },
+                { "View " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf()) .. " recipes",
+                  function() viewRecipes(it.guid, currentProf()) end },
             }
             if not it.rec.online and it.onlineAs then
                 extra[#extra + 1] = { "Whisper " .. it.onlineAs.short .. " (online now)", function() UI:Whisper(it.onlineAs) end }
             end
             UI:MemberMenu(s, it.guid, extra)
         else
-            viewRecipes(it.guid, state.selected)
+            viewRecipes(it.guid, currentProf())
         end
     end)
     return r
@@ -210,8 +217,78 @@ local function build(p)
     p.byPlayer:SetPoint("LEFT", p.online, "RIGHT", 6, 0)
     p.byPlayer.tip = "One row per player (a main and their alts), under the character that has the profession."
     p.byPlayer:SetActive(byPlayer())
-    p.title = W.FS(p, 14, C.accent)
-    p.title:SetPoint("TOPLEFT", 0, -4)
+    -- Who can craft...: a recipe name, or an item link (shift-click an item
+    -- while the box has focus). Matches drop down under it; picking one asks
+    -- the guild who knows it.
+    p.find = W.EditBox(p, 240, 24, "Who can craft... (name or item)")
+    p.find:SetPoint("TOPLEFT", 0, 0)
+    p.find:SetMaxLetters(200)
+    p.suggest = CreateFrame("Frame", nil, p, "BackdropTemplate")
+    p.suggest:SetPoint("TOPLEFT", p.find, "BOTTOMLEFT", 0, -2)
+    p.suggest:SetSize(240, 8 * 22 + 6)
+    p.suggest:SetFrameLevel(p:GetFrameLevel() + 30)
+    W.Backdrop(p.suggest, C.bg, C.accent, 1)
+    p.suggest:Hide()
+    p.suggest.rows = {}
+    for i = 1, 8 do
+        local b = CreateFrame("Button", nil, p.suggest)
+        b:SetSize(232, 22)
+        b:SetPoint("TOPLEFT", 4, -3 - (i - 1) * 22)
+        local hl = b:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.08)
+        b.icon = b:CreateTexture(nil, "ARTWORK")
+        b.icon:SetSize(16, 16)
+        b.icon:SetPoint("LEFT", 4, 0)
+        b.fs = W.FS(b, 11, C.text)
+        b.fs:SetPoint("LEFT", 26, 0)
+        b.fs:SetPoint("RIGHT", -4, 0)
+        b:SetScript("OnClick", function(self) UI:ProfessionsPickRecipe(self.match) end)
+        p.suggest.rows[i] = b
+    end
+    p.suggestNote = W.FS(p.suggest, 11, C.text3)
+    p.suggestNote:SetPoint("TOPLEFT", 8, -6)
+    p.suggestNote:SetPoint("TOPRIGHT", -8, -6)
+    p.suggestNote:SetWordWrap(true)
+
+    local function showMatches()
+        local text = p.find:GetText() or ""
+        if not p.find:HasFocus() or strtrim(text) == "" then p.suggest:Hide() return end
+        local found = PGM:FindRecipes(text, 8)
+        p.suggest.first = found[1]
+        for i, b in ipairs(p.suggest.rows) do
+            local m = found[i]
+            b.match = m
+            b:SetShown(m ~= nil)
+            if m then
+                b.icon:SetTexture(PGM.ProfIcon(m.base))
+                b.fs:SetText(m.name)
+            end
+        end
+        if #found == 0 then
+            p.suggestNote:SetText(PGM:RecipeCount() == 0
+                and "No recipes learned yet. Open a profession window (yours, or click a crafter to see theirs) and its recipes become searchable."
+                or "No recipe matches. Recipes are learned from profession windows as they're opened.")
+            p.suggest:SetHeight(64)
+        else
+            p.suggestNote:SetText("")
+            p.suggest:SetHeight(#found * 22 + 6)
+        end
+        p.suggest:Show()
+    end
+    p.find.onChange = showMatches
+    p.find:HookScript("OnEditFocusGained", showMatches)
+    -- Late enough that a click on a match still lands.
+    p.find:HookScript("OnEditFocusLost", function() C_Timer.After(0.2, function() p.suggest:Hide() end) end)
+    p.find.onEnter = function() if p.suggest.first then UI:ProfessionsPickRecipe(p.suggest.first) end end
+    p.back = W.Button(p, "Back to professions", 140, 20, C.text2)
+    p.back:SetPoint("TOPRIGHT", 0, -32)
+    p.back:SetScript("OnClick", function()
+        state.recipe = nil
+        p.find:SetText("")
+        UI:Refresh()
+    end)
+    p.back:Hide()
 
     p.profs = W.List(p, 34, profRow, profUpdate)
     p.profs:SetPoint("TOPLEFT", 0, -34)
@@ -245,10 +322,20 @@ local function refresh(p)
         state.selected = sel and sel.id
     end
     p.profs:SetData(profs, true)
-    p.title:SetText(#profs > 0 and "Professions" or "")
     p.byPlayer:SetActive(byPlayer())
 
-    if sel then
+    p.back:SetShown(state.recipe ~= nil)
+    -- Leave room for the Back button beside the summary.
+    p.summary:SetPoint("TOPRIGHT", state.recipe and -150 or 0, -36)
+    if state.recipe then
+        local list = PGM:KnownCrafters(state.recipe.line, state.recipe.recipe)
+        local on = 0
+        for _, it in ipairs(list or {}) do if it.rec.online or it.onlineAs then on = on + 1 end end
+        p.summary:SetText(("%s%s|r (%s): %s"):format(PGM.Hex(C.text), state.recipe.name or "?",
+            PGM.ProfName(state.recipe.line),
+            not list and (PGM.Hex(C.text3) .. "asking the guild...|r")
+            or (#list .. (#list == 1 and " guildie knows it" or " guildies know it") .. "  ·  " .. PGM.Hex(C.jade) .. on .. " online|r")))
+    elseif sel then
         p.summary:SetText(("%s%s|r: %d players (%d chars)  ·  %s%d active this week|r  ·  %s%d online|r"):format(
             PGM.Hex(C.text), sel.name, sel.players, sel.chars,
             sel.thin and PGM.Hex(C.amber) or PGM.Hex(C.text2), sel.activePlayers,
@@ -257,9 +344,21 @@ local function refresh(p)
         p.summary:SetText("")
     end
 
-    local members = state.selected and memberList(state.selected) or {}
+    local members
+    if state.recipe then
+        members = {}
+        local q = state.search:lower()
+        for _, it in ipairs(PGM:KnownCrafters(state.recipe.line, state.recipe.recipe) or {}) do
+            if (not state.onlineOnly or it.rec.online or it.onlineAs) and matches(it, q) then members[#members + 1] = it end
+        end
+    else
+        members = state.selected and memberList(state.selected) or {}
+    end
     p.members:SetData(members, true)
-    if #profs == 0 then
+    if state.recipe and #members == 0 then
+        p.empty:SetText(not PGM:KnownCrafters(state.recipe.line, state.recipe.recipe) and "Asking the guild..."
+            or (state.onlineOnly and "Nobody who knows it is online." or "Nobody in the guild knows this recipe."))
+    elseif #profs == 0 then
         p.empty:SetText("No profession data yet. It comes from the game's guild roster; if it stays empty, open the guild window (J) once so the game loads it.")
     elseif #members == 0 then
         p.empty:SetText(state.onlineOnly and "Nobody with this profession is online." or "Nobody matches.")
@@ -267,5 +366,31 @@ local function refresh(p)
         p.empty:SetText("")
     end
 end
+
+-- Show who knows a recipe (from Who can craft...).
+function UI:ProfessionsPickRecipe(m)
+    local p = UI.tabs.professions and UI.tabs.professions.panel
+    if not (m and p) then return end
+    state.recipe = { recipe = m.recipe, line = m.line, name = m.name }
+    p.find:SetText(m.name or "")
+    p.find:ClearFocus()
+    p.suggest:Hide()
+    p.members.offset = 0
+    PGM:RecipeCrafters(m.line, m.recipe, function() UI:Refresh() end)
+    UI:Refresh()
+end
+
+-- Shift-clicking an item while Who can craft... has focus puts its link
+-- there, as it would in chat.
+local function insertLink(link)
+    local p = UI.tabs.professions and UI.tabs.professions.panel
+    if p and p.find and p.find:HasFocus() and type(link) == "string" then p.find:Insert(link) end
+end
+if ChatFrameUtil and ChatFrameUtil.InsertLink then hooksecurefunc(ChatFrameUtil, "InsertLink", insertLink) end
+if ChatEdit_InsertLink then hooksecurefunc("ChatEdit_InsertLink", insertLink) end
+
+PGM:On("CRAFTERS", function()
+    if UI.current == "professions" then UI:Refresh() end
+end)
 
 UI:AddTab({ id = "professions", label = "Professions", build = build, refresh = refresh })

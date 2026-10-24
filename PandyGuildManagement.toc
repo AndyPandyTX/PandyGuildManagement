@@ -26,6 +26,7 @@ Activity.lua
 Progress.lua
 Stats.lua
 Bulk.lua
+Crafters.lua
 
 UI\Widgets.lua
 UI\Main.lua
@@ -42,6 +43,7 @@ UI\Bulk.lua
 UI\Settings.lua
 UI\Export.lua
 UI\GuildFrame.lua
+UI\Crafters.lua
 
 # The group finder, after everything above (it uses all of it).
 Groups\Core.lua

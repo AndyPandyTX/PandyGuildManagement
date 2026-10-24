@@ -91,6 +91,16 @@ that member's play time.
   there.
 - Click anyone to open the game's recipe view for them, showing every recipe
   they know and don't.
+- **Who can craft...:** type a recipe name, or shift-click an item into the
+  box, and pick a match: everyone in the guild who knows that recipe is
+  listed, online first. It's the game's own guild data, so it covers every
+  member, not just addon users. Recipes become searchable as profession
+  windows are opened (yours, or a guildie's recipe view); only the newest
+  expansion's are kept.
+- **Guild crafters on the profession window:** whenever you look at a
+  recipe in Blizzard's profession window (yours or a guildie's), a panel
+  beside it lists the guildies who know it. Click a name to whisper them.
+  Click the panel's header to fold it away.
 
 ![Professions](screenshots/05-professions.png)
 

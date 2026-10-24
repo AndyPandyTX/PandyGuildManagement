@@ -43,6 +43,8 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click it in the Add
 - See how many crafters were active this week, with thin professions flagged
 - Online first, including players who are on another character right now
 - Click a name to open the game's recipe view for that person
+- **Who can craft...:** search a recipe or shift-click an item to see every guildie who knows it, online first
+- A **Guild crafters** panel on Blizzard's profession window lists who in the guild knows the recipe you're looking at
 
 **Member profiles**
 - Join date, M+ score, raid progress (with RaiderIO installed), professions, teams, notes and their characters

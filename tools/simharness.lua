@@ -169,7 +169,26 @@ local function newClient(guid, name)
         env.GetBuildInfo = function() return "1.60.1", "70000", "", 16001 end
         env.GetMaxLevelForPlayerExpansion = function() return 60 end
     end
-    env.C_GuildInfo = { GuildRoster = function() end }
+    env.C_GuildInfo = {
+        GuildRoster = function() end,
+        QueryGuildMembersForRecipe = function(line, recipe) LAST_RECIPE_QUERY = { line, recipe } end,
+    }
+    env.GetGuildRecipeInfoPostQuery = function()
+        local a = RECIPE_ANSWER
+        if not a then return nil end
+        return a.line, a.recipe, #a.members
+    end
+    env.GetGuildRecipeMember = function(i)
+        local m = RECIPE_ANSWER and RECIPE_ANSWER.members[i]
+        return m, m
+    end
+    env.C_TradeSkillUI = {
+        IsTradeSkillReady = function() return true end,
+        GetAllRecipeIDs = function() return TRADE and TRADE.ids or {} end,
+        GetRecipeInfo = function(id) return TRADE.info[id] end,
+        GetProfessionInfoByRecipeID = function(id) return TRADE.prof[id] end,
+        GetRecipeOutputItemData = function(id) return { itemID = TRADE.item[id] } end,
+    }
     env.Enum = { SendAddonMessageResult = { AddonMessageThrottle = 3 } }
     env.C_ChatInfo = {
         RegisterAddonMessagePrefix = function() end,
@@ -185,7 +204,7 @@ local function newClient(guid, name)
         end,
     }
     local NS = {}
-    for _, f in ipairs({ "Core.lua", "Club.lua", "Roster.lua", "GuildEvents.lua", "Alts.lua", "Attendance.lua", "Teams.lua", "Sync.lua", "Grm.lua", "Activity.lua", "Bulk.lua" }) do
+    for _, f in ipairs({ "Core.lua", "Club.lua", "Roster.lua", "GuildEvents.lua", "Alts.lua", "Attendance.lua", "Teams.lua", "Sync.lua", "Grm.lua", "Activity.lua", "Bulk.lua", "Crafters.lua" }) do
         local fn, err = load(FILES[f], "@" .. f, "t", env)
         if not fn then error(err) end
         fn("PandyGuildManagement", NS)
@@ -783,6 +802,46 @@ do
     run(3)
     check(P:UpdateAvailable() == "0.9.1", "a dev build is never compared")
     P.VERSION = saved
+end
+
+print("-- who can craft a recipe")
+do
+    local P = A.PGM
+    -- Two Midnight Alchemy recipes and an older one, as a profession window lists them.
+    TRADE = {
+        ids = { 1001, 1002, 900 },
+        info = { [1001] = { name = "Light's Potential" }, [1002] = { name = "Silvermoon Health Potion" }, [900] = { name = "Old Elixir" } },
+        prof = { [1001] = { professionID = 2906, parentProfessionID = 171 }, [1002] = { professionID = 2906, parentProfessionID = 171 },
+                 [900] = { professionID = 2871, parentProfessionID = 171 } },
+        item = { [1001] = 5001, [1002] = 5002, [900] = 4900 },
+    }
+    check(P:LearnOpenRecipes() == 2 and P:RecipeCount() == 2, "an open profession window teaches its newest expansion's recipes")
+    local byName = P:FindRecipes("light")
+    check(byName[1] and byName[1].recipe == 1001 and byName[1].line == 171, "recipes are found by name")
+    local byItem = P:FindRecipes("|cffffffff|Hitem:5002::::::::90:::::|h[Silvermoon Health Potion]|h|r")
+    check(#byItem == 1 and byItem[1].recipe == 1002, "...and by item link")
+    check(#P:FindRecipes("old elixir") == 0, "older expansions' recipes aren't kept")
+
+    -- Asking the guild who knows one.
+    LAST_RECIPE_QUERY, RECIPE_ANSWER = nil, nil
+    local got
+    P:RecipeCrafters(171, 1001, function(list) got = list end)
+    check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[1] == 171 and LAST_RECIPE_QUERY[2] == 1001, "the game is asked about the recipe")
+    RECIPE_ANSWER = { line = 171, recipe = 1001, members = { "Magicpayne-MalGanis", "Nattypandy-MalGanis", "Stranger-Elsewhere" } }
+    A.fire("GUILD_RECIPE_KNOWN_BY_MEMBERS")
+    check(got and #got == 2, "the answer lists the guildies who know it (" .. (got and #got or "none") .. ")")
+    check(P:KnownCrafters(171, 1001) == got, "...and is kept")
+    LAST_RECIPE_QUERY = nil
+    local again
+    P:RecipeCrafters(171, 1001, function(list) again = list end)
+    check(again == got and LAST_RECIPE_QUERY == nil, "asking again soon uses the kept answer")
+    -- No event: the answer is read after a moment anyway.
+    RECIPE_ANSWER = { line = 171, recipe = 1002, members = { "Magicpayne-MalGanis" } }
+    local late
+    P:RecipeCrafters(171, 1002, function(list) late = list end)
+    run(4)
+    check(late and #late == 1, "an answer without the event is still read")
+    TRADE, RECIPE_ANSWER = nil, nil
 end
 
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))

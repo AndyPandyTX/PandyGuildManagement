@@ -28,7 +28,7 @@ for (const f of files) {
   })(ast);
 }
 // Set as fields rather than declared as functions, so the walk can't see them.
-const SET_ELSEWHERE = new Set(['UI.frame']);
+const SET_ELSEWHERE = new Set(['UI.frame', 'UI.current']);
 for (const t of ['PGM','UI','W']) for (const [k,loc] of used[t]) if (!defined[t].has(k) && !SET_ELSEWHERE.has(t+'.'+k)) console.log('UNDEFINED', t+'.'+k, loc);
 console.log('GLOBALS:', [...globals.keys()].sort().join(' '));
 console.log(files.length, 'files,', bad, 'syntax errors');
