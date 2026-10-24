@@ -775,7 +775,6 @@ local function boardUpdate(r, row)
     elseif row.result and row.result.leader then
         local short, realm = row.result.leader:match("^([^-]+)-(.+)$")
         leader = PGM.Hex(C.text) .. (short or row.result.leader) .. "|r" .. (realm and (PGM.Hex(C.text3) .. "-" .. realm .. "|r") or "")
-        if row.result.mates > 0 then leader = leader .. "  " .. PGM.Hex(C.jade) .. row.result.mates .. " guildie" .. (row.result.mates == 1 and "" or "s") .. "|r" end
     end
     -- A Group Finder title ("+14 Relaxed") is a protected string: the game
     -- draws it, so it goes in the key column as it came, never read. A
@@ -790,7 +789,10 @@ local function boardUpdate(r, row)
         r.key:SetText("")
     end
     local what = (row.what or "") ~= "" and row.what or G.KIND_LABEL[row.kind]
-    r.title:SetText(what)
+    -- Guildies in a Group Finder group, as Blizzard's window marks them,
+    -- right by the name where it can't be cut off.
+    local mates = row.result and row.result.mates or 0
+    r.title:SetText(what .. (mates > 0 and ("   " .. PGM.Hex(C.jade) .. mates .. " guildie" .. (mates == 1 and "" or "s") .. "|r") or ""))
 
     -- Five-player groups show their comp; bigger ones (and guild posts,
     -- which don't know who's in them) say what they need.
@@ -802,7 +804,14 @@ local function boardUpdate(r, row)
     r.info:SetPoint("BOTTOMRIGHT", -114, 7)
 
     local parts = {}
-    if not slots then parts[#parts + 1] = PGM.Hex(C.text3) .. "Needs:|r " .. G.NeedText(row.need, mine) end
+    if not slots and row.has and (row.size or 0) > SLOTS then
+        -- A raid: who's in it, like Blizzard's window. Its "remaining"
+        -- counts are only open places in a flexible raid, not real needs.
+        parts[#parts + 1] = G.RoleIcon("T") .. " " .. row.has.T .. "  " .. G.RoleIcon("H") .. " " .. row.has.H
+            .. "  " .. G.RoleIcon("D") .. " " .. row.has.D
+    elseif not slots then
+        parts[#parts + 1] = PGM.Hex(C.text3) .. "Needs:|r " .. G.NeedText(row.need, mine)
+    end
     if row.result then parts[#parts + 1] = PGM.Hex(C.text3) .. row.result.members .. "/" .. row.size .. "|r" end
     if row.score > 0 then parts[#parts + 1] = PGM.Hex(PGM:ScoreColor(row.score)) .. row.score .. "|r" end
     -- The leader on this line, where there's room for the whole name (the
@@ -941,10 +950,30 @@ local function blizzardBox()
     return sp and sp.SearchBox, sp
 end
 
+-- Blizzard's own handlers on the box (focus, text, autocomplete) look on
+-- its parent for the panel's fields: the box, its autocomplete list, the
+-- category and filters. While it's here the parent is our holder, so the
+-- holder carries them too, kept to the category picked on Browse.
+local function dressHost(host, home)
+    local cat
+    for _, c in ipairs(G.FINDER_CATS) do
+        if c.id == state.cat then cat = c end
+    end
+    host.SearchBox = home.SearchBox
+    host.AutoCompleteFrame = home.AutoCompleteFrame
+    host.categoryID = cat and cat.cat or home.categoryID
+    host.filters = (cat and cat.filters and cat.filters()) or home.filters or 0
+    host.preferredFilters = home.preferredFilters or 0
+end
+
 local function borrowSearchBox()
     local box, home = blizzardBox()
     local host = board.searchHost
-    if borrowed or not host then return end
+    if borrowed then
+        if box and host then dressHost(host, home) end   -- the category may have changed
+        return
+    end
+    if not host then return end
     if not box then
         board.searchNote:SetText("Open the Group Finder once to search by key.")
         return
@@ -959,6 +988,7 @@ local function borrowSearchBox()
                  clear = box.clearButton and box.clearButton:GetScript("OnClick") }
     for _, name in ipairs(SCRIPTS) do borrowed.scripts[name] = box:GetScript(name) or false end
     board.searchNote:SetText("")
+    dressHost(host, home)
     box:ClearAllPoints()
     box:SetParent(host)
     box:SetPoint("TOPLEFT", host, "TOPLEFT", 6, -1)
@@ -1002,6 +1032,11 @@ local function returnSearchBox()
     if b.level then box:SetFrameLevel(b.level) end
     for name, fn in pairs(b.scripts) do box:SetScript(name, fn or nil) end
     if box.clearButton then box.clearButton:SetScript("OnClick", b.clear) end
+    local host = board.searchHost
+    if host then
+        host.SearchBox, host.AutoCompleteFrame = nil, nil
+        host.categoryID, host.filters, host.preferredFilters = nil, nil, nil
+    end
     box:Show()
 end
 G.UI.ReturnSearchBox = returnSearchBox
@@ -1078,7 +1113,7 @@ local function buildPanel(v)
     hint:SetPoint("TOPLEFT", x, -158)
     hint:SetPoint("RIGHT", -8, 0)
     hint:SetWordWrap(true)
-    hint:SetText("Keys or words, then Enter. 10 also finds 9 and 11; 10-12 is exact.")
+    board.searchHint = hint
 
     board.checks = {}
     local y = -186
@@ -1188,6 +1223,8 @@ local function refreshBoard()
     board.searched:SetText(G.searchedAt and ("Searched " .. age(GetTime() - G.searchedAt) .. " ago")
         or "Click a category to search")
 
+    board.searchHint:SetText(state.cat == "M" and "Keys or words, then Enter. 10 also finds 9 and 11; 10-12 is exact."
+        or "Words from the title (a boss, a difficulty...), then Enter.")
     board.dungeonHead:SetText((state.cat == "R" and "Raids" or (state.cat == "D" and "Delves" or "Dungeons")):upper())
     local acts = G:BoardActivities(state.cat)
     board.dungeonList:SetData(acts, true)
