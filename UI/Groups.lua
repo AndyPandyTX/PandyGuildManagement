@@ -903,6 +903,90 @@ local function dungeonUpdate(r, it)
     r.best:SetText((it.best or 0) > 0 and ("+" .. it.best) or "")
 end
 
+-- ============================================================
+-- BLIZZARD'S SEARCH BOX, BORROWED
+-- ============================================================
+
+-- Titles can't be read by addons, but the Group Finder's own search box
+-- searches them on Blizzard's side: whatever is typed there goes with every
+-- search, ours included. So while Browse is showing, the box moves into the
+-- Filters panel, the way OAK LFG Sorter does it, and goes back when Browse
+-- closes. Enter and its clear button search from here. If another addon has
+-- the box already (OAK, with its panel open), it's left where it is.
+local borrowed   -- the box's own place and scripts, while it's here
+
+local SCRIPTS = { "OnEnterPressed", "OnEscapePressed", "OnTabPressed", "OnArrowPressed", "OnTextChanged" }
+
+local function blizzardBox()
+    local sp = LFGListFrame and LFGListFrame.SearchPanel
+    return sp and sp.SearchBox, sp
+end
+
+local function borrowSearchBox()
+    local box, home = blizzardBox()
+    local host = board.searchHost
+    if borrowed or not host then return end
+    if not box then
+        board.searchNote:SetText("Open the Group Finder once to search by key.")
+        return
+    end
+    if box:GetParent() ~= home then
+        board.searchNote:SetText("The Group Finder's search box is in use (OAK?).")
+        return
+    end
+    local point, rel, relPoint, x, y = box:GetPoint(1)
+    borrowed = { point = point, rel = rel, relPoint = relPoint, x = x, y = y, w = box:GetWidth(), h = box:GetHeight(),
+                 strata = box:GetFrameStrata(), level = box:GetFrameLevel(), scripts = {},
+                 clear = box.clearButton and box.clearButton:GetScript("OnClick") }
+    for _, name in ipairs(SCRIPTS) do borrowed.scripts[name] = box:GetScript(name) or false end
+    board.searchNote:SetText("")
+    box:ClearAllPoints()
+    box:SetParent(host)
+    box:SetPoint("TOPLEFT", host, "TOPLEFT", 6, -1)
+    box:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 1)
+    box:SetFrameStrata("DIALOG")
+    box:SetFrameLevel(host:GetFrameLevel() + 5)
+    -- Blizzard's own handlers expect its panel around the box; these don't.
+    local function go(self)
+        self:ClearFocus()
+        local ok, why = G:SearchFinder(state.cat)
+        if not ok then PGM.Print(why) end
+        UI:Refresh()
+    end
+    box:SetScript("OnEnterPressed", go)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    box:SetScript("OnTabPressed", nil)
+    box:SetScript("OnArrowPressed", nil)
+    box:SetScript("OnTextChanged", function(self)
+        if SearchBoxTemplate_OnTextChanged then SearchBoxTemplate_OnTextChanged(self) end
+    end)
+    if box.clearButton then
+        box.clearButton:SetScript("OnClick", function()
+            if C_LFGList.ClearSearchTextFields then pcall(C_LFGList.ClearSearchTextFields) end
+            go(box)
+        end)
+    end
+    box:Show()
+end
+
+local function returnSearchBox()
+    if not borrowed then return end
+    local box, home = blizzardBox()
+    local b = borrowed
+    borrowed = nil
+    if not box then return end
+    box:ClearAllPoints()
+    box:SetParent(home)
+    if b.point and b.rel then box:SetPoint(b.point, b.rel, b.relPoint, b.x, b.y) end
+    if b.w and b.h then box:SetSize(b.w, b.h) end
+    if b.strata then box:SetFrameStrata(b.strata) end
+    if b.level then box:SetFrameLevel(b.level) end
+    for name, fn in pairs(b.scripts) do box:SetScript(name, fn or nil) end
+    if box.clearButton then box.clearButton:SetScript("OnClick", b.clear) end
+    box:Show()
+end
+G.UI.ReturnSearchBox = returnSearchBox
+
 local function buildPanel(v)
     local panel = CreateFrame("Frame", nil, v, "BackdropTemplate")
     W.Backdrop(panel, C.card, C.cardLine, 1)
@@ -961,14 +1045,24 @@ local function buildPanel(v)
         G.opt("board").minRating = tonumber(s:GetText()) or 0
         UI:Refresh()
     end
+    -- Blizzard's own search box lives here while Browse is open (see
+    -- borrowSearchBox): the server searches titles with what's typed in it.
+    board.searchHost = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    W.Backdrop(board.searchHost, { 0.02, 0.021, 0.025 }, C.frame, 1)
+    board.searchHost:SetPoint("TOPLEFT", x, -132)
+    board.searchHost:SetPoint("RIGHT", -8, 0)
+    board.searchHost:SetHeight(22)
+    board.searchNote = W.FS(board.searchHost, 10, C.text3)
+    board.searchNote:SetPoint("LEFT", 6, 0)
+    board.searchNote:SetPoint("RIGHT", -6, 0)
     local hint = W.FS(panel, 10, C.text3)
-    hint:SetPoint("TOPLEFT", x, -130)
-    hint:SetText("Key levels: type them in the Group Finder's search box. Addons can't read titles.")
+    hint:SetPoint("TOPLEFT", x, -158)
     hint:SetPoint("RIGHT", -8, 0)
     hint:SetWordWrap(true)
+    hint:SetText("Keys or words, then Enter. 10 also finds 9 and 11; 10-12 is exact.")
 
     board.checks = {}
-    local y = -162
+    local y = -186
     for _, pair in ipairs({
         { { "Fits my role", "fitsMe" }, { "Hide declined", "hideDeclined" } },
         { { "Need tank", "needTank" }, { "Has tank", "hasTank" } },
@@ -1167,6 +1261,8 @@ local function build(p)
     settings:SetPoint("BOTTOMRIGHT")
     buildSettings(settings)
 
+    p:HookScript("OnHide", returnSearchBox)
+
     -- The guild-first countdown ticks while My group is open.
     p.ticker = 0
     p:SetScript("OnUpdate", function(s, elapsed)
@@ -1198,6 +1294,8 @@ local function refresh(p)
         p.status:SetText("")
     end
 
+    -- Blizzard's search box is ours only while Browse is on screen.
+    if state.view == "board" and p:IsVisible() then borrowSearchBox() else returnSearchBox() end
     if state.view == "board" then
         refreshBoard()
     elseif state.view == "mine" then

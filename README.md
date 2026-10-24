@@ -58,10 +58,13 @@ character's score comes from the game; main, warband and roles need RaiderIO.
     res and Lust. Under them, this season's dungeons with their icons and
     your best key in each: untick one to hide it, or use All and None.
     Reset clears it all.
-  - **No key level filter.** Group Finder titles and comments reach addons
-    as protected strings: the game draws them, but no addon can read the
-    number in them. To find a key level, type it in the Group Finder's own
-    search box, which searches titles on Blizzard's side.
+  - **Searching by key level:** Group Finder titles reach addons as
+    protected strings (the game draws them, no addon can read them), so
+    the search is Blizzard's: its own search box moves into the Filters
+    panel while Browse is open, the way OAK does it, and goes back after.
+    Type keys or words and press Enter. One level also finds the keys
+    either side of it (10 finds 9 to 11); a range (10-12) is exact. If OAK
+    has the box at the time, it's left there and the panel says so.
   - **Apply** sends a Group Finder application with your Apply as roles
     (right-click for one role). On a guild post it's **Ask to join**.
   - **Your requests go to the top**, whatever the filters, tinted by how
