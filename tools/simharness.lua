@@ -725,6 +725,42 @@ do
     check(not ha[hour + 10], "an hour in the future is ignored")
 end
 
+print("-- professions by player")
+do
+    local fn = load(FILES["Stats.lua"], "@Stats.lua", "t", A.env)
+    fn("PandyGuildManagement", A.NS)
+    local P, g = A.PGM, A.g
+    local now = BASE + math.floor(T)
+    local function member(n, name, note, online, daysAgo, profs)
+        local guid = gid(n)
+        local prof = {}
+        for _, id in ipairs(profs) do prof[#prof + 1] = { id = id } end
+        g.members[guid] = { guid = guid, name = name .. "-" .. REALM, short = name, realm = REALM, rank = "Member",
+            rankIndex = 5, level = 90, class = "MAGE", note = note, onote = "", online = online,
+            lastOnline = now - daysAgo * 86400, prof = prof }
+        return guid
+    end
+    -- One player: a main (offline 2 days) and an alt (online), both enchanters;
+    -- the main is also the only scribe. Another player, gone 20 days.
+    local main = member(200, "Crafterone", "", false, 2, { 333, 444 })
+    local alt = member(201, "Crafteralt", "alt of Crafterone", true, 0, { 333 })
+    local lone = member(202, "Loneone", "", false, 20, { 333 })
+    P:RebuildAlts()
+    local st = P:ProfessionStats()[333]
+    check(st and st.chars == 3 and st.players == 2, "enchanting: 3 characters, 2 players")
+    check(st and st.activePlayers == 1 and st.onlinePlayers == 1 and st.onlineChars == 1, "...1 active, 1 online")
+    check(st and st.thin, "...which is thin")
+    local list = P:ProfessionCrafters(333, true)
+    check(#list == 2 and list[1].guid == alt, "by player: the online alt stands for its player")
+    check(list[1] and #list[1].others == 1 and list[1].others[1].short == "Crafterone", "...with the main as another crafter")
+    check(#P:ProfessionCrafters(333, false) == 3, "by character: everyone listed")
+    local scribe = P:ProfessionCrafters(444, true)[1]
+    check(scribe and scribe.guid == main and scribe.onlineAs and scribe.onlineAs.short == "Crafteralt",
+        "an offline crafter whose player is online shows who to ask")
+    for _, guid in ipairs({ main, alt, lone }) do g.members[guid] = nil end
+    P:RebuildAlts()
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)

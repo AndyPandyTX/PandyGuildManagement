@@ -71,10 +71,17 @@ that member's play time.
 
 ![Activity](screenshots/04-activity.png)
 
-**Professions.** Pick a profession and see everyone who has it. Online
-members are listed first, so finding a crafter right now takes one click.
-Click anyone to open the game's recipe view for them, showing every recipe
-they know and don't. Alts are marked with their main's name.
+**Professions.** Pick a profession and see everyone who has it:
+- Counted by player (a main and their alts), with how many were active this
+  week. Professions with few active crafters are flagged, which is handy for
+  recruiting.
+- By player, each player shows once, under the character that has the
+  profession; their other crafting characters are in the tooltip.
+- Online first. If the crafting character is offline but the player is on
+  another character, it says "Online as ..." and right-click whispers them
+  there.
+- Click anyone to open the game's recipe view for them, showing every recipe
+  they know and don't.
 
 ![Professions](screenshots/05-professions.png)
 
