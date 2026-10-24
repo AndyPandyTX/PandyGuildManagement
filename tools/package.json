@@ -4,7 +4,8 @@
   "description": "Lint and multi-client sync simulation for Pandy Guild Management",
   "scripts": {
     "lint": "node lint.js ..",
-    "test": "node simrun.js .. && node simrun.js .. forever"
+    "test": "node simrun.js .. && node simrun.js .. forever && node simrun.js .. groups",
+    "test:groups": "node simrun.js .. groups ../../PandyGuildGroups"
   },
   "dependencies": {
     "fengari": "^0.1.4",
