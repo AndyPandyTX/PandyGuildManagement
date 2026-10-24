@@ -764,11 +764,13 @@ end
 
 local function onSearchEntry(entry)
     if not entry then return end
+    if not G.IsOn() then mark(entry, false) return end
     local rec, mates = guildOf(entry.resultID)
     mark(entry, rec ~= nil or mates > 0)
 end
 
 local function onSearchTooltip(tooltip, resultID)
+    if not G.IsOn() then return end
     local rec, mates, info = guildOf(resultID)
     if not (rec or mates > 0) then return end
     tooltip:AddLine(" ")
@@ -782,6 +784,7 @@ local function onSearchTooltip(tooltip, resultID)
 end
 
 local function onApplicantEnter(member)
+    if not G.IsOn() then return end
     local d = member.pggInfo
     if not d or GameTooltip:GetOwner() ~= member then return end
     GameTooltip:AddLine(" ")
@@ -792,6 +795,7 @@ end
 
 local function onApplicantMember(member, appID, memberIdx)
     if not member then return end
+    if not G.IsOn() then mark(member, false) return end
     local ok, name, _, _, _, _, _, _, _, _, _, _, score = pcall(LFG.GetApplicantMemberInfo, appID, memberIdx)
     name = ok and str(name)
     local rec = name and G.RecByName(name)

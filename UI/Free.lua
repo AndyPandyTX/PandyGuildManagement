@@ -104,6 +104,10 @@ local function build(p)
 end
 
 local function refresh(p)
+    if GU.Off(p) then
+        if p.offHook then p.offHook() end
+        return
+    end
     local list = G:WhoList()
     local counts = { l = 0, f = 0 }
     for _, it in ipairs(list) do
@@ -119,5 +123,5 @@ local function refresh(p)
     p.empty:SetText(#list == 0 and "Nobody else online matches." or "")
 end
 
-UI:AddTab({ id = "free", label = "Who's Free", build = build, refresh = refresh, module = true,
+UI:AddTab({ id = "free", label = "Who's Free", build = build, refresh = refresh, module = true, hidden = GU.Hidden,
             icon = "Interface\\Icons\\INV_Misc_GroupLooking" })

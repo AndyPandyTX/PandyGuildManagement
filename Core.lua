@@ -101,6 +101,13 @@ function G.setOpt(key, value)
     PandyGuildGroupsDB.settings[key] = value
 end
 
+-- On or off. PGM's Settings can switch the group finder off; this is read
+-- wherever work happens (sending, receiving, events, timers, Blizzard
+-- hooks, the pages), because it can change while the game is running.
+function G.IsOn()
+    return not (PandyGuildGroupsDB and PandyGuildGroupsDB.off)
+end
+
 -- This guild's saved table, filed under PGM's guild key.
 function G.DB()
     local key = PGM.GuildKey()
@@ -399,6 +406,7 @@ end
 
 -- Send a "G" record now, or say why it can't go. quiet: don't say.
 function G.Send(quiet, sub, ...)
+    if not G.IsOn() then return false end
     if not G.CanTalk() then
         if not quiet then PGM.Print(G.WhyNot()) end
         return false
@@ -409,7 +417,7 @@ end
 
 -- Many small rows of one sub-type, packed into as few messages as fit.
 function G.SendPacked(bulk, sub, rows)
-    if not G.CanTalk() then return end
+    if not (G.IsOn() and G.CanTalk()) then return end
     local head = "1G" .. SEP .. sub
     local parts, size = {}, #head
     local function flush()
@@ -444,7 +452,7 @@ end
 -- field after the sub-type. Only from guild members in our roster.
 G.handlers = {}
 PGM.SyncRegister("G", function(f, sender, rec)
-    if not (rec and G.DB()) then return end
+    if not (rec and G.IsOn() and G.DB()) then return end
     local h = G.handlers[f[2] or ""]
     if h then h(f, sender, rec) end
 end)
@@ -457,6 +465,7 @@ end
 
 -- Something changed: tell our files, then repaint PGM's window soon.
 function G:Fire(msg, ...)
+    if msg ~= "LOADED" and not G.IsOn() then return end
     for _, fn in ipairs(listeners[msg] or {}) do
         local ok, err = pcall(fn, ...)
         if not ok then geterrorhandler()(err) end
@@ -474,6 +483,7 @@ function G:RegisterEvent(event, fn)
     table.insert(events[event], fn)
 end
 frame:SetScript("OnEvent", function(_, event, ...)
+    if event ~= "ADDON_LOADED" and not G.IsOn() then return end
     for _, fn in ipairs(events[event]) do
         local ok, err = pcall(fn, event, ...)
         if not ok then geterrorhandler()(err) end
@@ -498,14 +508,54 @@ G:RegisterEvent("ADDON_LOADED", function(_, name)
     G:Fire("LOADED")
 end)
 
--- PGM's first full roster read: everyone's rank and online state are known.
+-- PGM's events, only while on.
+function G:OnPGM(msg, fn)
+    PGM:On(msg, function(...)
+        if G.IsOn() then return fn(...) end
+    end)
+end
+
+-- A repeating timer that does nothing while off.
+function G.Every(seconds, fn)
+    return C_Timer.NewTicker(seconds, function()
+        if G.IsOn() then fn() end
+    end)
+end
+
+-- Start once PGM has read the full roster (everyone's rank and online
+-- state are known), or when switched back on after a session that began off.
 local started = false
-PGM:On("ROSTER", function()
+function G.Start()
     local g = PGM.GuildDB()
-    if started or not (g and g.seeded and PandyGuildGroupsDB) then return end
+    if started or not (G.IsOn() and g and g.seeded and PandyGuildGroupsDB) then return end
     started = true
     G:Fire("READY")
-end)
+end
+G:OnPGM("ROSTER", G.Start)
+
+-- For PGM's Settings: switch the group finder on or off, at once. Going off,
+-- it first closes my guild post (while it may still say so) and gives
+-- Blizzard's search box back; then it goes quiet. Coming back on, it starts
+-- up as at login if it hadn't yet this session.
+function G:SetEnabled(on)
+    if not PandyGuildGroupsDB then return end
+    on = on and true or false
+    if on == G.IsOn() then return end
+    if on then
+        PandyGuildGroupsDB.off = nil
+        G.Start()
+        G:Fire("POSTS")
+    else
+        if G.mine and G.CloseMine then G:CloseMine("c") end
+        if G.UI and G.UI.ReturnSearchBox then G.UI.ReturnSearchBox() end
+        PandyGuildGroupsDB.off = true
+    end
+    PGM.UI:QueueRefresh()
+end
+
+function G:IsEnabled()
+    return G.IsOn()
+end
 
 -- ============================================================
 -- SLASH COMMAND
@@ -514,6 +564,15 @@ end)
 SLASH_PANDYGUILDGROUPS1 = "/pgg"
 SlashCmdList.PANDYGUILDGROUPS = function(input)
     local cmd = strtrim((input or ""):lower())
+    if cmd == "on" or cmd == "off" then
+        G:SetEnabled(cmd == "on")
+        PGM.Print("Guild Groups is " .. (G.IsOn() and "on." or "off. /pgg on turns it back on."))
+        return
+    end
+    if not G.IsOn() then
+        PGM.Print("Guild Groups is off. /pgg on turns it back on.")
+        return
+    end
     if cmd == "" or cmd == "groups" then
         PGM.UI:Show("groups")
     elseif cmd == "mine" or cmd == "my" or cmd == "post" then
@@ -531,6 +590,7 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
     else
         PGM.Print("Guild Groups v" .. G.VERSION .. ":")
         PGM.Print("  /pgg - guild groups")
+        PGM.Print("  /pgg on | off - switch the group finder on or off")
         PGM.Print("  /pgg mine | post - your group, or the post form")
         PGM.Print("  /pgg free - who's free")
         PGM.Print("  /pgg keys - everyone's keystone")

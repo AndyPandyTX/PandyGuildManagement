@@ -135,6 +135,10 @@ local function build(p)
 end
 
 local function refresh(p)
+    if GU.Off(p) then
+        if p.offHook then p.offHook() end
+        return
+    end
     if PGM.IS_FOREVER then
         p.title:SetText("Keystones")
         p.sub:SetText("WoW Forever has no Mythic+.")
@@ -182,5 +186,5 @@ function G.UI.KeyRows()
     return list
 end
 
-UI:AddTab({ id = "keys", label = "Keystones", build = build, refresh = refresh, module = true,
+UI:AddTab({ id = "keys", label = "Keystones", build = build, refresh = refresh, module = true, hidden = GU.Hidden,
             icon = "Interface\\Icons\\INV_Relics_Hourglass" })

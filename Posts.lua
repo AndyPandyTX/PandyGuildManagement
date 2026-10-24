@@ -608,7 +608,7 @@ local function sweep()
     if changed then G:Fire("POSTS") end
 end
 
-PGM:On("ROSTER", sweep)
+G:OnPGM("ROSTER", sweep)
 
 -- Everyone's posts I can see: live first (newest first), then scheduled
 -- ones by start time.
@@ -661,8 +661,8 @@ G:On("READY", function()
         end)
     end
     C_Timer.After(16, function() G.Send(true, "Q") end)
-    C_Timer.NewTicker(30, sweep)
-    C_Timer.NewTicker(HEARTBEAT, function()
+    G.Every(30, sweep)
+    G.Every(HEARTBEAT, function()
         if G.mine and G.CanTalk() then sendPost(G.mine, true) end
     end)
     G:Fire("POSTS")

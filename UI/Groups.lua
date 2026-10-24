@@ -1331,6 +1331,7 @@ local function build(p)
     buildSettings(settings)
 
     p:HookScript("OnHide", returnSearchBox)
+    p.offHook = returnSearchBox
 
     -- The guild-first countdown ticks while My group is open.
     p.ticker = 0
@@ -1344,6 +1345,10 @@ local function build(p)
 end
 
 local function refresh(p)
+    if GU.Off(p) then
+        if p.offHook then p.offHook() end
+        return
+    end
     if state.view == "post" and G.mine and not state.editing and G.mine.fromLFG then state.view = "mine" end
     for id, f in pairs(p.views) do f:SetShown(id == state.view) end
     local asks = 0
@@ -1386,5 +1391,5 @@ local function refresh(p)
     end
 end
 
-UI:AddTab({ id = "groups", label = "Groups", build = build, refresh = refresh, module = true,
+UI:AddTab({ id = "groups", label = "Groups", build = build, refresh = refresh, module = true, hidden = GU.Hidden,
             icon = "Interface\\Icons\\INV_Misc_GroupNeedMore" })

@@ -38,6 +38,37 @@ function GU.Header(p, y, cols)
     return header
 end
 
+-- While the group finder is off, a page shows this cover instead of its
+-- content (and its tab says hidden, for a sidebar that hides such tabs).
+-- True when the page should stop there.
+function GU.Off(p)
+    if G.IsOn() then
+        if p.offCover then p.offCover:Hide() end
+        return false
+    end
+    if not p.offCover then
+        local f = CreateFrame("Frame", nil, p, "BackdropTemplate")
+        f:SetAllPoints()
+        f:SetFrameLevel(p:GetFrameLevel() + 50)
+        f:EnableMouse(true)
+        W.Backdrop(f, C.panel, C.panel, 1)
+        local t = W.FS(f, 14, C.text2, "CENTER")
+        t:SetPoint("CENTER", 0, 20)
+        t:SetText("Guild Groups is switched off.")
+        local b = W.Button(f, "Turn it on", 110, 26)
+        b:SetPoint("TOP", t, "BOTTOM", 0, -14)
+        b:SetScript("OnClick", function() G:SetEnabled(true) UI:Refresh() end)
+        p.offCover = f
+    end
+    p.offCover:Show()
+    return true
+end
+
+-- For the tabs: hidden while off.
+function GU.Hidden()
+    return not G.IsOn()
+end
+
 -- A header strip whose columns sort when clicked: { { label, x, key } }.
 -- get() returns the sort key and whether it's reversed; set(key, reversed).
 -- Clicking the column already sorting flips it.

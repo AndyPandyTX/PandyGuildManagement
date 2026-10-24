@@ -150,7 +150,7 @@ end
 
 G:On("READY", function()
     C_Timer.After(12, function() G:SendStatus(true) end)
-    C_Timer.NewTicker(EVERY, function() G:SendStatus(true) end)
+    G.Every(EVERY, function() G:SendStatus(true) end)
 end)
 
 G:RegisterEvent("GROUP_ROSTER_UPDATE", function() G:SendStatus() end)
@@ -161,7 +161,7 @@ G:RegisterEvent("PLAYER_ENTERING_WORLD", function()
     C_Timer.After(6, function() G:SendStatus(true) end)
 end)
 -- Offline guildies drop off the list.
-PGM:On("ROSTER", function()
+G:OnPGM("ROSTER", function()
     local g = PGM.GuildDB()
     for guid in pairs(G.status) do
         local rec = g and g.members[guid]
