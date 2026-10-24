@@ -682,6 +682,8 @@ local function rowMenu(owner, row)
     W.Menu(owner, G.PostTitle(row), entries)
 end
 
+local KEY_W = 118
+
 local function boardRow(list)
     local r = W.Row(list)
     r.wash = W.Solid(r, "BORDER", C.jade, 0.06)
@@ -692,8 +694,13 @@ local function boardRow(list)
     r.edge:SetWidth(3)
     r.icon = W.FramedIcon(r, 32)
     r.icon:SetPoint("LEFT", 8, 0)
+    -- The key (or the listing's title, which starts with it) in a column
+    -- of its own, in gold, so levels line up down the list.
+    r.key = W.FS(r, 14, C.gold)
+    r.key:SetPoint("TOPLEFT", 48, -5)
+    r.key:SetWidth(KEY_W)
     r.title = W.FS(r, 13, C.text)
-    r.title:SetPoint("TOPLEFT", 48, -6)
+    r.title:SetPoint("TOPLEFT", 48 + KEY_W + 6, -6)
     r.title:SetPoint("TOPRIGHT", -150, -6)
     r.slots = {}
     for i = 1, SLOTS do
@@ -771,10 +778,19 @@ local function boardUpdate(r, row)
         if row.result.mates > 0 then leader = leader .. "  " .. PGM.Hex(C.jade) .. row.result.mates .. " guildie" .. (row.result.mates == 1 and "" or "s") .. "|r" end
     end
     -- A Group Finder title ("+14 Relaxed") is a protected string: the game
-    -- draws it, so it goes on screen as it came, never read or cut.
+    -- draws it, so it goes in the key column as it came, never read. A
+    -- guild post's key is its own level.
     local title = row.result and row.result.title
-    r.title:SetText(G.PostTitle(row) .. (title and ("  " .. PGM.Hex(C.accent) .. title .. "|r") or "")
-        .. (leader and ("   " .. leader) or ""))
+    local level = row.level or ""
+    if title and title ~= "" then
+        r.key:SetText(PGM.Hex(C.gold) .. title .. "|r")
+    elseif level ~= "" then
+        r.key:SetText(PGM.Hex(C.gold) .. (row.kind == "M" and ("+" .. level) or level) .. "|r")
+    else
+        r.key:SetText("")
+    end
+    local what = (row.what or "") ~= "" and row.what or G.KIND_LABEL[row.kind]
+    r.title:SetText(what .. (leader and ("   " .. leader) or ""))
 
     -- Five-player groups show their comp; bigger ones (and guild posts,
     -- which don't know who's in them) say what they need.
