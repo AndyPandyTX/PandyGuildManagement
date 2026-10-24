@@ -12,7 +12,7 @@ local W = UI.W
 local GU = G.UI
 
 local COLS = {
-    { "Key", 6, "level" }, { "Dungeon", 56, "map" }, { "Who", 232, "who" }, { "M+", 486, "score" }, { "Seen", 546, "seen" },
+    { "Key", 6, "level" }, { "Dungeon", 72, "map" }, { "Who", 232, "who" }, { "M+", 486, "score" }, { "Seen", 546, "seen" },
 }
 
 -- The sort each column means, and which way is natural (highest first
@@ -29,12 +29,16 @@ local function buildRow(list)
     local r = W.Row(list)
     r.wash = W.Solid(r, "BORDER", C.accent, 0.08)
     r.wash:SetAllPoints()
+    r.icon = r:CreateTexture(nil, "ARTWORK")
+    r.icon:SetSize(18, 18)
+    r.icon:SetPoint("LEFT", 6, 0)
+    r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     r.level = W.FS(r, 13, C.accent)
-    r.level:SetPoint("LEFT", 6, 0)
-    r.level:SetWidth(46)
+    r.level:SetPoint("LEFT", 30, 0)
+    r.level:SetWidth(38)
     r.key = W.FS(r, 12, C.text)
-    r.key:SetPoint("LEFT", 56, 0)
-    r.key:SetWidth(172)
+    r.key:SetPoint("LEFT", 72, 0)
+    r.key:SetWidth(156)
     r.who = W.FS(r, 12, C.text)
     r.who:SetPoint("LEFT", 232, 0)
     r.who:SetWidth(250)
@@ -79,6 +83,9 @@ local function updateRow(r, it)
     r.it = it
     -- Pinned to the top by Mine first: tinted, so the order makes sense.
     r.wash:SetShown(it.pinned)
+    local icon = G.DungeonIcon(it.map)
+    r.icon:SetShown(icon ~= nil)
+    if icon then r.icon:SetTexture(icon) end
     r.level:SetText("+" .. it.level)
     r.key:SetText(it.name)
     r.who:SetText(G.WhoText(it.rec))

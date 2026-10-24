@@ -36,6 +36,52 @@ function G.DungeonName(map)
     return ok and P(name) or nil
 end
 
+-- A dungeon's keystone art (the same texture Chonky Character Sheet and
+-- the game's own M+ pages use), by challenge map id.
+function G.DungeonIcon(map)
+    map = tonumber(map)
+    if not (map and map > 0 and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then return nil end
+    local ok, _, _, _, texture = pcall(C_ChallengeMode.GetMapUIInfo, map)
+    return ok and P(texture) or nil
+end
+
+-- This season's dungeons: { map, name, icon, best } by name, where best
+-- is my highest timed (or else completed) level, or 0.
+local season
+function G.SeasonDungeons()
+    if season then return season end
+    local out = {}
+    if PGM.IS_FOREVER or not (C_ChallengeMode and C_ChallengeMode.GetMapTable) then return out end
+    local ok, maps = pcall(C_ChallengeMode.GetMapTable)
+    for _, map in ipairs(ok and type(maps) == "table" and maps or {}) do
+        map = P(map)
+        local name = map and G.DungeonName(map)
+        if name then
+            local best = 0
+            if C_MythicPlus and C_MythicPlus.GetSeasonBestForMap then
+                local okb, intime, overtime = pcall(C_MythicPlus.GetSeasonBestForMap, map)
+                local run = okb and (type(intime) == "table" and intime or (type(overtime) == "table" and overtime))
+                best = run and tonumber(P(run.level)) or 0
+            end
+            out[#out + 1] = { map = map, name = name, icon = G.DungeonIcon(map), best = best }
+        end
+    end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    -- The map list comes in once the game has it; keep only a full one.
+    if #out > 0 then season = out end
+    return out
+end
+
+-- The icon for a dungeon by name ("Voidscar Arena"), from this season's.
+function G.DungeonIconByName(name)
+    for _, d in ipairs(G.SeasonDungeons()) do
+        if d.name == name then return d.icon end
+    end
+end
+
+-- Season's best runs change after a run; read them again next time.
+G:RegisterEvent("CHALLENGE_MODE_COMPLETED", function() season = nil end)
+
 -- The key in my bags: map id and level, or nil.
 function G.ReadMyKey()
     if PGM.IS_FOREVER or not C_MythicPlus then return nil end

@@ -382,16 +382,25 @@ local function readResults()
                 end
                 local need, has = rolesOf(id, kind, size)
                 local members = num(info.numMembers) or 1
-                local classes, brez, lust = {}, false, false
+                -- Who's in it: class, role and spec, for the comp slots.
+                local classes, comp, brez, lust = {}, {}, false, false
                 for i = 1, members do
                     local pi = readable(call(LFG.GetSearchResultPlayerInfo, id, i))
                     local class = pi and (str(pi.classFilename) or str(pi.classFileName))
+                    local role = pi and str(pi.assignedRole)
+                    local spec = pi and (num(pi.specID) or num(pi.specializationID))
+                    if pi and readable(pi.lfgRoles) then
+                        local lr = pi.lfgRoles
+                        role = (P(lr.tank) and "TANK") or (P(lr.healer) and "HEALER") or (P(lr.dps) and "DAMAGER") or role
+                    end
                     if not class and LFG.GetSearchResultMemberInfo then
-                        local okm, _, cls = pcall(LFG.GetSearchResultMemberInfo, id, i)
-                        class = okm and str(cls) or nil
+                        local okm, r, cls = pcall(LFG.GetSearchResultMemberInfo, id, i)
+                        if okm then class, role = str(cls), role or str(r) end
                     end
                     if class then
                         classes[#classes + 1] = class
+                        comp[#comp + 1] = { class = class, role = G.ROLE_OF[role or ""] or "D", spec = spec,
+                                            leader = pi and P(pi.isLeader) and true or false }
                         brez = brez or BREZ[class] or false
                         lust = lust or LUST[class] or false
                     end
@@ -399,7 +408,7 @@ local function readResults()
                 local leader = str(info.leaderName)
                 results[#results + 1] = {
                     id = id, kind = kind, what = what, level = level, size = size,
-                    need = need, has = has, members = members, classes = classes, brez = brez, lust = lust,
+                    need = need, has = has, members = members, classes = classes, comp = comp, brez = brez, lust = lust,
                     leader = leader, rec = leader and G.RecByName(leader) or nil,
                     mates = num(info.numGuildMates) or 0,
                     score = num(info.leaderOverallDungeonScore) or 0,
@@ -472,7 +481,7 @@ local function fromResult(r)
     return {
         result = r, kind = r.kind, what = r.what, level = r.level, size = r.size, need = r.need, has = r.has,
         rec = r.rec, guild = r.rec ~= nil or r.mates > 0, note = r.note, score = r.score,
-        playstyle = r.playstyle, brez = r.brez, lust = r.lust, u = PGM.Now() - (r.age or 0),
+        playstyle = r.playstyle, brez = r.brez, lust = r.lust, comp = r.comp, u = PGM.Now() - (r.age or 0),
     }
 end
 
@@ -489,7 +498,7 @@ function G:Board(f)
     for _, r in ipairs(results) do
         local merged = r.rec and byLeader[r.rec.guid]
         if merged then
-            merged.result, merged.has, merged.playstyle = r, r.has, r.playstyle
+            merged.result, merged.has, merged.playstyle, merged.comp = r, r.has, r.playstyle, r.comp
             merged.brez, merged.lust, merged.score = r.brez, r.lust, math.max(merged.score, r.score)
         elseif not (r.rec and r.rec.guid == PGM:MyGuid()) then
             rows[#rows + 1] = fromResult(r)
@@ -506,7 +515,10 @@ function G:Board(f)
             and (not kmin or row.kind ~= "M" or (level >= kmin and level <= kmax))
             and ((tonumber(f.minRating) or 0) <= 0 or row.score >= tonumber(f.minRating))
             and (not f.playstyle or row.playstyle == f.playstyle)
-            and (not (f.dungeons and next(f.dungeons)) or f.dungeons[row.what])
+            and not (f.skip and f.skip[row.what])
+            and (not f.needTank or (row.need.T or 0) > 0)
+            and (not f.needHealer or (row.need.H or 0) > 0)
+            and (not f.needDps or (row.need.D or 0) > 0)
             and (not f.hasTank or (row.has and row.has.T > 0) or (not row.has and row.need.T == 0))
             and (not f.hasHealer or (row.has and row.has.H > 0) or (not row.has and row.need.H == 0))
             and (not f.brez or row.brez ~= false)
@@ -523,6 +535,9 @@ function G:Board(f)
         end
         if keep then out[#out + 1] = row end
     end
+    for _, row in ipairs(out) do
+        row.icon = row.kind == "M" and G.DungeonIconByName(row.what) or nil
+    end
     table.sort(out, function(a, b)
         if f.guildFirst and a.guild ~= b.guild then return a.guild end
         if a.scheduled ~= b.scheduled then return b.scheduled end
@@ -537,22 +552,24 @@ function G:Board(f)
     return out
 end
 
--- Names of the dungeons, raids or delves on the board, for the picker.
+-- The dungeons, raids or delves to filter by: { name, icon, best }. For
+-- Mythic+ that's this season's dungeons; otherwise what's on the board.
 function G:BoardActivities(kind)
+    if kind == "M" and #G.SeasonDungeons() > 0 then return G.SeasonDungeons() end
     local seen, out = {}, {}
     for _, r in ipairs(results) do
         if r.kind == kind and r.what ~= "" and not seen[r.what] then
             seen[r.what] = true
-            out[#out + 1] = r.what
+            out[#out + 1] = { name = r.what }
         end
     end
     for _, p in pairs(G.posts) do
         if p.kind == kind and (p.what or "") ~= "" and not seen[p.what] then
             seen[p.what] = true
-            out[#out + 1] = p.what
+            out[#out + 1] = { name = p.what }
         end
     end
-    table.sort(out)
+    table.sort(out, function(a, b) return a.name < b.name end)
     return out
 end
 

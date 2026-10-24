@@ -71,8 +71,9 @@ local DEFAULTS = {
     -- The Groups page's Browse filters (playstyle unset means any).
     board = {
         guildFirst = true, guildOnly = false, scheduled = true, sort = "newest",
-        keys = "", minRating = 0, dungeons = {},
-        fitsMe = false, hasTank = false, hasHealer = false, brez = false, lust = false, hideDeclined = true,
+        keys = "", minRating = 0, skip = {},   -- skip: dungeons unticked in the list
+        fitsMe = false, hideDeclined = true, brez = false, lust = false,
+        needTank = false, needHealer = false, needDps = false, hasTank = false, hasHealer = false,
     },
 }
 

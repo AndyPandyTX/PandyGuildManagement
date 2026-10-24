@@ -585,6 +585,43 @@ local function rowMenu(owner, row)
     W.Menu(owner, G.PostTitle(row), entries)
 end
 
+-- Small role icons (the game's tiny role atlas), or the role sheet's.
+local ROLE_ATLAS = { T = "roleicon-tiny-tank", H = "roleicon-tiny-healer", D = "roleicon-tiny-dps" }
+local ROLE_COORDS = { T = { 0, 19 / 64, 22 / 64, 41 / 64 }, H = { 20 / 64, 39 / 64, 1 / 64, 20 / 64 },
+                      D = { 20 / 64, 39 / 64, 22 / 64, 41 / 64 } }
+local function setRoleIcon(tex, r)
+    if not (tex.SetAtlas and pcall(tex.SetAtlas, tex, ROLE_ATLAS[r])) then
+        tex:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+        tex:SetTexCoord(unpack(ROLE_COORDS[r]))
+    end
+end
+
+-- The comp: one slot per place in a five-player group, tanks then healers
+-- then DPS. A member's slot is their class colour with their role on it; an
+-- open slot is dark with the role it still wants, dimmed.
+local SLOTS = 5
+local function compSlots(row)
+    local out = {}
+    local byRole = { T = {}, H = {}, D = {} }
+    for _, m in ipairs(row.comp or {}) do table.insert(byRole[m.role] or byRole.D, m) end
+    for _, r in ipairs(G.ROLES) do
+        local want = #byRole[r] + (row.need[r] or 0)
+        for i = 1, want do out[#out + 1] = { role = r, member = byRole[r][i] } end
+    end
+    return out
+end
+
+local function buildSlot(parent)
+    local s = CreateFrame("Frame", nil, parent)
+    s:SetSize(16, 16)
+    s.bg = s:CreateTexture(nil, "ARTWORK")
+    s.bg:SetAllPoints()
+    s.role = s:CreateTexture(nil, "OVERLAY")
+    s.role:SetPoint("CENTER")
+    s.role:SetSize(12, 12)
+    return s
+end
+
 local function boardRow(list)
     local r = W.Row(list)
     r.wash = W.Solid(r, "BORDER", C.jade, 0.06)
@@ -593,18 +630,23 @@ local function boardRow(list)
     r.edge:SetPoint("TOPLEFT")
     r.edge:SetPoint("BOTTOMLEFT")
     r.edge:SetWidth(3)
-    r.icon = W.FramedIcon(r, 30)
+    r.icon = W.FramedIcon(r, 32)
     r.icon:SetPoint("LEFT", 8, 0)
     r.title = W.FS(r, 13, C.text)
-    r.title:SetPoint("TOPLEFT", 46, -6)
-    r.title:SetPoint("TOPRIGHT", -190, -6)
+    r.title:SetPoint("TOPLEFT", 48, -6)
+    r.title:SetPoint("TOPRIGHT", -150, -6)
+    r.slots = {}
+    for i = 1, SLOTS do
+        local s = buildSlot(r)
+        s:SetPoint("BOTTOMLEFT", 48 + (i - 1) * 18, 6)
+        r.slots[i] = s
+    end
     r.info = W.FS(r, 11, C.text2)
-    r.info:SetPoint("BOTTOMLEFT", 46, 7)
-    r.info:SetPoint("BOTTOMRIGHT", -116, 7)
+    r.info:SetPoint("BOTTOMRIGHT", -114, 7)
     r.when = W.FS(r, 10, C.text3, "RIGHT")
     r.when:SetPoint("TOPRIGHT", -8, -6)
-    r.when:SetWidth(180)
-    r.action = W.Button(r, "", 102, 20)
+    r.when:SetWidth(140)
+    r.action = W.Button(r, "", 98, 20)
     r.action:SetPoint("BOTTOMRIGHT", -6, 4)
     r.action:SetScript("OnClick", function(s) act(s:GetParent().row) end)
     r:SetScript("OnClick", function(s, button)
@@ -624,14 +666,18 @@ local function boardRow(list)
             G.AddScoreLines(GameTooltip, G.Scores(short or row.result.leader, realm, row.score))
         end
         if row.note ~= "" then GameTooltip:AddLine(row.note, 0.85, 0.85, 0.85, true) end
-        local res = row.result
-        if res and #res.classes > 0 then
-            local parts = {}
-            for _, class in ipairs(res.classes) do
-                local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class
-                parts[#parts + 1] = PGM.ClassHex(class) .. name .. "|r"
+        if row.comp and #row.comp > 0 then
+            GameTooltip:AddLine(" ")
+            for _, m in ipairs(row.comp) do
+                local name = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[m.class]) or m.class
+                local spec
+                if m.spec and GetSpecializationInfoByID then
+                    local ok, _, sname = pcall(GetSpecializationInfoByID, m.spec)
+                    spec = ok and PGM.Plain(sname) or nil
+                end
+                GameTooltip:AddLine(G.RoleIcon(m.role) .. " " .. PGM.ClassHex(m.class) .. (spec and (spec .. " ") or "")
+                    .. name .. "|r" .. (m.leader and PGM.Hex(C.text3) .. "  leader|r" or ""))
             end
-            GameTooltip:AddLine(table.concat(parts, ", "), 1, 1, 1, true)
         end
         if row.post and (row.post.start or 0) > 0 then
             local list = G:Signups(row.post)
@@ -648,7 +694,7 @@ local function boardUpdate(r, row)
     r.row = row
     r.wash:SetShown(row.guild)
     r.edge:SetShown(row.guild)
-    r.icon.icon:SetTexture(G.KIND_ICON[row.kind])
+    r.icon.icon:SetTexture(row.icon or G.KIND_ICON[row.kind])
 
     local leader
     if row.rec then
@@ -660,7 +706,35 @@ local function boardUpdate(r, row)
     end
     r.title:SetText(G.PostTitle(row) .. (leader and ("   " .. leader) or ""))
 
-    local parts = { PGM.Hex(C.text3) .. "Needs:|r " .. G.NeedText(row.need, G.MyRoles()) }
+    -- Five-player groups show their comp; bigger ones (and guild posts,
+    -- which don't know who's in them) say what they need.
+    local slots = (row.size or 5) <= SLOTS and row.comp and compSlots(row) or nil
+    local mine = G.MyRoles()
+    for i, s in ipairs(r.slots) do
+        local slot = slots and slots[i]
+        s:SetShown(slot ~= nil)
+        if slot then
+            setRoleIcon(s.role, slot.role)
+            if slot.member then
+                local cr, cg, cb = PGM.ClassColor(slot.member.class)
+                s.bg:SetColorTexture(cr, cg, cb, 0.9)
+                s.role:SetDesaturated(false)
+                s.role:SetAlpha(1)
+            else
+                -- Open: brighter when it's a role I play.
+                local k = mine[slot.role] and 0.22 or 0.12
+                s.bg:SetColorTexture(k, k, k, 1)
+                s.role:SetDesaturated(not mine[slot.role])
+                s.role:SetAlpha(mine[slot.role] and 0.9 or 0.45)
+            end
+        end
+    end
+    r.info:ClearAllPoints()
+    r.info:SetPoint("BOTTOMLEFT", slots and (48 + math.min(#slots, SLOTS) * 18 + 6) or 48, 7)
+    r.info:SetPoint("BOTTOMRIGHT", -114, 7)
+
+    local parts = {}
+    if not slots then parts[#parts + 1] = PGM.Hex(C.text3) .. "Needs:|r " .. G.NeedText(row.need, mine) end
     if row.result then parts[#parts + 1] = PGM.Hex(C.text3) .. row.result.members .. "/" .. row.size .. "|r" end
     if row.score > 0 then parts[#parts + 1] = PGM.Hex(PGM:ScoreColor(row.score)) .. row.score .. "|r" end
     if row.playstyle then parts[#parts + 1] = PGM.Hex(C.text3) .. row.playstyle .. "|r" end
@@ -668,7 +742,7 @@ local function boardUpdate(r, row)
     if row.note ~= "" then parts[#parts + 1] = PGM.Hex(C.text3) .. row.note .. "|r" end
     r.info:SetText(table.concat(parts, "   "))
 
-    local source = row.post and (row.result and "Guild post + Group Finder" or "Guild post") or "Group Finder"
+    local source = row.post and (row.result and "Guild + Finder" or "Guild post") or "Group Finder"
     local when
     if row.scheduled then
         when = PGM.Hex(C.accent) .. G.StartText(row.post.start) .. "|r"
@@ -687,7 +761,19 @@ local function boardUpdate(r, row)
     r.action:SetAccent(good and C.jade or (enabled and C.accent or C.text3))
 end
 
--- A chip bound to a board filter flag.
+-- ============================================================
+-- THE FILTER PANEL (like OAK's)
+-- ============================================================
+
+local PANEL_W = 214
+
+local function search()
+    local ok, why = G:SearchFinder(state.cat)
+    if not ok then PGM.Print(why) end
+    UI:Refresh()
+end
+
+-- A chip bound to a board flag (the guild options along the top).
 local function flagChip(parent, text, key, tip)
     local chip = W.Chip(parent, text, function(s)
         local f = G.opt("board")
@@ -701,10 +787,177 @@ local function flagChip(parent, text, key, tip)
     return chip
 end
 
-local function search()
-    local ok, why = G:SearchFinder(state.cat)
-    if not ok then PGM.Print(why) end
-    UI:Refresh()
+-- A tick box bound to a board flag (the panel).
+local function flagCheck(parent, text, key, x, y)
+    local b = W.Check(parent, text, function() return G.opt("board")[key] end, function(v)
+        G.opt("board")[key] = v and true or false
+        UI:Refresh()
+    end)
+    b:SetWidth(96)
+    b:SetPoint("TOPLEFT", x, y)
+    board.checks[#board.checks + 1] = b
+    return b
+end
+
+-- A dungeon in the list: tick, icon, name, my best.
+local function dungeonRow(list)
+    local r = W.Row(list)
+    r.box = CreateFrame("Frame", nil, r, "BackdropTemplate")
+    r.box:SetSize(14, 14)
+    r.box:SetPoint("LEFT", 4, 0)
+    W.Backdrop(r.box, { 0.02, 0.021, 0.025 }, C.frame, 1)
+    r.tick = W.Solid(r.box, "ARTWORK", C.accent)
+    r.tick:SetPoint("TOPLEFT", 3, -3)
+    r.tick:SetPoint("BOTTOMRIGHT", -3, 3)
+    r.icon = r:CreateTexture(nil, "ARTWORK")
+    r.icon:SetSize(16, 16)
+    r.icon:SetPoint("LEFT", 24, 0)
+    r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    r.name = W.FS(r, 11, C.text)
+    r.name:SetPoint("LEFT", 44, 0)
+    r.name:SetPoint("RIGHT", -34, 0)
+    r.best = W.FS(r, 11, C.text3, "RIGHT")
+    r.best:SetPoint("RIGHT", -4, 0)
+    r:SetScript("OnClick", function(s)
+        local f = G.opt("board")
+        f.skip = f.skip or {}
+        f.skip[s.it.name] = not f.skip[s.it.name] or nil
+        UI:Refresh()
+    end)
+    r.onEnter = function(s)
+        if s.it.best and s.it.best > 0 then
+            GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+            GameTooltip:SetText(s.it.name)
+            GameTooltip:AddLine(("Your best this season: +%d"):format(s.it.best), 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end
+    return r
+end
+
+local function dungeonUpdate(r, it)
+    r.it = it
+    local skip = G.opt("board").skip or {}
+    r.tick:SetShown(not skip[it.name])
+    r.icon:SetShown(it.icon ~= nil)
+    if it.icon then r.icon:SetTexture(it.icon) end
+    r.name:SetPoint("LEFT", it.icon and 44 or 24, 0)
+    r.name:SetText(it.name)
+    r.name:SetTextColor(unpack(skip[it.name] and C.text3 or C.text))
+    r.best:SetText((it.best or 0) > 0 and ("+" .. it.best) or "")
+end
+
+local function buildPanel(v)
+    local panel = CreateFrame("Frame", nil, v, "BackdropTemplate")
+    W.Backdrop(panel, C.card, C.cardLine, 1)
+    panel:SetPoint("TOPRIGHT", 0, -60)
+    panel:SetPoint("BOTTOMRIGHT")
+    panel:SetWidth(PANEL_W)
+    board.panel = panel
+    local x = 10
+
+    local h = W.Heading(panel, "Filters")
+    h:SetPoint("TOPLEFT", x, -10)
+    local reset = W.Button(panel, "Reset", 52, 18, C.text2)
+    reset:SetPoint("TOPRIGHT", -8, -6)
+    reset:SetScript("OnClick", function()
+        local f = G.opt("board")
+        f.keys, f.minRating, f.playstyle, f.skip = "", 0, nil, {}
+        for _, key in ipairs({ "fitsMe", "needTank", "needHealer", "needDps", "hasTank", "hasHealer", "brez", "lust" }) do
+            f[key] = false
+        end
+        UI:Refresh()
+    end)
+
+    -- Quick apply: the roles Apply sends (the same as "I play").
+    local applyLabel = W.FS(panel, 11, C.text2)
+    applyLabel:SetPoint("TOPLEFT", x, -32)
+    applyLabel:SetText("Apply as")
+    board.roleChips = {}
+    local prev
+    for _, r in ipairs(G.ROLES) do
+        local chip = W.Chip(panel, G.RoleIcon(r) .. " " .. (r == "D" and "DPS" or PGM.ROLE_LABEL[G.ROLE_KEY[r]]), function()
+            local t = G.opt("roles")
+            t[r] = not t[r] or nil
+            G:SendStatus()
+            UI:Refresh()
+        end)
+        chip.tip = "The roles Apply signs you up as. None ticked: your spec's."
+        if prev then chip:SetPoint("LEFT", prev, "RIGHT", 3, 0) else chip:SetPoint("TOPLEFT", x, -46) end
+        board.roleChips[r] = chip
+        prev = chip
+    end
+
+    board.playstyle = GU.Cycle(panel, "Playstyle: ", { { false, "Any" } }, function(s)
+        G.opt("board").playstyle = s:Value() or nil
+        UI:Refresh()
+    end)
+    board.playstyle:SetPoint("TOPLEFT", x, -76)
+
+    local keysLabel = W.FS(panel, 11, C.text2)
+    keysLabel:SetPoint("TOPLEFT", x, -110)
+    keysLabel:SetText("Keys")
+    board.keys = W.EditBox(panel, 56, 20, "10-15")
+    board.keys:SetPoint("TOPLEFT", x + 30, -106)
+    board.keys:SetMaxLetters(7)
+    board.keys.onChange = function(s)
+        G.opt("board").keys = s:GetText()
+        UI:Refresh()
+    end
+    local ratingLabel = W.FS(panel, 11, C.text2)
+    ratingLabel:SetPoint("TOPLEFT", x + 96, -110)
+    ratingLabel:SetText("Rating")
+    board.rating = W.EditBox(panel, 56, 20, "0")
+    board.rating:SetPoint("TOPLEFT", x + 136, -106)
+    board.rating:SetNumeric(true)
+    board.rating:SetMaxLetters(4)
+    board.rating.onChange = function(s)
+        G.opt("board").minRating = tonumber(s:GetText()) or 0
+        UI:Refresh()
+    end
+    local hint = W.FS(panel, 10, C.text3)
+    hint:SetPoint("TOPLEFT", x, -130)
+    hint:SetText("Keys: 10-15, 15+ or 15. Rating: the leader's.")
+
+    board.checks = {}
+    local y = -148
+    for _, pair in ipairs({
+        { { "Fits my role", "fitsMe" }, { "Hide declined", "hideDeclined" } },
+        { { "Need tank", "needTank" }, { "Has tank", "hasTank" } },
+        { { "Need healer", "needHealer" }, { "Has healer", "hasHealer" } },
+        { { "Need DPS", "needDps" }, { "Battle res", "brez" } },
+        { { "Lust", "lust" } },
+    }) do
+        for i, it in ipairs(pair) do flagCheck(panel, it[1], it[2], x + (i - 1) * 100, y) end
+        y = y - 21
+    end
+
+    y = y - 8
+    board.dungeonHead = W.Heading(panel, "Dungeons")
+    board.dungeonHead:SetPoint("TOPLEFT", x, y)
+    local none = W.Button(panel, "None", 40, 16, C.text2)
+    none.fs:SetFont(STANDARD_TEXT_FONT, 10, "")
+    none:SetPoint("TOPRIGHT", -8, y + 3)
+    none:SetScript("OnClick", function()
+        local f = G.opt("board")
+        f.skip = {}
+        for _, d in ipairs(G:BoardActivities(state.cat)) do f.skip[d.name] = true end
+        UI:Refresh()
+    end)
+    local all = W.Button(panel, "All", 34, 16, C.text2)
+    all.fs:SetFont(STANDARD_TEXT_FONT, 10, "")
+    all:SetPoint("RIGHT", none, "LEFT", -4, 0)
+    all:SetScript("OnClick", function()
+        G.opt("board").skip = {}
+        UI:Refresh()
+    end)
+    board.dungeonList = W.List(panel, 20, dungeonRow, dungeonUpdate)
+    board.dungeonList:SetPoint("TOPLEFT", 6, y - 16)
+    board.dungeonList:SetPoint("BOTTOMRIGHT", -4, 6)
+    board.dungeonEmpty = W.FS(panel, 10, C.text3)
+    board.dungeonEmpty:SetPoint("TOPLEFT", x, y - 20)
+    board.dungeonEmpty:SetPoint("RIGHT", -8, 0)
+    board.dungeonEmpty:SetWordWrap(true)
 end
 
 local function buildBoard(v)
@@ -736,89 +989,35 @@ local function buildBoard(v)
     for _, c in ipairs(G.FINDER_CATS) do
         chip = W.Chip(v, c.label, function()
             state.cat = c.id
-            G.opt("board").dungeons = {}
             search()   -- a click, so the game lets us search
         end)
         if prev then chip:SetPoint("LEFT", prev, "RIGHT", 4, 0) else chip:SetPoint("TOPLEFT", 96, -28) end
         board.cats[c.id] = chip
         prev = chip
     end
-    board.search = W.Button(v, "Search", 70, 22)
-    board.search:SetPoint("LEFT", prev, "RIGHT", 10, 0)
-    board.search:SetScript("OnClick", search)
-    board.search.tip = "Search the Group Finder again (the game only allows it from a click)."
+    board.refresh = W.Button(v, "Refresh", 70, 22)
+    board.refresh:SetPoint("LEFT", prev, "RIGHT", 10, 0)
+    board.refresh:SetScript("OnClick", search)
+    board.refresh.tip = "Search the Group Finder again (the game only allows it from a click)."
     board.searched = W.FS(v, 10, C.text3)
-    board.searched:SetPoint("LEFT", board.search, "RIGHT", 8, 0)
-
-    heading("Filters", -56)
-    local keysLabel = W.FS(v, 11, C.text2)
-    keysLabel:SetPoint("TOPLEFT", 96, -60)
-    keysLabel:SetText("Keys")
-    board.keys = W.EditBox(v, 64, 22, "10-15")
-    board.keys:SetPoint("TOPLEFT", 126, -56)
-    board.keys:SetMaxLetters(7)
-    board.keys.onChange = function(s)
-        G.opt("board").keys = s:GetText()
-        UI:Refresh()
-    end
-    board.keys.tip = "A range (10-15), at least (15+), or exactly (15)."
-    local ratingLabel = W.FS(v, 11, C.text2)
-    ratingLabel:SetPoint("LEFT", board.keys, "RIGHT", 10, 0)
-    ratingLabel:SetText("Leader rating")
-    board.rating = W.EditBox(v, 56, 22, "0")
-    board.rating:SetPoint("LEFT", ratingLabel, "RIGHT", 6, 0)
-    board.rating:SetNumeric(true)
-    board.rating:SetMaxLetters(4)
-    board.rating.onChange = function(s)
-        G.opt("board").minRating = tonumber(s:GetText()) or 0
-        UI:Refresh()
-    end
-    board.playstyle = GU.Cycle(v, "Playstyle: ", { { false, "Any" } }, function(s)
-        G.opt("board").playstyle = s:Value() or nil
-        UI:Refresh()
-    end)
-    board.playstyle:SetPoint("LEFT", board.rating, "RIGHT", 10, 0)
-    board.dungeons = W.Button(v, "Dungeons: all", 120, 22, C.text2)
-    board.dungeons.fs:SetFont(STANDARD_TEXT_FONT, 11, "")
-    board.dungeons:SetPoint("LEFT", board.playstyle, "RIGHT", 6, 0)
-    board.dungeons:SetScript("OnClick", function(s)
-        local f = G.opt("board")
-        f.dungeons = f.dungeons or {}
-        local entries = {}
-        for _, name in ipairs(G:BoardActivities(state.cat)) do
-            entries[#entries + 1] = { name, checked = function() return f.dungeons[name] == true end,
-                toggle = function() f.dungeons[name] = not f.dungeons[name] or nil UI:Refresh() end }
-        end
-        if #entries == 0 then entries[1] = { "Search first", function() end, disabled = true } end
-        entries[#entries + 1] = { divider = true }
-        entries[#entries + 1] = { "Show all", function() f.dungeons = {} UI:Refresh() end }
-        W.Menu(s, "Only these", entries)
-    end)
-
-    prev = flagChip(v, "Fits my role", "fitsMe", "Groups that still need a role you play.")
-    prev:SetPoint("TOPLEFT", 96, -84)
-    for _, it in ipairs({
-        { "Has tank", "hasTank" }, { "Has healer", "hasHealer" }, { "Battle res", "brez", "Has a class with a battle res." },
-        { "Lust", "lust", "Has a class with Bloodlust or the like." }, { "Hide declined", "hideDeclined" },
-    }) do
-        chip = flagChip(v, it[1], it[2], it[3])
-        chip:SetPoint("LEFT", prev, "RIGHT", 4, 0)
-        prev = chip
-    end
+    board.searched:SetPoint("LEFT", board.refresh, "RIGHT", 8, 0)
 
     board.list = W.List(v, 46, boardRow, boardUpdate)
-    board.list:SetPoint("TOPLEFT", 0, -116)
-    board.list:SetPoint("BOTTOMRIGHT")
+    board.list:SetPoint("TOPLEFT", 0, -60)
+    board.list:SetPoint("BOTTOMRIGHT", -(PANEL_W + 8), 0)
     board.empty = W.FS(v, 12, C.text3)
-    board.empty:SetPoint("TOPLEFT", 8, -126)
-    board.empty:SetPoint("TOPRIGHT", -8, -126)
+    board.empty:SetPoint("TOPLEFT", 8, -70)
+    board.empty:SetPoint("RIGHT", board.list, "RIGHT", -8, 0)
     board.empty:SetWordWrap(true)
+    buildPanel(v)
 end
 
 local function refreshBoard()
     local f = filters()
     for _, chip in ipairs(board.flags) do chip:SetActive(f[chip.key] and true or false) end
+    for _, b in ipairs(board.checks) do b:Sync() end
     for id, chip in pairs(board.cats) do chip:SetActive(id == state.cat) end
+    for r, chip in pairs(board.roleChips) do chip:SetActive(G.MyRoles()[r] == true) end
     board.sort:SetValue(f.sort)
     if not board.keys:HasFocus() then board.keys:SetText(f.keys or "") end
     if not board.rating:HasFocus() then board.rating:SetText((f.minRating or 0) > 0 and f.minRating or "") end
@@ -826,11 +1025,13 @@ local function refreshBoard()
     for _, s in ipairs(G:BoardPlaystyles()) do styles[#styles + 1] = { s, s } end
     board.playstyle:SetChoices(styles)
     board.playstyle:SetValue(f.playstyle or false)
-    local n = 0
-    for _ in pairs(f.dungeons or {}) do n = n + 1 end
-    local noun = state.cat == "R" and "Raids" or (state.cat == "D" and "Delves" or "Dungeons")
-    board.dungeons:SetLabel(noun .. ": " .. (n > 0 and n or "all"))
-    board.searched:SetText(G.searchedAt and ("Searched " .. age(GetTime() - G.searchedAt) .. " ago") or "Click a category to search")
+    board.searched:SetText(G.searchedAt and ("Searched " .. age(GetTime() - G.searchedAt) .. " ago")
+        or "Click a category to search")
+
+    board.dungeonHead:SetText((state.cat == "R" and "Raids" or (state.cat == "D" and "Delves" or "Dungeons")):upper())
+    local acts = G:BoardActivities(state.cat)
+    board.dungeonList:SetData(acts, true)
+    board.dungeonEmpty:SetText(#acts == 0 and "They show up here once you've searched." or "")
 
     local rows = G:Board(f)
     board.list:SetData(rows, true)
@@ -839,7 +1040,7 @@ local function refreshBoard()
     elseif not G.resultsAt then
         board.empty:SetText("No guild groups right now. Click Mythic+, Raids, Delves or Custom to search the Group Finder too.")
     else
-        board.empty:SetText("Nothing matches. Turn a filter off, or Search again.")
+        board.empty:SetText("Nothing matches. Turn a filter off, or Refresh.")
     end
 end
 

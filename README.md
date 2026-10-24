@@ -38,18 +38,25 @@ character's score comes from the game; main, warband and roles need RaiderIO.
 
 **Groups.** Three views across the top:
 - **Browse:** every group in one list, guild posts and Blizzard's Group
-  Finder together. Each row says what it is, who leads it (Guild, and
-  "alt of X"), **Needs: 1 Tank 3 DPS**, how full it is, the leader's
-  rating, playstyle and note. Guild rows have a jade edge.
+  Finder together, each with its dungeon's keystone art. Each row shows
+  who leads it (Guild, and "alt of X"), and for five-player groups the
+  **comp**: a slot per place, tanks then healers then DPS. A member's slot
+  is their class colour with their role on it; an open slot shows the role
+  it still wants (brighter when it's one you play). Hover for each
+  member's spec and class. Bigger groups and guild posts say
+  **Needs: 1 Tank 3 DPS** instead. Guild rows have a jade edge.
   - **Guild:** Guild first, Guild only, Scheduled, and Sort (newest, key
     level, leader rating).
   - **Group Finder:** Mythic+, Raids, Delves or Custom. Clicking one
     searches the Group Finder (the game only searches from a click), and
-    Search runs it again.
-  - **Filters**, like OAK's: key range (10-15, 15+ or 15), leader rating,
-    playstyle, which dungeons, raids or delves, Fits my role, Has tank,
-    Has healer, Battle res, Lust and Hide declined. They're remembered.
-  - **Apply** sends a Group Finder application with the roles you play
+    **Refresh** runs it again.
+  - **Filters** panel, like OAK's: **Apply as** (the roles Apply signs you
+    up as), playstyle, key range (10-15, 15+ or 15), leader rating, then
+    tick boxes for Fits my role, Hide declined, Need or Has tank, Need or
+    Has healer, Need DPS, Battle res and Lust. Under them, this season's
+    dungeons with their icons and your best key in each: untick one to
+    hide it, or use All and None. Reset clears it all.
+  - **Apply** sends a Group Finder application with your Apply as roles
     (right-click for one role). On a guild post it's **Ask to join**.
 - **My group:** your group across the top (needs, how full, listed or
   guild only, Close), then everyone asking to join, a row each: name,
