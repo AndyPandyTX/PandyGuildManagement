@@ -300,8 +300,10 @@ function UI:Refresh()
         f.statusBottom:SetText("")
     end
     local newer = PGM.UpdateAvailable and PGM:UpdateAvailable()
-    f.foot:SetText("/pgm  -  v" .. PGM.VERSION
-        .. (newer and ("  " .. PGM.Hex(C.amber) .. "(v" .. newer .. " is out)|r") or ""))
+    if f.foot then
+        f.foot:SetText("/pgm  -  v" .. PGM.VERSION
+            .. (newer and ("  " .. PGM.Hex(C.amber) .. "(v" .. newer .. " is out)|r") or ""))
+    end
     local tab = self.tabs[self.current]
     if tab and tab.panel and tab.refresh then tab.refresh(tab.panel) end
     if self.profile and self.profile:IsVisible() and self.RefreshProfile then self:RefreshProfile() end
