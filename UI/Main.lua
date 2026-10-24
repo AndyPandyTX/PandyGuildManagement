@@ -198,6 +198,7 @@ function UI:Create()
     local foot = W.FS(side, 10, C.text3, "CENTER")
     foot:SetPoint("BOTTOM", 0, 12)
     foot:SetText("/pgm  -  v" .. PGM.VERSION)
+    f.foot = foot
     local footLine = W.Divider(side)
     footLine:SetPoint("BOTTOMLEFT", 14, 30)
     footLine:SetPoint("BOTTOMRIGHT", -14, 30)
@@ -298,6 +299,9 @@ function UI:Refresh()
         f.statusTop:SetText(key and "Reading the roster..." or "")
         f.statusBottom:SetText("")
     end
+    local newer = PGM.UpdateAvailable and PGM:UpdateAvailable()
+    f.foot:SetText("/pgm  -  v" .. PGM.VERSION
+        .. (newer and ("  " .. PGM.Hex(C.amber) .. "(v" .. newer .. " is out)|r") or ""))
     local tab = self.tabs[self.current]
     if tab and tab.panel and tab.refresh then tab.refresh(tab.panel) end
     if self.profile and self.profile:IsVisible() and self.RefreshProfile then self:RefreshProfile() end
