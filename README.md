@@ -112,6 +112,8 @@ that member's play time.
 
 ![Professions](screenshots/05-professions.png)
 
+![Guild crafters on the profession window](screenshots/11-guild-crafters.png)
+
 **Raid Teams.** Run as many teams as you like:
 - Each team has a name, a schedule note and a roster.
 - Each member has a role (Tank, Healer or DPS) and a status (Core, Trial or Bench). Click either one to change it.
@@ -168,6 +170,12 @@ filter.
 - Who's Free shows guildies up for a group; Keystones shows everyone's key.
 - `/pgg` opens it. Turn it off in Settings or with `/pgg off`.
 - The full guide: [Groups/README.md](Groups/README.md).
+
+![Groups](screenshots/12-group-finder.png)
+
+![Who's Free](screenshots/13-whos-free.png)
+
+![Keystones](screenshots/14-keystones.png)
 
 **Bulk Actions.** Kick, promote or demote many members at once, by rules.
 Officers only (the same people who can edit raid teams), and only what the
