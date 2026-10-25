@@ -314,7 +314,7 @@ local function build(p)
     p.readOnly:SetPoint("TOPLEFT", 0, -128)
     p.readOnly:SetText("Shared by your officers. Only officers and raid leaders can change teams.")
 
-    p.addBox = W.EditBox(d, 160, 24, "Add by name...")
+    p.addBox = W.EditBox(d, 140, 24, "Add by name...")
     p.addBox:SetPoint("TOPLEFT", 0, -124)
     local function add()
         local t = selectedTeam()
@@ -348,6 +348,14 @@ local function build(p)
     p.match:SetScript("OnClick", function()
         local n = PGM:AutoAssignRaids()
         PGM.Print(("Matched %d raid night%s to a team."):format(n, n == 1 and "" or "s"))
+    end)
+    p.paste = W.Button(d, "Paste list", 84, 24)
+    p.paste:SetPoint("LEFT", p.match, "RIGHT", 6, 0)
+    p.paste.tip = "Paste a roster from a spreadsheet (like wowaudit) or CSV: names, and optionally role and Core / Trial / Bench. You see what it'll do before anything changes."
+    p.paste:SetScript("OnClick", function()
+        UI:CommitTeamEdits()
+        local t = selectedTeam()
+        if t then UI:ShowTeamPaste(t) end
     end)
 
     local header = CreateFrame("Frame", nil, d)
@@ -398,7 +406,7 @@ local function refresh(p)
 
     -- Officers edit; everyone else sees the shared teams read-only.
     local canEdit = PGM:CanEdit()
-    for _, w in ipairs({ p.new, p.find, p.delete, p.import, p.sync, p.addBox, p.addBtn, p.addGroup, p.match }) do
+    for _, w in ipairs({ p.new, p.find, p.delete, p.import, p.sync, p.addBox, p.addBtn, p.addGroup, p.match, p.paste }) do
         w:SetShown(canEdit)
     end
     for _, box in ipairs({ p.nameBox, p.schedBox, p.tagsBox }) do

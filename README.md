@@ -120,6 +120,12 @@ that member's play time.
 - Shows the team's makeup and which raid buffs it's missing (Arcane Intellect, Fortitude, Battle Shout and so on).
 - Shows each member's attendance at that team's raids only.
 - Add people by name, or use "Add my group" during a raid.
+- **Paste list:** copy the cells from a spreadsheet (a wowaudit sheet, for
+  example), or paste CSV or flat JSON, one character per line. Any column can
+  be the name (`Name` or `Name-Realm`); other columns can give the role
+  (Tank, Healer, DPS, or a spec like Resto) and Core / Trial / Bench. You see
+  who'd be added or updated, and any names not in the guild, before
+  importing. It only adds and updates; nobody is taken off the team.
 
 ![Raid Teams](screenshots/06-raid-teams.png)
 

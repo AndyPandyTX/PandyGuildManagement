@@ -131,15 +131,21 @@ function PGM:DeleteTeam(id)
     PGM:Fire("TEAMS")
 end
 
--- Adding by hand also lifts an earlier removal (see RemoveFromTeam).
-function PGM:AddToTeam(id, guid)
-    local t = PGM:TeamById(id)
-    if not t or not guid or t.members[guid] or not canEdit() then return false end
+-- A new spot on a team, shared. Lifts an earlier removal by hand.
+local function place(t, guid, role, status)
     -- Carry the removal's stamp over, so the re-add is stamped later than it.
     local prev = t.removed and tonumber(t.removed[guid]) or nil
-    t.members[guid] = { role = DEFAULT_ROLE, status = "core", added = PGM.Now(), u = prev }
+    t.members[guid] = { role = role or DEFAULT_ROLE, status = status or "core", added = PGM.Now(), u = prev }
     if t.removed then t.removed[guid] = nil end
     share("SyncSpot", t, guid)
+end
+
+-- Adding by hand also lifts an earlier removal (see RemoveFromTeam). Role
+-- and status are optional (DPS and Core).
+function PGM:AddToTeam(id, guid, role, status)
+    local t = PGM:TeamById(id)
+    if not t or not guid or t.members[guid] or not canEdit() then return false end
+    place(t, guid, role, status)
     PGM:Fire("TEAMS")
     return true
 end
@@ -479,6 +485,189 @@ function PGM:FindTeamsInNotes()
     end
     PGM:Fire("TEAMS")
     return created, joined
+end
+
+-- ============================================================
+-- PASTED LISTS
+-- ============================================================
+-- A roster pasted in from outside: cells copied from a spreadsheet (they
+-- arrive tab-separated), CSV, or flat JSON like a bot's output. One
+-- character per line. Any column can hold the name ("Name" or
+-- "Name-Realm"), and other columns may say the role (Tank, Healer, DPS,
+-- or a spec like Resto) and the status (Core, Trial, Bench). Names not in
+-- the guild are listed, never added. A pasted list only adds and updates:
+-- nobody missing from it leaves the team. Like adding by hand, it lifts
+-- removals.
+
+local PASTE_ROLES = {
+    tank = "TANK", tanks = "TANK", tnk = "TANK", prot = "TANK", protection = "TANK",
+    guardian = "TANK", vengeance = "TANK", brewmaster = "TANK",
+    healer = "HEALER", healers = "HEALER", heal = "HEALER", heals = "HEALER", hls = "HEALER",
+    resto = "HEALER", restoration = "HEALER", disc = "HEALER", discipline = "HEALER", holy = "HEALER",
+    mw = "HEALER", mistweaver = "HEALER", preservation = "HEALER",
+    dps = "DPS", melee = "DPS", ranged = "DPS", damage = "DPS",
+}
+local PASTE_STATUS = {
+    core = "core", main = "core", raider = "core", starter = "core",
+    trial = "trial", trials = "trial", trialist = "trial",
+    bench = "bench", backup = "bench", standby = "bench", reserve = "bench", sub = "bench",
+}
+-- A first line like "Name, Role, Status" is a header, not a missing member.
+local PASTE_HEADER = { name = true, character = true, player = true, char = true }
+
+local function realmKey(realm)
+    return ((realm or ""):lower():gsub("[%s'%-]", ""))
+end
+
+-- Lines into cells: tabs if the line has any (a spreadsheet copy), else
+-- commas, else semicolons, else spaces.
+local function cellsOf(line)
+    local sep = (line:find("\t", 1, true) and "\t") or (line:find(",", 1, true) and ",")
+        or (line:find(";", 1, true) and ";")
+    local out = {}
+    if sep then
+        for c in (line .. sep):gmatch("(.-)" .. sep) do
+            out[#out + 1] = strtrim((c:gsub('^%s*"(.*)"%s*$', "%1")))
+        end
+    else
+        for w in line:gmatch("%S+") do out[#out + 1] = w end
+    end
+    return out
+end
+
+-- Flat JSON objects, each with a "name" and maybe "realm", "role" and
+-- "status" (or "rank"). Only the innermost objects are read, so a list
+-- wrapped in { "characters": [ ... ] } works too.
+local function jsonRows(text)
+    local rows = {}
+    for obj in text:gmatch("{[^{}]*}") do
+        local function field(k) return obj:match('"' .. k .. '"%s*:%s*"([^"]*)"') end
+        local name = field("name")
+        if name then
+            local realm = field("realm")
+            rows[#rows + 1] = { realm and (name .. "-" .. realm) or name, field("role") or "",
+                field("status") or field("rank") or "" }
+        end
+    end
+    return rows
+end
+
+function PGM:ParseTeamPaste(text)
+    text = text or ""
+    if text:match("^%s*[%[{]") then return jsonRows(text) end
+    local rows = {}
+    for line in text:gmatch("[^\r\n]+") do
+        local cells = cellsOf(line)
+        if #cells > 0 then rows[#rows + 1] = cells end
+    end
+    return rows
+end
+
+-- The guild member a cell names, if any. A bare name shared by characters
+-- on two realms is settled by a realm in another column.
+local function memberIn(cell, row, g, full, short)
+    local c = (strtrim(cell or ""):gsub("%s+", ""))
+    if c == "" then return nil end
+    local n, r = c:match("^([^%-]+)%-(.+)$")
+    if n then return full[n:lower() .. "-" .. realmKey(r)] end
+    local list = short[c:lower()]
+    if not list then return nil end
+    if #list > 1 then
+        for _, other in ipairs(row) do
+            local rk = realmKey(other)
+            for _, guid in ipairs(list) do
+                if rk ~= "" and realmKey(g.members[guid].realm) == rk then return guid end
+            end
+        end
+    end
+    return list[1]
+end
+
+-- What a pasted list would do to a team, without doing it: { add = {
+-- { guid, role, status } }, change = { { guid, role?, status? } }, same =
+-- how many are already on it as listed, unknown = { names not in the guild } }.
+-- A role or status the list doesn't give comes from their notes and rank,
+-- as with the notes import.
+function PGM:PlanTeamPaste(id, text)
+    local plan = { add = {}, change = {}, same = 0, unknown = {} }
+    local t, g = PGM:TeamById(id), PGM.GuildDB()
+    if not (t and g) then return plan end
+    local full, short = {}, {}
+    for guid, rec in pairs(g.members) do
+        if rec.short then
+            local s = rec.short:lower()
+            short[s] = short[s] or {}
+            table.insert(short[s], guid)
+            full[s .. "-" .. realmKey(rec.realm or (rec.name or ""):match("%-(.+)$"))] = guid
+        end
+    end
+    local seen = {}
+    for _, row in ipairs(PGM:ParseTeamPaste(text)) do
+        local guid, at
+        for i, cell in ipairs(row) do
+            guid = memberIn(cell, row, g, full, short)
+            if guid then at = i break end
+        end
+        if not guid then
+            local first = strtrim(row[1] or "")
+            local header = false
+            for _, cell in ipairs(row) do
+                if PASTE_HEADER[strtrim(cell):lower()] then header = true end
+            end
+            if first ~= "" and not header then plan.unknown[#plan.unknown + 1] = first end
+        elseif not seen[guid] then
+            seen[guid] = true
+            local role, status
+            for i, cell in ipairs(row) do
+                if i ~= at then
+                    for word in cell:lower():gmatch("%a+") do
+                        role = role or PASTE_ROLES[word]
+                        status = status or PASTE_STATUS[word]
+                    end
+                end
+            end
+            local e = t.members[guid]
+            if not e then
+                local rec = g.members[guid]
+                plan.add[#plan.add + 1] = { guid = guid, role = role or PGM:RoleFromNote(rec),
+                    status = status or (looksTrial(rec) and "trial" or "core") }
+            else
+                role = role ~= e.role and role or nil
+                status = status ~= e.status and status or nil
+                if role or status then
+                    plan.change[#plan.change + 1] = { guid = guid, role = role, status = status }
+                else
+                    plan.same = plan.same + 1
+                end
+            end
+        end
+    end
+    return plan
+end
+
+-- Carry out a plan from PlanTeamPaste. Returns how many joined and how many
+-- had their role or status changed.
+function PGM:ApplyTeamPaste(id, plan)
+    local t = PGM:TeamById(id)
+    if not (t and plan) or not canEdit() then return 0, 0 end
+    local added, changed = 0, 0
+    for _, a in ipairs(plan.add) do
+        if not t.members[a.guid] then
+            place(t, a.guid, a.role, a.status)
+            added = added + 1
+        end
+    end
+    for _, c in ipairs(plan.change) do
+        local e = t.members[c.guid]
+        if e then
+            e.role = c.role or e.role
+            e.status = c.status or e.status
+            share("SyncSpot", t, c.guid)
+            changed = changed + 1
+        end
+    end
+    if added + changed > 0 then PGM:Fire("TEAMS") end
+    return added, changed
 end
 
 -- Teams set to stay in sync pick up newly tagged recruits after each roster

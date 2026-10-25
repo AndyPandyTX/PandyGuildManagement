@@ -844,6 +844,60 @@ do
     TRADE, RECIPE_ANSWER = nil, nil
 end
 
+print("-- pasting a list into a team")
+do
+    local P = A.PGM
+    local pt = P:CreateTeam("Paste Test")
+    P:AddToTeam(pt.id, gid(22))   -- Funkyshade, on it as DPS
+    local function addOf(plan, guid)
+        for _, a in ipairs(plan.add) do if a.guid == guid then return a end end
+    end
+    local sheet = "Name\tRole\tStatus\n"
+        .. "Anvar\tRanged DPS\tCore\n"
+        .. "Funkyshade-MalGanis\tHealer\tCore\n"
+        .. "Tiferis\tHoly\tTrial\n"
+        .. "Yinsane\t\t\n"
+        .. "Notinguild\tTank\tBench\n"
+        .. "anvar\tTank\tBench\n"
+    local plan = P:PlanTeamPaste(pt.id, sheet)
+    check(#plan.add == 3, "spreadsheet paste adds 3 (got " .. #plan.add .. ")")
+    check(#plan.change == 1 and plan.change[1].role == "HEALER" and plan.change[1].status == nil,
+        "Funkyshade's role changes to Healer, status untouched")
+    check(#plan.unknown == 1 and plan.unknown[1] == "Notinguild", "the stranger is listed, the header isn't")
+    local an, ti, yi = addOf(plan, gid(14)), addOf(plan, gid(25)), addOf(plan, gid(26))
+    check(an and an.role == "DPS" and an.status == "core", "Anvar as DPS Core (first line wins over the duplicate)")
+    check(ti and ti.role == "HEALER" and ti.status == "trial", "a spec word (Holy) reads as Healer")
+    check(yi and yi.status == "trial", "no status given: Yinsane's Trial rank counts")
+    check(pt.members[gid(14)] == nil, "planning changes nothing")
+    local added, changed = P:ApplyTeamPaste(pt.id, plan)
+    check(added == 3 and changed == 1, "applied: 3 added, 1 updated")
+    check(pt.members[gid(22)].role == "HEALER", "Funkyshade is a healer now")
+
+    local csv = P:PlanTeamPaste(pt.id, 'Triclops,Tank,Bench\n"Selwyne", Resto, Core')
+    local tr, se = addOf(csv, gid(24)), addOf(csv, gid(23))
+    check(#csv.add == 2 and tr and tr.role == "TANK" and tr.status == "bench", "CSV: Triclops Tank Bench")
+    check(se and se.role == "HEALER" and se.status == "core", "CSV with quotes: Selwyne Resto Core")
+    local json = P:PlanTeamPaste(pt.id, '{"characters":[{"name":"Atlasqt","realm":"MalGanis","role":"Tank","rank":"Trial"}]}')
+    local at = addOf(json, gid(21))
+    check(#json.add == 1 and at and at.role == "TANK" and at.status == "trial", "JSON: Atlasqt Tank Trial")
+    local plain = P:PlanTeamPaste(pt.id, "Codiex\nTrollboi\n")
+    check(#plain.add == 2, "one name per line works")
+    local realm = P:PlanTeamPaste(pt.id, "Codiex-Stormrage")
+    check(#realm.add == 0 and #realm.unknown == 1, "a name on another realm isn't a guild member")
+    local again = P:PlanTeamPaste(pt.id, sheet)
+    check(#again.add == 0 and #again.change == 0 and again.same == 4, "pasting it again changes nothing")
+
+    local cTeam = teamNamed(C, "Paste Test")
+    run(30)
+    cTeam = teamNamed(C, "Paste Test")
+    check(cTeam and cTeam.members[gid(25)] and cTeam.members[gid(25)].status == "trial", "the guild gets the pasted spots")
+    check(cTeam and cTeam.members[gid(22)] and cTeam.members[gid(22)].role == "HEALER", "...and the role change")
+    local cAdded = C.PGM:ApplyTeamPaste(cTeam.id, C.PGM:PlanTeamPaste(cTeam.id, "Codiex"))
+    check(cAdded == 0, "a member can't import a list")
+    P:DeleteTeam(pt.id)
+    run(10)
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)

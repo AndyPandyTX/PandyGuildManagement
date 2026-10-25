@@ -26,6 +26,7 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click the panda but
 **Raid teams**
 - As many teams as you like, each with a schedule, roles and Core / Trial / Bench status
 - Built from the tags in your guild notes, and can be kept in sync with them. Members you remove by hand stay removed.
+- Paste a roster from a spreadsheet (like wowaudit) or CSV, with roles and Core / Trial / Bench
 - Shows which Midnight raid buffs and utility each team is missing
 - Attendance per team, counted only at that team's raids
 
