@@ -7,7 +7,7 @@
 --   * bonus rolls: our own from BONUS_ROLL_RESULT, anywhere; everyone
 --     else's from the "receives bonus loot" line in loot chat, when the game
 --     lets addons read it.
--- Raid drops and bonus rolls (raid or M+) are kept, and only epic or
+-- Raid and M+ drops and bonus rolls are kept, and only epic or
 -- better gear, tokens and the like; no reagents or currency.
 --
 -- Nothing goes out over guild sync. Loot moves between players by export
@@ -26,6 +26,7 @@
 --   how    need | offspec | greed | tmog | roll | personal | drop | bonus
 --   kind   raid | mplus | other
 --   enc, boss, inst, diff   encounter id and name, instance id, difficulty id
+--   where  the raid or dungeon's name
 --   src    pgm | mrt | vca | import
 
 local _, NS = ...
@@ -194,7 +195,7 @@ end
 
 -- A second account of the same drop fills in what the first didn't know.
 local function merge(into, from)
-    for _, k in ipairs({ "class", "enc", "boss", "inst", "diff", "kind" }) do
+    for _, k in ipairs({ "class", "enc", "boss", "inst", "diff", "kind", "where" }) do
         if into[k] == nil then into[k] = from[k] end
     end
     if SPECIFIC[from.how] and not SPECIFIC[into.how] then into.how = from.how end
@@ -242,6 +243,37 @@ function PGM:DeleteLoot(rec)
     end
 end
 
+-- A bonus roll that doesn't say which boss (VoidcoreAdvisor's don't) is
+-- for the kill whose drops were recorded closest to it, within a few
+-- minutes: the boss, raid and difficulty come from those. Returns how many
+-- it filled in.
+local BONUS_AFTER_KILL = 5 * 60
+function PGM:FillBonusBosses()
+    local drops = {}
+    for _, rec in ipairs(PGM:LootItems()) do
+        if rec.how ~= "bonus" and (rec.boss or rec.where) then drops[#drops + 1] = rec end
+    end
+    local n = 0
+    for _, rec in ipairs(PGM:LootItems()) do
+        if rec.how == "bonus" and not rec.boss then
+            local best, gap
+            for _, d in ipairs(drops) do
+                local dt = math.abs((d.t or 0) - rec.t)
+                if dt <= BONUS_AFTER_KILL and d.kind == rec.kind and (not rec.diff or not d.diff or d.diff == rec.diff)
+                    and (not gap or dt < gap) then
+                    best, gap = d, dt
+                end
+            end
+            if best then
+                rec.enc, rec.boss, rec.where = best.enc, best.boss, rec.where or best.where
+                rec.inst, rec.diff = rec.inst or best.inst, rec.diff or best.diff
+                n = n + 1
+            end
+        end
+    end
+    return n
+end
+
 -- Many records at once (an import). Returns how many were new and how
 -- many were already known.
 function PGM:ImportLoot(list)
@@ -249,7 +281,7 @@ function PGM:ImportLoot(list)
     for _, rec in ipairs(list or {}) do
         if PGM:AddLoot(rec) then added = added + 1 else known = known + 1 end
     end
-    if added > 0 then PGM:Fire("LOOT") end
+    if PGM:FillBonusBosses() > 0 or added > 0 then PGM:Fire("LOOT") end
     return added, known
 end
 
@@ -263,16 +295,16 @@ end
 -- ============================================================
 
 local function where()
-    local ok, _, instType, diff, _, _, _, _, inst = pcall(GetInstanceInfo)
+    local ok, name, instType, diff, _, _, _, _, inst = pcall(GetInstanceInfo)
     if not ok then return { kind = "other" } end
-    instType, diff, inst = P(instType), P(diff), P(inst)
+    name, instType, diff, inst = P(name), P(instType), P(diff), P(inst)
     local kind = "other"
     if instType == "raid" then
         kind = "raid"
-    elseif instType == "party" and (diff == 8 or diff == 23) then
+    elseif instType == "party" and diff == 8 then
         kind = "mplus"
     end
-    return { inst = inst ~= 0 and inst or nil, diff = diff ~= 0 and diff or nil, kind = kind }
+    return { inst = inst ~= 0 and inst or nil, diff = diff ~= 0 and diff or nil, kind = kind, where = name }
 end
 
 local fight = {}   -- the last boss killed here: where(), plus enc, boss, t
@@ -311,13 +343,13 @@ listen("ENCOUNTER_END", function(_, enc, name, _, _, success)
 end)
 listen("BOSS_KILL", function(_, enc, name) killed(enc, name) end)
 
--- Personal loot, and in some raids the winners of rolls too.
+-- Personal loot (in M+ too), and in some raids the winners of rolls.
 listen("ENCOUNTER_LOOT_RECEIVED", function(_, enc, _, link, _, who, class)
     local w = where()
-    if w.kind ~= "raid" then return end
+    if w.kind == "other" then return end
     enc = P(enc)
     record({ t = PGM.Now(), who = P(who), class = P(class), link = P(link), how = "personal", enc = enc,
-        boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff, kind = "raid", src = "pgm" })
+        boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff, kind = w.kind, where = w.where, src = "pgm" })
 end)
 
 -- Group loot: who won each drop of a boss, and how they rolled.
@@ -334,7 +366,8 @@ local function readDrops(enc)
         if link and who then
             local state = P(win.state)
             record({ t = PGM.Now(), who = who, class = P(win.playerClass), link = link, how = ROLL_STATE[state] or "roll",
-                enc = enc, boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff, kind = "raid", src = "pgm" })
+                enc = enc, boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff, kind = "raid", where = w.where,
+                src = "pgm" })
         end
     end
 end
@@ -354,7 +387,7 @@ listen("BONUS_ROLL_RESULT", function(_, kindOfReward, link)
     if not link then return end
     local ctx = context()
     record({ t = PGM.Now(), who = myName(), class = myClass(), link = link, how = "bonus", enc = ctx.enc,
-        boss = ctx.boss, inst = ctx.inst, diff = ctx.diff, kind = ctx.kind, src = "pgm" })
+        boss = ctx.boss, inst = ctx.inst, diff = ctx.diff, kind = ctx.kind, where = ctx.where, src = "pgm" })
 end)
 
 -- Everyone else's bonus rolls, from loot chat: "%s receives bonus loot: %s."
@@ -395,7 +428,7 @@ listen("CHAT_MSG_LOOT", function(_, msg)
     local ctx = context()
     if ctx.kind == "other" then return end
     record({ t = PGM.Now(), who = who, link = link, how = "bonus", enc = ctx.enc, boss = ctx.boss,
-        inst = ctx.inst, diff = ctx.diff, kind = ctx.kind, src = "pgm" })
+        inst = ctx.inst, diff = ctx.diff, kind = ctx.kind, where = ctx.where, src = "pgm" })
 end)
 
 -- ============================================================
@@ -403,18 +436,20 @@ end)
 -- ============================================================
 
 -- MRT's loot history: "time#encounter#instance#difficulty#name#classID#
--- quantity#itemString[#rollType]". Raid records newer than `since`.
+-- quantity#itemString[#rollType]". Raid and M+ records newer than `since`.
 function PGM:LootFromMRT(since)
     local v = _G.VMRT
     local lh = type(v) == "table" and v.LootHistory
     if type(lh) ~= "table" or type(lh.list) ~= "table" then return nil end
     local bosses = type(lh.bossNames) == "table" and lh.bossNames or {}
+    local places = type(lh.instanceNames) == "table" and lh.instanceNames or {}
     local out = {}
     for _, line in ipairs(lh.list) do
         if type(line) == "string" then
             local t, enc, inst, diff, name, classID, _, item, roll = strsplit("#", line)
             t, enc, inst, diff = tonumber(t), tonumber(enc), tonumber(inst), tonumber(diff)
-            if t and t > (since or 0) and diff and RAID_DIFF[diff] and name and name ~= "" and item then
+            local kind = diff and (RAID_DIFF[diff] and "raid" or (diff == 8 and "mplus")) or nil
+            if t and t > (since or 0) and kind and name and name ~= "" and item then
                 local class
                 if GetClassInfo and tonumber(classID) then
                     local ok, _, file = pcall(GetClassInfo, tonumber(classID))
@@ -423,7 +458,8 @@ function PGM:LootFromMRT(since)
                 out[#out + 1] = { t = t, who = name, class = class, link = item,
                     how = (roll and roll ~= "") and "roll" or "drop",
                     enc = enc ~= 0 and enc or nil, boss = enc and bosses[enc] or nil,
-                    inst = inst ~= 0 and inst or nil, diff = diff, kind = "raid", src = "mrt" }
+                    inst = inst ~= 0 and inst or nil, diff = diff, kind = kind, where = inst and places[inst] or nil,
+                    src = "mrt" }
             end
         end
     end
@@ -458,9 +494,16 @@ end
 -- New records from MRT and VoidcoreAdvisor since last time. `all` reads
 -- their whole history again (repeats are still dropped). Returns how many
 -- were added from each, or nil for an addon that isn't loaded.
+local PULL_VERSION = 2   -- 2: M+ loot and place names from MRT too
 function PGM:PullLoot(all)
     local l = store()
     if not l then return nil, nil end
+    -- Once after an update that reads more from them: their whole history
+    -- again (repeats only fill in what was missing).
+    if (l.pullVersion or 0) < PULL_VERSION then
+        all = true
+        l.pullVersion = PULL_VERSION
+    end
     local fromMRT, fromVCA
     local mrt = PGM:LootFromMRT(not all and l.mrtUpTo or nil)
     if mrt then
@@ -491,7 +534,7 @@ end)
 -- EXPORT AND IMPORT
 -- ============================================================
 -- One record per line, fields split by ";": time; who; class; item string;
--- how; kind; encounter; instance; difficulty; boss. Compressed and base64
+-- how; kind; encounter; instance; difficulty; boss; place. Compressed and base64
 -- when the game can ("PGMLOOT2:"), plain text otherwise ("PGMLOOT1").
 
 local function clean(s) return (tostring(s or ""):gsub("[;\r\n]", ",")) end
@@ -500,7 +543,7 @@ local function lootLines(list)
     local lines = {}
     for _, r in ipairs(list) do
         lines[#lines + 1] = table.concat({ r.t, clean(r.who), clean(r.class), clean(itemString(r.link)), clean(r.how),
-            clean(r.kind), r.enc or "", r.inst or "", r.diff or "", clean(r.boss) }, ";")
+            clean(r.kind), r.enc or "", r.inst or "", r.diff or "", clean(r.boss), clean(r.where) }, ";")
     end
     return table.concat(lines, "\n")
 end
@@ -546,7 +589,7 @@ function PGM:ParseLootExport(text)
             out[#out + 1] = { t = t, who = f[2], class = f[3] ~= "" and f[3] or nil, link = item,
                 how = f[5] ~= "" and f[5] or "drop", kind = f[6] ~= "" and f[6] or "raid",
                 enc = tonumber(f[7]), inst = tonumber(f[8]), diff = tonumber(f[9]),
-                boss = f[10] ~= "" and f[10] or nil, src = "import" }
+                boss = f[10] ~= "" and f[10] or nil, where = (f[11] or "") ~= "" and f[11] or nil, src = "import" }
         end
     end
     return out

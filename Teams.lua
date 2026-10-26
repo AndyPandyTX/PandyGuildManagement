@@ -109,8 +109,10 @@ function PGM:CreateTeam(name)
     if not list or not canEdit() then return nil end
     name = strtrim(name or "")
     if name == "" then name = "Raid team " .. (#list + 1) end
+    -- `by`: who made it (shared, so everyone can see it on the team).
+    local ok, me = pcall(UnitName, "player")
     local t = { id = ("%d-%d"):format(PGM.Now(), math.random(1000, 9999)), name = name, schedule = "",
-                members = {}, removed = {}, created = PGM.Now() }
+                members = {}, removed = {}, created = PGM.Now(), by = ok and PGM.Plain(me) or nil }
     table.insert(list, t)
     share("SyncTeam", t)
     PGM:Fire("TEAMS")
@@ -431,9 +433,12 @@ end
 -- letter ("Valor, VA, V"). A short tag two teams would share goes to the
 -- bigger one. A team that already exists (same name) is just imported into.
 -- Returns the names it created and how many members joined in all.
+-- Not until this login's catch-up is in: a copy that hasn't heard the
+-- guild's teams yet would make a second of each (returns nil then).
 function PGM:FindTeamsInNotes()
     local g = PGM.GuildDB()
     if not g or not canEdit() then return {}, 0 end
+    if PGM.SyncSettled and not PGM:SyncSettled() then return nil, 0 end
     local mentions = {}
     for _, rec in pairs(g.members) do
         local seen = {}

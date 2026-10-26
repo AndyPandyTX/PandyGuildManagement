@@ -42,6 +42,15 @@ local function teamRow(list)
         state.selected = s.t.id
         UI:Refresh()
     end)
+    -- Who made the team, and when (its id starts with the time).
+    r.onEnter = function(s)
+        local made = tonumber((s.t.id or ""):match("^(%d+)%-"))
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        GameTooltip:SetText(s.t.name)
+        GameTooltip:AddLine(("Made %s%s"):format(s.t.by and ("by " .. s.t.by .. " ") or "",
+            made and ("on " .. PGM.Date(made, true)) or ""), 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end
     return r
 end
 
@@ -173,7 +182,9 @@ local function build(p)
     p.find:SetScript("OnClick", function()
         UI:CommitTeamEdits()
         local created, joined = PGM:FindTeamsInNotes()
-        if #created > 0 then
+        if not created then
+            PGM.Print("Still getting the guild's raid teams from other officers. Try again in a minute.")
+        elseif #created > 0 then
             PGM.Print(("Made %s from guild notes; %d members added."):format(table.concat(created, ", "), joined))
         else
             PGM.Print(("No new teams found in notes; %d members added to existing teams."):format(joined))
@@ -395,11 +406,18 @@ local function refresh(p)
     p.detail:SetShown(t ~= nil)
     if not t then
         local canEdit = PGM:CanEdit()
-        p.new:SetShown(canEdit)
-        p.find:SetShown(canEdit)
-        p.empty:SetText(canEdit
-            and "No raid teams yet.\n\nClick \"Find teams in notes\" to build them from your guild notes, or \"+ New raid team\" to make one by hand."
-            or "No raid teams yet.\n\nYour officers' teams will show up here once one of them is online.")
+        -- A copy still catching up shows no teams only because it hasn't
+        -- heard them yet: making some now would duplicate the guild's.
+        local settled = not PGM.SyncSettled or PGM:SyncSettled()
+        p.new:SetShown(canEdit and settled)
+        p.find:SetShown(canEdit and settled)
+        if canEdit and not settled then
+            p.empty:SetText("Getting the guild's raid teams from officers online...\n\nIf none are online, this stops waiting after a minute and a half.")
+        else
+            p.empty:SetText(canEdit
+                and "No raid teams yet.\n\nClick \"Find teams in notes\" to build them from your guild notes, or \"+ New raid team\" to make one by hand."
+                or "No raid teams yet.\n\nYour officers' teams will show up here once one of them is online.")
+        end
         return
     end
     p.empty:SetText("")

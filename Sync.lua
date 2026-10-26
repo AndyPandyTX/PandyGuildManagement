@@ -34,7 +34,7 @@
 --   O target newest              I can catch target up
 --   R target since               target: send me everything newer than since
 --   E target count newest        end of that catch-up; target is now this current
---   T id u name schedule tags auto                  team details
+--   T id u name schedule tags auto by                  team details
 --   K id u                                          team deleted
 --   M team guid u state role status                 one team spot (i = on, x = removed)
 --   A guid u main [guid u main ...]                 alt links ("0" = not an alt, "" = none)
@@ -313,12 +313,14 @@ end
 -- ---- record senders ----
 
 local function sendTeam(t)
-    -- Fixed fields, the separators still to come, and the 1-byte auto flag.
-    local used = #table.concat({ "1T", t.id, t.u or 0 }, SEP) + 4 * #SEP + 1
+    -- Fixed fields, the separators still to come, the 1-byte auto flag, and
+    -- who made it (last, so older copies ignore it).
+    local by = clean(t.by or ""):sub(1, 24)
+    local used = #table.concat({ "1T", t.id, t.u or 0 }, SEP) + 5 * #SEP + 1 + #by
     local name = fit(t.name, used)
     local schedule = fit(t.schedule, used + #name)
     local tags = fit(t.tags, used + #name + #schedule)
-    send("1T", t.id, t.u or 0, name, schedule, tags, t.autoSync and "1" or "0")
+    send("1T", t.id, t.u or 0, name, schedule, tags, t.autoSync and "1" or "0", by)
 end
 
 local function sendSpot(t, guid)
@@ -669,6 +671,8 @@ function handlers.T(f)
         applied(u)
         changed("TEAMS")
     end
+    -- Who made it never changes; older copies don't send it.
+    if t and not t.by and f[8] and f[8] ~= "" then t.by = f[8] end
 end
 
 function handlers.K(f)

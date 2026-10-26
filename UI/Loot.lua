@@ -16,11 +16,11 @@ local state = {
 }
 
 local WHEN = { { "all", "All time" }, { "week", "This week" }, { "month", "Last 4 weeks" }, { "3m", "Last 3 months" } }
-local KIND = { { "raid", "Raids" }, { "mplus", "Mythic+" }, { "all", "Raids and M+" } }
+local KIND = { { "raid", "Raids" }, { "mplus", "Mythic+" }, { "all", "Raids + M+" } }
 local DIFF = { { nil, "Any difficulty" }, { 17, "LFR" }, { 14, "Normal" }, { 15, "Heroic" }, { 16, "Mythic" } }
 local ITYPE = { { nil, "Any item" }, { "token", "Tier tokens" }, { "weapon", "Weapons" }, { "trinket", "Trinkets" },
     { "jewelry", "Rings and necks" }, { "armor", "Armor" }, { "other", "Other" } }
-local HOW = { { nil, "Drops + bonus" }, { "drop", "Drops only" }, { "bonus", "Bonus rolls only" } }
+local HOW = { { nil, "Drops + bonus" }, { "drop", "Drops only" }, { "bonus", "Bonus only" } }
 local SHORT_DIFF = { [17] = "LFR", [14] = "N", [15] = "H", [16] = "M" }
 
 local function labelOf(list, value)
@@ -92,6 +92,7 @@ local function filtered()
         end
         if ok and q ~= "" then
             ok = (rec.who or ""):lower():find(q, 1, true) or (rec.boss or ""):lower():find(q, 1, true)
+                or (rec.where or ""):lower():find(q, 1, true)
                 or (itemName(rec) or ""):lower():find(q, 1, true)
         end
         if ok then out[#out + 1] = rec end
@@ -147,6 +148,11 @@ end
 -- ---- rows ----
 
 local function whoText(who, class)
+    if not class then
+        -- Imports don't always say; guild members' come from the roster.
+        local g, guid = PGM.GuildDB(), PGM.LootMemberGuid(who)
+        class = guid and g and g.members[guid] and g.members[guid].class
+    end
     local name, realm = (who or "?"):match("^([^%-]+)%-?(.*)$")
     local myRealm = GetNormalizedRealmName and GetNormalizedRealmName()
     local tag = (realm and realm ~= "" and myRealm and realm ~= myRealm) and "*" or ""
@@ -221,7 +227,12 @@ end
 local function itemUpdate(r, rec)
     r.rec = rec
     r.date:SetText(date("%b %d", rec.t))
-    r.boss:SetText(rec.boss or (rec.kind == "mplus" and "Mythic+" or "?"))
+    -- M+ shows the dungeon; a raid, the boss.
+    if rec.kind == "mplus" then
+        r.boss:SetText(rec.where or rec.boss or "Mythic+")
+    else
+        r.boss:SetText(rec.boss or "?")
+    end
     r.diff:SetText(rec.kind == "mplus" and "M+" or (SHORT_DIFF[rec.diff] or ""))
     r.who:SetText(whoText(rec.who, rec.class))
     r.item:SetText(itemText(rec))

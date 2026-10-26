@@ -144,6 +144,7 @@ local function newClient(guid, name)
     env.GetNormalizedRealmName = function() return REALM end
     env.UnitGUID = function(u) if u == "player" then return guid end end
     env.UnitFullName = function() return name, REALM end
+    env.UnitName = function() return name end
     env.UnitClass = function() return "Druid", "DRUID" end
     env.UnitLevel = function() return 90 end
     env.GetServerTime = function() return BASE + math.floor(T) end
@@ -1071,20 +1072,28 @@ do
 
     -- Pulled in from MRT and VoidcoreAdvisor.
     local now = BASE + math.floor(T)
-    A.env.VMRT = { LootHistory = { bossNames = { [3430] = "Boss B" }, list = {
+    A.env.VMRT = { LootHistory = { bossNames = { [3430] = "Boss B", [2000] = "Dungeon Boss" },
+        instanceNames = { [2813] = "Ruby Life Pools" }, list = {
         ("%d#3429#3004#15#Funkyshade#5#1#item:268256::::::::90:102:::::::::#1"):format(now - 60),   -- already here
         ("%d#3430#3004#16#Codiex#12#1#item:272000::::::::90:102:::::::::"):format(now - 86400),      -- new
-        ("%d#2000#2813#8#Codiex#12#1#item:268300::::::::90:102:::::::::"):format(now - 3600),        -- M+: skipped
+        ("%d#2000#2813#8#Codiex#12#1#item:268300::::::::90:102:::::::::"):format(now - 3600),        -- M+
         ("%d#3430#3004#16#Codiex#12#3#item:999::::::::90:102:::::::::"):format(now - 3600),          -- reagent
     } } }
     A.env.VoidcoreAdvisorCharDB = { bonusRollLog = {
         { itemID = 270000, itemLink = link(270000), timestamp = now + 2, difficultyID = 15, raidInstanceID = 1314 },
         { itemID = 271875, itemLink = link(271875), timestamp = now - 7 * 86400, difficultyID = 15, raidInstanceID = 1314 },
+        -- Rolled just after Boss B's drops (MRT's line above): which boss is filled in.
+        { itemID = 270001, itemLink = link(270001), timestamp = now - 86400 + 40, difficultyID = 16, raidInstanceID = 1314 },
         { itemID = 251115, itemLink = link(251115), timestamp = now - 2 * 86400, difficultyID = 23, sourceType = "MYTHIC_PLUS" },
     } }
     local fromMRT, fromVCA = P:PullLoot()
-    check(fromMRT == 1, "MRT: one new raid item; the repeat, M+ and reagent lines skipped (got " .. tostring(fromMRT) .. ")")
-    check(fromVCA == 2, "VoidcoreAdvisor: two new bonus rolls, the live one not counted twice (got " .. tostring(fromVCA) .. ")")
+    check(fromMRT == 2, "MRT: a raid item and an M+ item new; the repeat and the reagent skipped (got " .. tostring(fromMRT) .. ")")
+    check(fromVCA == 3, "VoidcoreAdvisor: three new bonus rolls, the live one not counted twice (got " .. tostring(fromVCA) .. ")")
+    local mp = find(A, "Codiex-MalGanis", 268300)
+    check(mp and mp.kind == "mplus" and mp.where == "Ruby Life Pools", "MRT's M+ loot is kept as M+, with the dungeon")
+    local filled = find(A, "Nattypandy-MalGanis", 270001, "bonus")
+    check(filled and filled.boss == "Boss B" and filled.enc == 3430, "a bonus roll without a boss gets the kill it came after")
+    check((find(A, "Nattypandy-MalGanis", 271875, "bonus") or {}).boss == nil, "...and one with no kill near it stays unknown")
     local cb = find(A, "Codiex-MalGanis", 272000)
     check(cb and cb.boss == "Boss B" and cb.diff == 16 and cb.src == "mrt", "MRT's record keeps boss and difficulty")
     check((find(A, "Nattypandy-MalGanis", 251115, "bonus") or {}).kind == "mplus", "an M+ bonus roll is marked M+")
@@ -1221,6 +1230,21 @@ do
 
     P:DeleteLoot(fh)
     check(find(A, "Funkyshade-MalGanis", 268256) == nil, "a record can be deleted")
+end
+
+print("-- raid teams: no duplicates from a copy still catching up, and who made each")
+do
+    local E = newClient(gid(24), "Triclops")   -- raid leadership, just installed
+    check(E.PGM:CanEdit(), "the new copy can edit teams")
+    check(E.PGM:FindTeamsInNotes() == nil, "before catching up, Find teams in notes doesn't run")
+    run(100)
+    check(E.PGM:FindTeamsInNotes() ~= nil, "after catching up, it does")
+    local made = A.PGM:CreateTeam("Made By Test")
+    run(10)
+    local bt = teamNamed(B, "Made By Test")
+    check(made.by == "Nattypandy" and bt and bt.by == "Nattypandy", "a team says who made it, on every copy")
+    A.PGM:DeleteTeam(made.id)
+    run(10)
 end
 
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
