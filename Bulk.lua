@@ -48,15 +48,28 @@ end
 
 -- What this character may do here: officers only (the same people who can
 -- edit raid teams), and then only what the game lets their rank do.
-function PGM:BulkAllowed()
-    local officer = PGM.CanEdit ~= nil and PGM:CanEdit()
+-- What the game lets this character do to guild members.
+function PGM:GuildPermissions()
     local function can(fn)
-        if not officer or type(_G[fn]) ~= "function" then return false end
+        if type(_G[fn]) ~= "function" then return false end
         local ok, res = pcall(_G[fn])
         return ok and PGM.Plain(res) and true or false
     end
-    return { officer = officer, kick = can("CanGuildRemove"), promote = can("CanGuildPromote"),
-             demote = can("CanGuildDemote") }
+    return { promote = can("CanGuildPromote"), demote = can("CanGuildDemote"), remove = can("CanGuildRemove") }
+end
+
+-- A rank's name by index (0 is the guild master).
+function PGM.RankName(i)
+    local n = GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(i + 1))
+    return (n and n ~= "") and n or ("Rank " .. (i + 1))
+end
+
+-- Bulk actions: officers only, and only what the game allows.
+function PGM:BulkAllowed()
+    local officer = PGM.CanEdit ~= nil and PGM:CanEdit()
+    local can = officer and PGM:GuildPermissions() or {}
+    return { officer = officer, kick = can.remove or false, promote = can.promote or false,
+             demote = can.demote or false }
 end
 
 -- ============================================================

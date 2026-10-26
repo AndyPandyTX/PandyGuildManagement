@@ -4,7 +4,6 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 local C = PGM.C
 local UI = PGM.UI
@@ -135,10 +134,7 @@ local function build(p)
 end
 
 local function refresh(p)
-    if GU.Off(p) then
-        if p.offHook then p.offHook() end
-        return
-    end
+    if GU.Off(p) then return end
     if PGM.IS_FOREVER then
         p.title:SetText("Keystones")
         p.sub:SetText("WoW Forever has no Mythic+.")

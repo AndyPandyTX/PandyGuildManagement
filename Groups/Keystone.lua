@@ -5,7 +5,8 @@
 -- had when last logged in (saved here). A copy that logs in asks for the keys
 -- it missed ("W"); one copy that has newer ones volunteers ("V", so the rest
 -- stand down) and sends them packed. Keys are low stakes, so anyone may relay
--- them: newest wins, and a key from before the weekly reset is dropped.
+-- them: newest wins, and a key from before the weekly reset is dropped. Only
+-- the owner's copy may say its key is newer than now (see K, below).
 -- Guildies without the module are heard through LibKeystone (below).
 --
 -- WIRE (inside "1G"):
@@ -15,11 +16,8 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 local P = PGM.Plain
-
-local SKEW = 300
 
 local function isGuid(v)
     return type(v) == "string" and v:match("^Player%-%d+%-%x+$") ~= nil
@@ -171,14 +169,18 @@ end
 -- RECEIVING
 -- ============================================================
 
-function G.handlers.K(f)
+-- A key's stamp may run a little ahead (the owner's PGM.Stamp can), but only
+-- in the owner's own message: a relayed key (a catch-up, or anyone else
+-- sending it) is held to now at most. Otherwise anyone could stamp someone's
+-- key minutes ahead and beat the owner's real update when it comes.
+function G.handlers.K(f, sender, rec)
     local d = G.DB()
     local g = PGM.GuildDB()
     local reset, now, any = G.LastReset(), PGM.Now(), false
     for i = 3, #f, 4 do
-        local guid, u, map, level = f[i], tonumber(f[i + 1]), tonumber(f[i + 2]), tonumber(f[i + 3])
+        local guid, u, map, level = f[i], G.ClampStamp(f[i + 1]), tonumber(f[i + 2]), tonumber(f[i + 3])
         if isGuid(guid) and u and map and level and g.members[guid] and guid ~= PGM:MyGuid() then
-            u = math.floor(math.min(u, now + SKEW))
+            if not (rec and rec.guid == guid) then u = math.min(u, now) end
             local cur = d.keys[guid]
             if u >= reset and u > (cur and cur.u or 0) and level >= 0 and level < 100 then
                 d.keys[guid] = { map = map, level = level, u = u }
@@ -190,7 +192,8 @@ function G.handlers.K(f)
 end
 
 -- Catch-up: volunteer after a random wait, unless someone beats us to it.
-local volunteer, volunteerFor
+-- One wait per asker: a second asker mustn't cancel the first one's reply.
+local volunteers = {}   -- [normalised asker name] = timer
 function G.handlers.W(f, sender)
     local since = tonumber(f[3]) or 0
     local rows = {}
@@ -198,20 +201,22 @@ function G.handlers.W(f, sender)
         if (k.u or 0) > since then rows[#rows + 1] = row(guid, k) end
     end
     if #rows == 0 then return end
-    if volunteer then volunteer:Cancel() end
-    volunteerFor = sender
-    volunteer = C_Timer.NewTimer(1 + math.random() * 6, function()
-        volunteer, volunteerFor = nil, nil
+    local key = PGM.SyncNorm(sender)
+    if volunteers[key] then volunteers[key]:Cancel() end
+    volunteers[key] = C_Timer.NewTimer(1 + math.random() * 6, function()
+        volunteers[key] = nil
         if not G.CanTalk() then return end
         G.Send(true, "V", sender)
         G.SendPacked(true, "K", rows)
     end)
 end
 
+-- Someone else is sending that asker's keys: stand down for them only.
 function G.handlers.V(f)
-    if volunteer and volunteerFor and PGM.SyncNorm(f[3]) == PGM.SyncNorm(volunteerFor) then
-        volunteer:Cancel()
-        volunteer, volunteerFor = nil, nil
+    local key = PGM.SyncNorm(f[3])
+    if volunteers[key] then
+        volunteers[key]:Cancel()
+        volunteers[key] = nil
     end
 end
 

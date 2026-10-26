@@ -30,9 +30,16 @@ local function labelOf(list, value)
     return list[1][2]
 end
 
+-- At most n letters, cut between letters (an accented letter is two or
+-- more bytes).
 local function trim(text, n)
-    if #text > n then return text:sub(1, n - 1) .. "…" end
-    return text
+    local letters, cut = 0, nil
+    for pos in text:gmatch("()[^\128-\191]") do
+        letters = letters + 1
+        if letters == n then cut = pos break end
+    end
+    if not cut then return text end
+    return text:sub(1, cut - 1) .. "…"
 end
 
 -- ---- the filters ----
@@ -483,17 +490,19 @@ local function previewImport(text)
     if strtrim(text) == "" then return PGM.Hex(C.text3) .. "Paste a loot export from another player's PGM.|r", false end
     local list, err = PGM:ParseLootExport(text)
     if not list then return PGM.Hex(C.amber) .. err .. "|r", false end
-    local new, known, people = 0, 0, {}
+    local new, known, skipped, people = 0, 0, 0, {}
     local first, last
     for _, rec in ipairs(list) do
-        if PGM:LootKnown(rec) then known = known + 1 else new = new + 1 end
+        local would = PGM:LootWouldAdd(rec)
+        if would == "new" then new = new + 1 elseif would == "known" then known = known + 1 else skipped = skipped + 1 end
         people[PGM.LootNameKey(rec.who)] = true
         first = math.min(first or rec.t, rec.t)
         last = math.max(last or rec.t, rec.t)
     end
     local n = 0
     for _ in pairs(people) do n = n + 1 end
-    local lines = { ("%sAdds %d|r   %s%d already here|r"):format(PGM.Hex(C.jade), new, PGM.Hex(C.text2), known) }
+    local lines = { ("%sAdds %d|r   %s%d already here|r"):format(PGM.Hex(C.jade), new, PGM.Hex(C.text2), known)
+        .. (skipped > 0 and ("   " .. PGM.Hex(C.text3) .. skipped .. " not kept (junk, or deleted here)|r") or "") }
     if first then
         lines[#lines + 1] = ("%d items for %d %s, %s to %s."):format(#list, n, n == 1 and "player" or "players",
             date("%b %d", first), date("%b %d", last))
@@ -510,8 +519,9 @@ local function importMenu(owner)
                 preview = previewImport,
                 import = function(text)
                     local list = PGM:ParseLootExport(text)
-                    local added, known = PGM:ImportLoot(list or {})
-                    PGM.Print(("Loot: imported %d, %d were already here."):format(added, known))
+                    local added, known, skipped = PGM:ImportLoot(list or {})
+                    PGM.Print(("Loot: imported %d, %d were already here%s."):format(added, known,
+                        skipped > 0 and (", " .. skipped .. " not kept") or ""))
                 end,
             })
         end },

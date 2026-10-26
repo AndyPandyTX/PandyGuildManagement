@@ -9,14 +9,7 @@ local W = UI.W
 local SOURCE_LABEL = { manual = "linked by an officer", account = "same account", player = "set by the player",
     note = "from guild note", rank = "by rank" }
 
-local function perms()
-    local function can(fn)
-        if type(_G[fn]) ~= "function" then return false end
-        local ok, res = pcall(_G[fn])
-        return ok and PGM.Plain(res) and true or false
-    end
-    return { promote = can("CanGuildPromote"), demote = can("CanGuildDemote"), remove = can("CanGuildRemove") }
-end
+local function perms() return PGM:GuildPermissions() end
 
 local function field(parent, label, y)
     local l = W.FS(parent, 11, C.text3)
@@ -42,10 +35,7 @@ function UI:DisarmRemove()
     r:SetLabel("Remove")
 end
 
-local function rankName(i)
-    local n = GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(i + 1))
-    return (n and n ~= "") and n or ("Rank " .. (i + 1))
-end
+local rankName = PGM.RankName
 
 -- The commands that move someone from one rank to another: /gpromote or
 -- /gdemote once per rank, as many as fit in one macro (any left over go
@@ -81,10 +71,19 @@ local function buildSecure()
     h.setRank = btn("Set rank", C.jade)
     h.setRank:SetWidth(110)
     h.setRank.tip = "Moves them to the rank picked on the left, as many ranks as it takes, in one click."
-    -- Ask for the roster straight away, so the new rank shows quickly.
-    h.setRank:HookScript("PostClick", function(_, _, down)
+    -- Ask for the roster straight away, so the new rank shows quickly. Until
+    -- it does, the button does nothing: its lines move them by a number of
+    -- ranks, so a second click would move them again.
+    h.setRank:HookScript("PostClick", function(s, _, down)
         if (down and true or false) ~= GetCVarBool("ActionButtonUseKeyDown") then return end
+        h.sent = { name = h.target, from = h.fromRank, at = GetTime() }
+        if not InCombatLockdown() then
+            s:SetAttribute("macrotext", nil)
+            s:SetLabel("Waiting...")
+            s:SetAlpha(0.5)
+        end
         C_Timer.After(1, function() PGM:RequestRoster(true) end)
+        C_Timer.After(16, function() UI:QueueRefresh() end)   -- in case nothing changed
     end)
     h.remove = btn("Remove", C.red, h.setRank)
     h.remove.tip = "Removes them from the guild. Click once to arm, again to confirm."
@@ -465,8 +464,17 @@ function UI:RefreshProfile()
     if not movable or not target or target <= my then target = rec.rankIndex end
     p.rankPick:SetShown(movable and true or false)
     p.rankPick:SetLabel((target and rankName(target) or "?") .. "  v")
+    h.fromRank = rec.rankIndex
+    -- Just clicked: wait for the roster to show the new rank (or give up
+    -- after 15 seconds, say if the game refused).
+    local sent = h.sent
+    if sent and (sent.name ~= rec.name or sent.from ~= rec.rankIndex or GetTime() - sent.at > 15) then
+        h.sent, sent = nil, nil
+    end
     local text
-    if movable and target ~= rec.rankIndex then
+    if sent then
+        h.setRank:SetLabel("Waiting...")
+    elseif movable and target ~= rec.rankIndex then
         local promoting = target < rec.rankIndex
         if (promoting and can.promote) or (not promoting and can.demote) then
             text = rankMacro(rec.name, rec.rankIndex, target)

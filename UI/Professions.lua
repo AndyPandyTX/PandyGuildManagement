@@ -356,7 +356,10 @@ local function refresh(p)
     end
     p.members:SetData(members, true)
     if state.recipe and #members == 0 then
-        p.empty:SetText(not PGM:KnownCrafters(state.recipe.line, state.recipe.recipe) and "Asking the guild..."
+        local r = state.recipe
+        local asking = PGM:CraftersAsking(r.line, r.recipe)
+        p.empty:SetText(not PGM:KnownCrafters(r.line, r.recipe)
+            and (asking and "Asking the guild..." or "No answer from the server. Pick the recipe again to ask again.")
             or (state.onlineOnly and "Nobody who knows it is online." or "Nobody in the guild knows this recipe."))
     elseif #profs == 0 then
         p.empty:SetText("No profession data yet. It comes from the game's guild roster; if it stays empty, open the guild window (J) once so the game loads it.")

@@ -24,39 +24,40 @@ local WAIT_FOR_ANSWER = 3
 -- WHO KNOWS A RECIPE
 -- ============================================================
 
-local answers = {}        -- ["line:recipe"] = { t = when, list = { ... } }
+local answers = {}        -- ["line:recipe"] = { t = when, guids = { guid, ... } }
 local pending             -- the one question out: { line, recipe, callbacks }
 
 local function key(line, recipe) return line .. ":" .. recipe end
 
--- Roster record by "Name-Realm" or plain "Name".
-local function memberByName(full)
-    local g = PGM.GuildDB()
-    if not (g and full) then return nil end
-    local short = full:match("^([^%-]+)") or full
-    local hit
-    for guid, rec in pairs(g.members) do
-        if rec.name == full then return guid, rec end
-        if rec.short == short then hit = hit or { guid, rec } end
-    end
-    if hit then return hit[1], hit[2] end
-end
-
--- The game's answer, as rows like the Professions page uses: guid, rec,
--- main, onlineAs, online first.
+-- The game's answer: the guild members who know the recipe.
 local function readAnswer()
     if type(GetGuildRecipeInfoPostQuery) ~= "function" or type(GetGuildRecipeMember) ~= "function" then return nil end
     local ok, line, recipe, n = pcall(GetGuildRecipeInfoPostQuery)
     line, recipe, n = ok and P(line), ok and P(recipe), ok and P(n)
     if not (line and recipe) then return nil end
-    local online = PGM.PlayersOnline and PGM:PlayersOnline() or {}
-    local list, seen = {}, {}
+    local guids, seen = {}, {}
     for i = 1, n or 0 do
         local okM, display, full = pcall(GetGuildRecipeMember, i)
         full = okM and (P(full) or P(display))
-        local guid, rec = memberByName(full)
+        local guid = full and PGM:FindMember(full)
         if guid and not seen[guid] then
             seen[guid] = true
+            guids[#guids + 1] = guid
+        end
+    end
+    return line, recipe, guids
+end
+
+-- Rows like the Professions page uses (guid, rec, main, onlineAs), online
+-- first. Built when asked for, so who's online is never stale: the roster
+-- replaces its records on every read.
+local function rows(guids)
+    local g = PGM.GuildDB()
+    local online = PGM.PlayersOnline and PGM:PlayersOnline() or {}
+    local list = {}
+    for _, guid in ipairs(guids) do
+        local rec = g and g.members[guid]
+        if rec then
             local main = PGM:MainOf(guid)
             list[#list + 1] = { guid = guid, rec = rec, main = main, onlineAs = online[main], others = {} }
         end
@@ -73,17 +74,19 @@ local function readAnswer()
         if la ~= lb then return la > lb end
         return PGM.NameLess(a.rec.short, b.rec.short)
     end)
-    return line, recipe, list
+    return list
 end
 
 local function settle()
-    local line, recipe, list = readAnswer()
-    if not (pending and line == pending.line and recipe == pending.recipe) then return end
+    local line, recipe, guids = readAnswer()
+    if not (pending and line == pending.line and recipe == pending.recipe) then return false end
     local done = pending
     pending = nil
-    answers[key(line, recipe)] = { t = PGM.Now(), list = list }
+    answers[key(line, recipe)] = { t = PGM.Now(), guids = guids }
+    local list = rows(guids)
     for _, fn in ipairs(done.callbacks) do pcall(fn, list) end
     PGM:Fire("CRAFTERS", line, recipe)
+    return true
 end
 
 PGM:RegisterEvent("GUILD_RECIPE_KNOWN_BY_MEMBERS", settle)
@@ -97,7 +100,7 @@ function PGM:RecipeCrafters(line, recipe, callback)
     if not (line and recipe) or not IsInGuild() then return false end
     local known = answers[key(line, recipe)]
     if known and PGM.Now() - known.t < KEEP_ANSWER then
-        if callback then callback(known.list) end
+        if callback then callback(rows(known.guids)) end
         return true
     end
     if pending and pending.line == line and pending.recipe == recipe then
@@ -108,16 +111,27 @@ function PGM:RecipeCrafters(line, recipe, callback)
     pending = { line = line, recipe = recipe, callbacks = { callback } }
     pcall(C_GuildInfo.QueryGuildMembersForRecipe, line, recipe)
     -- In case the event doesn't come, read the answer anyway after a moment.
+    -- No answer for this recipe by then (the server dropped or throttled the
+    -- question): give up, so picking it again asks again.
     C_Timer.After(WAIT_FOR_ANSWER, function()
-        if pending and pending.line == line and pending.recipe == recipe then settle() end
+        if pending and pending.line == line and pending.recipe == recipe and not settle() then
+            pending = nil
+            PGM:Fire("CRAFTERS", line, recipe)
+        end
     end)
     return true
 end
 
--- The answer we already have for a recipe, if any (nil while asking).
+-- The answer we already have for a recipe, if any (nil while asking, or
+-- when the server didn't answer).
 function PGM:KnownCrafters(line, recipe)
     local known = answers[key(tonumber(line) or 0, tonumber(recipe) or 0)]
-    return known and known.list
+    return known and rows(known.guids)
+end
+
+-- Whether that question is still out.
+function PGM:CraftersAsking(line, recipe)
+    return pending ~= nil and pending.line == tonumber(line) and pending.recipe == tonumber(recipe)
 end
 
 -- ============================================================

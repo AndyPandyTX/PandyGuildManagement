@@ -67,7 +67,8 @@ PGM.MAX_RAID_NIGHTS = MAX_SESSIONS
 -- Two teams can run the same raid and difficulty at the same time, though.
 -- Those are two groups: each record keeps the raid leaders it saw, and two
 -- raids at once never share a leader. Records from older copies have no
--- leaders; then two full records with nobody in common are two raids.
+-- leaders; then two full records with nobody in common are two raids (for
+-- one that comes by sync, once its attendees are in: Sync.lua's P).
 local SAME_START = 30 * 60
 local function twoGroups(a, b)
     if a.leaders and b.leaders and next(a.leaders) and next(b.leaders) then
@@ -199,13 +200,21 @@ function PGM:CloseRaid(force)
     else
         s.count = heads
         local same = PGM:FindRaidNight(s)
+        if not same and PGM.IsGoneNight and PGM:IsGoneNight(s) then
+            -- An officer deleted this night while we were still in it.
+            PGM.Print("Raid attendance not saved: an officer deleted this raid night.")
+            PGM:Fire("RAIDS")
+            return
+        end
         if same then
             -- Another officer's record of this night arrived while ours was
             -- still open: one night, not two.
             PGM:MergeRaidNight(same, s)
-            if not same.team then
-                same.team = PGM:GuessTeam(same)
-                same.teamU = same.team and PGM.Now() or 0
+            -- Guess a team only for a night nobody tagged or untagged by
+            -- hand (or whose team was deleted).
+            if not same.team and ((same.teamU or 0) == 0 or same.teamFreed) then
+                local team = PGM:GuessTeam(same)
+                if team then same.team, same.teamU, same.teamFreed = team, PGM.Stamp(same.teamU), nil end
             end
             s = same
         else

@@ -17,6 +17,26 @@ local ICON = "Interface\\AddOns\\PandyGuildManagement\\Media\\Logo"
 
 local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
 local icon = LibStub and LibStub("LibDBIcon-1.0", true)
+
+-- Show or hide the minimap button (broker displays keep theirs). Defined
+-- even without the libraries (a copy from git without Libs\), so Settings
+-- can ask.
+function PGM:MinimapShown()
+    return not (PandyGuildDB and PandyGuildDB.minimap and PandyGuildDB.minimap.hide)
+end
+
+function PGM:SetMinimapShown(show)
+    if not (icon and ldb and PandyGuildDB) then return false end
+    PandyGuildDB.minimap = PandyGuildDB.minimap or {}
+    PandyGuildDB.minimap.hide = not show or nil
+    if show then icon:Show(NAME) else icon:Hide(NAME) end
+    return true
+end
+
+function PGM:HasMinimapButton()
+    return icon ~= nil and ldb ~= nil
+end
+
 if not ldb then return end
 
 local function onlineText()
@@ -53,23 +73,6 @@ local function refresh()
     if launcher then launcher.text = onlineText() end
 end
 PGM:On("ROSTER", refresh)
-
--- Show or hide the minimap button (broker displays keep theirs).
-function PGM:MinimapShown()
-    return not (PandyGuildDB and PandyGuildDB.minimap and PandyGuildDB.minimap.hide)
-end
-
-function PGM:SetMinimapShown(show)
-    if not (icon and PandyGuildDB) then return false end
-    PandyGuildDB.minimap = PandyGuildDB.minimap or {}
-    PandyGuildDB.minimap.hide = not show or nil
-    if show then icon:Show(NAME) else icon:Hide(NAME) end
-    return true
-end
-
-function PGM:HasMinimapButton()
-    return icon ~= nil
-end
 
 PGM:On("LOGIN", function()
     refresh()

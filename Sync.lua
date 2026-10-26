@@ -64,9 +64,10 @@ local OVERLAP = 3600        -- catch-up re-asks this much before our newest
 local HELLO_GAP = 120
 local HELLO_EVERY = 20 * 60
 local MAX_DUMP_RAIDS = 30   -- a first-time catch-up brings this many recent raid nights
+local GONE_KEEP = 90 * 86400   -- how long a deleted night is remembered by raid and time
 
 local Sync = { queue = {}, sent = 0, recv = 0, applied = 0, officers = {}, helloAt = 0, tries = {},
-               offerTimers = {}, offered = {}, dumped = {} }
+               offerTimers = {}, offered = {}, dumped = {}, overheard = {} }
 PGM.Sync = Sync
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -91,6 +92,11 @@ local function store()
     s.caught = s.caught or s.newest
     s.teamDel = s.teamDel or {}
     s.raidDel = s.raidDel or {}
+    -- Deleted nights by raid, difficulty, times and leaders (not just id),
+    -- so another officer's record of the same night, saved later under its
+    -- own id, doesn't bring it back: { instance, diffID, start, stop,
+    -- leaders, u }.
+    s.raidGone = s.raidGone or {}
     s.alias = s.alias or {}
     s.joinU = s.joinU or {}
     g.linkU = g.linkU or {}
@@ -116,6 +122,17 @@ end
 local function bump(u)
     local _, s = store()
     if s and u and u > s.newest then s.newest = u end
+end
+
+-- Our own edit: `newest` moves, and so does `caught` if we were caught up
+-- before it (making a change can't have made us miss anything). Otherwise
+-- the officer who made a change was sent it back at their next hello.
+local function mine(u)
+    local _, s = store()
+    if not (s and u) then return end
+    local wasCaught = s.caught >= s.newest
+    bump(u)
+    if wasCaught and u > s.caught then s.caught = u end
 end
 
 local function clean(text)
@@ -369,7 +386,16 @@ local function sendRaid(s)
     local fixed = table.concat({ "1S", s.id, s.u or 0, s.start or 0, s.stop or 0, s.instance or 0,
         s.diffID or 0, s.team or "", s.teamU or 0 }, SEP)
     local name = fit(s.name or "Raid", #fixed + #leaders + 3)
-    local bosses = fit(table.concat(s.bosses or {}, ";"), #fixed + #name + #leaders + 3)
+    -- Whole bosses only: as many as fit, never half a name.
+    local room = 250 - (#fixed + #name + #leaders + 3)
+    local kept = {}
+    for _, boss in ipairs(s.bosses or {}) do
+        boss = clean(boss)
+        local size = #table.concat(kept, ";") + (#kept > 0 and 1 or 0) + #boss
+        if size > room then break end
+        kept[#kept + 1] = boss
+    end
+    local bosses = table.concat(kept, ";")
     send("1S", s.id, s.u or 0, s.start or 0, s.stop or 0, s.instance or 0, s.diffID or 0,
         s.team or "", s.teamU or 0, name, bosses, leaders)
     -- Attendees in as many records as it takes; each one only adds.
@@ -396,7 +422,7 @@ end
 
 function PGM:SyncTeam(t)
     t.u = PGM.Stamp(t.u)
-    bump(t.u)
+    mine(t.u)
     sendTeam(t)
 end
 
@@ -411,17 +437,19 @@ function PGM:SyncSpot(t, guid)
         t.removed[guid] = u
     end
     if not u then return end
-    bump(u)
+    mine(u)
     sendSpot(t, guid)
 end
 
-function PGM:SyncTeamDeleted(id)
+function PGM:SyncTeamDeleted(id, teamU)
     local _, s = store()
     if not s then return end
     local t = teamById(id)
-    local now = PGM.Stamp(t and t.u)
+    -- Past the team's last stamp (passed in: the team may be gone already),
+    -- or receivers that have it newer would ignore the delete.
+    local now = PGM.Stamp(math.max(teamU or 0, t and t.u or 0))
     s.teamDel[id] = now
-    bump(now)
+    mine(now)
     send("1K", id, now)
 end
 
@@ -429,7 +457,7 @@ function PGM:SyncLink(guid)
     local g = store()
     if not g then return end
     g.linkU[guid] = PGM.Stamp(g.linkU[guid])
-    bump(g.linkU[guid])
+    mine(g.linkU[guid])
     sendLink(g, guid)
 end
 
@@ -440,7 +468,7 @@ function PGM:SyncLinks(guids)
     local rows = {}
     for _, guid in ipairs(guids) do
         g.linkU[guid] = PGM.Stamp(g.linkU[guid])
-        bump(g.linkU[guid])
+        mine(g.linkU[guid])
         rows[#rows + 1] = linkRow(g, guid)
     end
     sendPacked("1A", rows, true)
@@ -448,8 +476,16 @@ end
 
 function PGM:SyncRaid(s)
     s.u = PGM.Stamp(s.u)
-    bump(s.u)
+    mine(s.u)
     sendRaid(s)
+end
+
+-- Many nights at once (Match past raids): at low priority, so they don't
+-- hold up everything else.
+function PGM:SyncRaids(list)
+    bulkMode = true
+    for _, s in ipairs(list) do PGM:SyncRaid(s) end
+    bulkMode = false
 end
 
 -- A night can be known by several ids (each officer who recorded it made
@@ -464,12 +500,39 @@ function PGM:SyncRaidDeleted(session)
     for remote, localId in pairs(s.alias) do
         if localId == session.id then ids[#ids + 1] = remote end
     end
-    bump(stamp)
+    mine(stamp)
+    PGM:RememberGoneNight(session, stamp)
     for _, id in ipairs(ids) do
         s.raidDel[id] = stamp
         send("1D", id, stamp, session.instance or 0, session.diffID or 0, session.start or 0, session.stop or 0,
             leadersText(session))
     end
+end
+
+-- A deleted night, kept by raid, difficulty, times and leaders (pruned
+-- after GONE_KEEP). True if `night` is one of them.
+function PGM:RememberGoneNight(night, u)
+    local _, s = store()
+    if not (s and night and night.instance and night.start) then return end
+    local leaders
+    for guid in pairs(night.leaders or {}) do
+        leaders = leaders or {}
+        leaders[guid] = true
+    end
+    table.insert(s.raidGone, { instance = night.instance, diffID = night.diffID, start = night.start,
+        stop = night.stop, leaders = leaders, u = u })
+    local cutoff = PGM.Now() - GONE_KEEP
+    for i = #s.raidGone, 1, -1 do
+        if (s.raidGone[i].start or 0) < cutoff then table.remove(s.raidGone, i) end
+    end
+end
+
+function PGM:IsGoneNight(night)
+    local _, s = store()
+    for _, gone in ipairs(s and s.raidGone or {}) do
+        if PGM:SameRaidNight(gone, night) then return true end
+    end
+    return false
 end
 
 -- Join dates an officer knows (from GRM, say) go to everyone: stamped,
@@ -482,7 +545,7 @@ function PGM:SyncJoins(guids)
         local rec = g.members[guid]
         if rec and rec.joined then
             s.joinU[guid] = PGM.Stamp(s.joinU[guid])
-            bump(s.joinU[guid])
+            mine(s.joinU[guid])
             rows[#rows + 1] = { guid, s.joinU[guid], rec.joined }
         end
     end
@@ -512,7 +575,7 @@ function PGM:SyncOfficerRank(rank)
     if not s then return end
     s.officerRank = rank
     s.cfgU = PGM.Stamp(s.cfgU)
-    bump(s.cfgU)
+    mine(s.cfgU)
     send("1C", s.cfgU, rank or "")
 end
 
@@ -557,14 +620,28 @@ local function dump(target, since)
     local sent = 0
     for i = #sessions, 1, -1 do
         local r = sessions[i]
-        if sent >= MAX_DUMP_RAIDS then break end
+        -- A first catch-up brings the recent nights only; after that,
+        -- every night changed since.
+        if since == 0 and sent >= MAX_DUMP_RAIDS then break end
         if r.id and (r.u or 0) > since then
             sendRaid(r)
             sent, n = sent + 1, n + 1
         end
     end
+    -- Deletes say which raid and when, so a copy that knows the night
+    -- under its own id finds it too.
+    local goneAt = {}
+    for _, gone in ipairs(s.raidGone) do goneAt[gone.u] = gone end
     for id, u in pairs(s.raidDel) do
-        if u > since then send("1D", id, u) n = n + 1 end
+        if u > since then
+            local gone = goneAt[u]
+            if gone then
+                send("1D", id, u, gone.instance or 0, gone.diffID or 0, gone.start or 0, gone.stop or 0, leadersText(gone))
+            else
+                send("1D", id, u)
+            end
+            n = n + 1
+        end
     end
     local joins = {}
     for guid, u in pairs(s.joinU) do
@@ -585,11 +662,13 @@ end
 -- INBOUND
 -- ============================================================
 
+-- Pages and caches refresh at most every few seconds while records pour
+-- in (a catch-up is a record a second for minutes).
 local dirty = {}
 local function changed(what)
     if dirty[what] then return end
     dirty[what] = true
-    C_Timer.After(1, function()
+    C_Timer.After(3, function()
         dirty[what] = nil
         if what == "ROSTER" and PGM.RebuildAlts then PGM:RebuildAlts() end
         PGM:Fire(what)
@@ -619,17 +698,32 @@ end
 -- The local raid night a remote one is: same id, a known alias, or the same
 -- night by raid, difficulty and time (Attendance.lua's PGM:SameRaidNight),
 -- which then becomes an alias.
-local function findRaid(id, night)
+--
+-- A record from an older copy has no leaders, and its attendees come after
+-- it: matched by time alone it could be another team's raid at the same
+-- time. So it isn't (handlers.P matches it once its attendees are in), and
+-- a delete without leaders only takes a night if exactly one fits.
+local function findRaid(id, night, forDelete)
     local g, s = store()
     local localId = s.alias[id] or id
     for _, r in ipairs(g.raids and g.raids.sessions or {}) do
         if r.id == localId then return r end
     end
-    if night and night.instance and night.start then
+    if not (night and night.instance and night.start) then return nil end
+    if night.leaders then
         local r = PGM:FindRaidNight(night)
         if r then
             if r.id ~= id then s.alias[id] = r.id end
             return r
+        end
+    elseif forDelete then
+        local hit, n = nil, 0
+        for _, r in ipairs(g.raids and g.raids.sessions or {}) do
+            if PGM:SameRaidNight(r, night) then hit, n = r, n + 1 end
+        end
+        if n == 1 then
+            if hit.id ~= id then s.alias[id] = hit.id end
+            return hit
         end
     end
 end
@@ -686,7 +780,7 @@ function handlers.K(f)
         if tt.id == id then table.remove(g.teams, i) break end
     end
     for _, r in ipairs(g.raids and g.raids.sessions or {}) do
-        if r.team == id then r.team = nil end
+        if r.team == id then r.team, r.teamFreed = nil, true end
     end
     applied(u)
     changed("TEAMS")
@@ -755,6 +849,11 @@ function handlers.S(f)
     if r and (s.raidDel[r.id] or 0) >= u then return end
     if not r then
         if s.alias[id] and (s.raidDel[s.alias[id]] or 0) >= u then return end
+        -- A night that was deleted, recorded again under another id.
+        if PGM:IsGoneNight({ instance = instance, diffID = diffID, start = start, stop = stop, leaders = leaders }) then
+            s.raidDel[id] = u
+            return
+        end
         r = { id = id, start = start, stop = stop, instance = instance, diffID = diffID,
               name = f[10] ~= "" and f[10] or "Raid", present = {}, bosses = {}, u = 0, teamU = 0 }
         -- Keep the list in time order, and no longer than our own cap.
@@ -802,6 +901,20 @@ function handlers.P(f)
         local n = 0
         for _ in pairs(r.present) do n = n + 1 end
         r.count = n
+        -- An older copy's night (no leaders) wasn't matched by time when it
+        -- came; now its attendees say whether it's a night we have.
+        if not r.leaders then
+            for i, x in ipairs(g.raids.sessions) do
+                if x ~= r and PGM:SameRaidNight(x, r) then
+                    PGM:MergeRaidNight(x, r)
+                    s.alias[r.id] = x.id
+                    for j, y in ipairs(g.raids.sessions) do
+                        if y == r then table.remove(g.raids.sessions, j) break end
+                    end
+                    break
+                end
+            end
+        end
         changed("RAIDS")
     end
 end
@@ -816,7 +929,8 @@ function handlers.D(f)
     s.raidDel[id] = u
     local night = { instance = known(f[4]), diffID = known(f[5]), start = known(f[6]), stop = known(f[7]),
                     leaders = leadersOf(f[8]) }
-    local r = findRaid(id, night)
+    local r = findRaid(id, night, true)
+    PGM:RememberGoneNight(r or night, u)
     if r and (r.u or 0) <= u then
         for i, x in ipairs(g.raids.sessions) do
             if x == r then table.remove(g.raids.sessions, i) break end
@@ -971,6 +1085,11 @@ end
 local DUMP_GAP = 180
 function handlers.R(f, sender)
     local target, since = f[2], tonumber(f[3]) or 0
+    -- A catch-up for someone else: note it, in case I hear all of it (E).
+    if not isMe(target) and target then
+        Sync.overheard[norm(target) .. "|" .. norm(sender)] = { since = since, at = GetTime() }
+        return
+    end
     if not (isMe(target) and PGM:CanEdit()) then return end
     local key = norm(sender)
     local now = GetTime()
@@ -982,6 +1101,24 @@ function handlers.R(f, sender)
 end
 
 function handlers.E(f, sender, rec)
+    -- Someone else's catch-up that I heard from its request on, asked from
+    -- no later than I'd caught up to: I now hold all of it too. Without
+    -- this, each officer edit set off a catch-up for every player online at
+    -- their next hello.
+    local key = norm(sender) .. "|" .. norm(f[2] or "")
+    local heard = Sync.overheard[key]
+    if not isMe(f[2]) and heard and PGM:IsOfficerRec(rec) then
+        Sync.overheard[key] = nil
+        local _, s = store()
+        local theirs = clampU(f[4])
+        -- A loading screen since (into or out of an instance) means we
+        -- may have missed some of it.
+        local zoned = (Sync.zonedAt or 0) >= heard.at
+        if s and theirs and heard.since <= s.caught and not zoned and not blocked() and GetTime() - heard.at < 600 then
+            s.caught = math.max(s.caught, theirs)
+            bump(theirs)
+        end
+    end
     if isMe(f[2]) and PGM:IsOfficerRec(rec) then
         -- I now hold everything that officer had (a record I couldn't use,
         -- like a spot for someone not in my roster, included), so I've
@@ -1006,6 +1143,7 @@ local WRITES = { T = true, K = true, M = true, A = true, S = true, P = true, D =
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
+PGM:RegisterEvent("PLAYER_ENTERING_WORLD", function() Sync.zonedAt = GetTime() end)
 frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
     prefix, msg, channel, sender = P(prefix), P(msg), P(channel), P(sender)
     if prefix ~= PREFIX or channel ~= "GUILD" or not (msg and sender) then return end
@@ -1051,11 +1189,36 @@ PGM:On("ROSTER", function()
     C_Timer.After(8, sendHello)
     C_Timer.NewTicker(HELLO_EVERY, sendHello)
     C_Timer.After(15, function() PGM:SyncMyMain() end)
+    -- Bookkeeping that would only grow: ids of nights no longer kept (an
+    -- alias for one would only re-add a night past the oldest kept, which
+    -- is trimmed again), and addon users not heard from in six months.
+    do
+        local _, s = store()
+        local kept = {}
+        for _, r in ipairs(g.raids and g.raids.sessions or {}) do if r.id then kept[r.id] = true end end
+        for remote, localId in pairs(s.alias) do
+            if not kept[localId] then s.alias[remote] = nil end
+        end
+        local cutoff = PGM.Now() - 180 * 86400
+        for guid, u in pairs(g.users or {}) do
+            if (u.seen or 0) < cutoff then g.users[guid] = nil end
+        end
+    end
     -- Settled: caught up, or clearly not getting a catch-up (no offer in a
     -- minute and a half, or one that never finished in ten minutes). Until
     -- then this copy may be behind on what other officers changed, so
     -- Teams.lua waits for it before importing from notes.
-    C_Timer.After(90, function() if not Sync.awaiting then Sync.settled = true end end)
+    -- Messages don't go out inside an instance, so time spent there doesn't
+    -- count: settled once a hello has been out a minute and a half with no
+    -- catch-up under way.
+    local quiet = 0
+    local settler
+    settler = C_Timer.NewTicker(15, function()
+        if Sync.settled then settler:Cancel() return end
+        if blocked() or Sync.awaiting then return end
+        quiet = quiet + 15
+        if quiet >= 90 then Sync.settled = true end
+    end)
     C_Timer.After(600, function() Sync.settled = true end)
     -- Before 0.7.1 a team's rename, schedule, tags and "Keep in sync" stayed
     -- on the officer's own copy, and didn't change the team's stamp. So once,
@@ -1069,7 +1232,7 @@ PGM:On("ROSTER", function()
         for _, t in ipairs(g.teams or {}) do
             if t.created then
                 t.u = (t.u or 0) + 1
-                bump(t.u)
+                mine(t.u)
                 sendTeam(t)
             end
         end

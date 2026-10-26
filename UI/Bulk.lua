@@ -37,10 +37,7 @@ local function hotkey()
     return (k and k ~= "") and k or DEFAULT_HOTKEY
 end
 
-local function rankName(i)
-    local n = GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(i + 1))
-    return (n and n ~= "") and n or ("Rank " .. (i + 1))
-end
+local rankName = PGM.RankName
 
 -- The ranks below yours: the only ones you can act on or move people to.
 local function ranksBelowMe()

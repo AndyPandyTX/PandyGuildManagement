@@ -122,14 +122,20 @@ end
 function PGM:DeleteTeam(id)
     local list = teams()
     if not list or not canEdit() then return end
+    local teamU
     for i, t in ipairs(list) do
-        if t.id == id then table.remove(list, i) break end
+        if t.id == id then
+            teamU = t.u
+            table.remove(list, i)
+            break
+        end
     end
+    -- Its nights lose their tag, and Match past raids may tag them again.
     local g = PGM.GuildDB()
     for _, s in ipairs(g.raids and g.raids.sessions or {}) do
-        if s.team == id then s.team = nil end
+        if s.team == id then s.team, s.teamFreed = nil, true end
     end
-    share("SyncTeamDeleted", id)
+    share("SyncTeamDeleted", id, teamU)
     PGM:Fire("TEAMS")
 end
 
@@ -268,28 +274,31 @@ function PGM:GuessTeam(s)
     return best
 end
 
--- Matches every unassigned raid night to a team. Returns how many it placed.
+-- Matches every untagged raid night to a team: not one an officer untagged
+-- by hand, but one whose team was deleted, yes. Returns how many it placed.
 function PGM:AutoAssignRaids()
     local g = PGM.GuildDB()
-    local n = 0
     if not canEdit() then return 0 end
+    local placed = {}
     for _, s in ipairs(g and g.raids and g.raids.sessions or {}) do
-        if not s.team then
-            s.team = PGM:GuessTeam(s)
-            if s.team then
-                n = n + 1
-                s.teamU = PGM.Stamp(s.teamU)
-                share("SyncRaid", s)
+        if not s.team and ((s.teamU or 0) == 0 or s.teamFreed) then
+            local team = PGM:GuessTeam(s)
+            if team then
+                s.team, s.teamU, s.teamFreed = team, PGM.Stamp(s.teamU), nil
+                placed[#placed + 1] = s
             end
         end
     end
-    if n > 0 then PGM:Fire("RAIDS") end
-    return n
+    if #placed > 0 then
+        share("SyncRaids", placed)
+        PGM:Fire("RAIDS")
+    end
+    return #placed
 end
 
 function PGM:AssignRaid(s, teamId)
     if not canEdit() then return end
-    s.team = teamId
+    s.team, s.teamFreed = teamId, nil
     s.teamU = PGM.Stamp(s.teamU)
     share("SyncRaid", s)
     PGM:Fire("RAIDS")
@@ -398,11 +407,14 @@ local function looksTrial(rec)
         or (rec.onote and rec.onote:lower():find("trial", 1, true))
 end
 
--- Adds every tagged main not on the team yet. Returns how many joined.
+-- Adds every tagged main not on the team yet. Returns how many joined, or
+-- nil before this login's catch-up is in: a spot added now is stamped now,
+-- so it would beat another officer's removal this copy hasn't heard yet.
 function PGM:ImportTeamFromNotes(id, quiet)
     local t = PGM:TeamById(id)
     local g = PGM.GuildDB()
     if not (t and g) or #PGM:TeamTags(t) == 0 or not canEdit() then return 0 end
+    if PGM.SyncSettled and not PGM:SyncSettled() then return nil end
     t.removed = t.removed or {}
     local n, added = 0, {}
     for guid, rec in pairs(g.members) do
@@ -492,7 +504,7 @@ function PGM:FindTeamsInNotes()
             share("SyncTeam", team)
             created[#created + 1] = name
         end
-        joined = joined + PGM:ImportTeamFromNotes(team.id, true)
+        joined = joined + (PGM:ImportTeamFromNotes(team.id, true) or 0)
     end
     PGM:Fire("TEAMS")
     return created, joined
@@ -512,7 +524,7 @@ end
 
 local PASTE_ROLES = {
     tank = "TANK", tanks = "TANK", tnk = "TANK", prot = "TANK", protection = "TANK",
-    guardian = "TANK", vengeance = "TANK", brewmaster = "TANK",
+    guardian = "TANK", vengeance = "TANK", brewmaster = "TANK", blood = "TANK",
     healer = "HEALER", healers = "HEALER", heal = "HEALER", heals = "HEALER", hls = "HEALER",
     resto = "HEALER", restoration = "HEALER", disc = "HEALER", discipline = "HEALER", holy = "HEALER",
     mw = "HEALER", mistweaver = "HEALER", preservation = "HEALER",
@@ -697,7 +709,7 @@ PGM:On("ROSTER", function()
     importedFor = v
     local added = 0
     for _, t in ipairs(PGM:Teams()) do
-        if t.autoSync then added = added + PGM:ImportTeamFromNotes(t.id, true) end
+        if t.autoSync then added = added + (PGM:ImportTeamFromNotes(t.id, true) or 0) end
     end
     if added > 0 then PGM:Fire("TEAMS") end
 end)

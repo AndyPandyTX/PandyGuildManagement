@@ -86,8 +86,16 @@ local function create()
 
     f.import = W.Button(f, "Import", 100, 26)
     f.import:SetPoint("BOTTOMRIGHT", -14, 14)
+    -- Import what's in the box now, checked again: text pasted in the last
+    -- moment may not have been previewed yet.
     f.import:SetScript("OnClick", function()
-        f.opts.import(f.edit:GetText() or "")
+        local text = f.edit:GetText() or ""
+        local _, ok = f.opts.preview(text)
+        if not ok then
+            preview()
+            return
+        end
+        f.opts.import(text)
         f:Hide()
     end)
     return f

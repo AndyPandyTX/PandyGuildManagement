@@ -298,7 +298,11 @@ local function build(p)
             return
         end
         local n = PGM:ImportTeamFromNotes(t.id)
-        PGM.Print(("Added %d to %s from guild notes."):format(n, t.name))
+        if not n then
+            PGM.Print("Still getting the guild's raid teams from other officers. Try again in a minute.")
+        else
+            PGM.Print(("Added %d to %s from guild notes."):format(n, t.name))
+        end
     end)
     p.sync = W.Check(d, "Keep in sync", function()
         local t = selectedTeam()

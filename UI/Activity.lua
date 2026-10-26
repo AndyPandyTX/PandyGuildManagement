@@ -162,11 +162,15 @@ end
 
 local function updateRow(r, p)
     r.p = p
-    r.name:SetText(PGM.ColorName(p.rec))
+    -- The figures are cached for a while; who's online is read now (the
+    -- roster replaces its records on every read).
+    local g = PGM.GuildDB()
+    local rec = g and g.members[p.guid] or p.rec
+    r.name:SetText(PGM.ColorName(rec))
     r.hours:SetText(p.hours .. "h")
     r.usual:SetText(PGM.UsualTime(p))
     r.day:SetText(PGM.TopDay(p))
-    r.last:SetText(p.rec.online and (PGM.Hex(C.jade) .. "Online|r") or PGM.AgoText(p.last * 3600))
+    r.last:SetText(rec.online and (PGM.Hex(C.jade) .. "Online|r") or PGM.AgoText(p.last * 3600))
 end
 
 local function build(p)

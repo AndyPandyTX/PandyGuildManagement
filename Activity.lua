@@ -28,7 +28,7 @@ local PGM = NS.PGM
 local P = PGM.Plain
 
 local SAMPLE_EVERY = 5 * 60
-local KEEP_HOURS = 120 * 24
+local KEEP_HOURS = 92 * 24      -- the longest page shows 90 days
 local CATCHUP_HOURS = 7 * 24
 
 local lastSample = 0

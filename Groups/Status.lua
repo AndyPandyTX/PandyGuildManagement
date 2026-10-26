@@ -10,7 +10,6 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 
 local GAP = 60

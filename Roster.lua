@@ -76,8 +76,10 @@ function PGM:ScanRoster()
                 level      = P(level),
                 class      = P(classFile),
                 zone       = P(zone),
-                note       = P(note) or "",
-                onote      = P(officerNote) or "",
+                -- nil when the game keeps a note secret (an empty note is
+                -- ""), so the one we knew is kept rather than wiped.
+                note       = P(note),
+                onote      = P(officerNote),
                 online     = online,
                 mobile     = P(isMobile) and true or false,
                 ach        = P(achPoints),
@@ -176,11 +178,17 @@ local function count(t)
 end
 
 -- Fields that keep their old value when the game kept them secret this time.
-local KEEP_FIELDS = { "rank", "rankIndex", "level", "class" }
+local KEEP_FIELDS = { "rank", "rankIndex", "level", "class", "note", "onote" }
+
+-- Departures held back from a read that lost a third of the guild:
+-- { n, first = GetTime(), set = { [guid] = true } }. Believed once a read at
+-- least SUSPECT_CONFIRM seconds later is missing exactly the same people.
+local suspect
+local SUSPECT_CONFIRM = 60
 
 -- Versions other parts check to skip work when nothing they care about
 -- changed: membersVersion on any join or leave, notesVersion when that or
--- anyone's note, officer note or rank changed.
+-- anyone's name, note, officer note or rank (or its name) changed.
 PGM.membersVersion, PGM.notesVersion = 0, 0
 
 function PGM:ApplyRoster(snap, complete)
@@ -200,6 +208,7 @@ function PGM:ApplyRoster(snap, complete)
         for _, k in ipairs(KEEP_FIELDS) do
             if new[k] == nil and old then new[k] = old[k] end
         end
+        new.note, new.onote = new.note or "", new.onote or ""
         new.race = (d and d.race) or (old and old.race)
         if d and d.scoreKnown then new.score = d.score else new.score = old and old.score end
         if d and d.profKnown then new.prof = d.prof else new.prof = old and old.prof end
@@ -223,7 +232,8 @@ function PGM:ApplyRoster(snap, complete)
     for guid, new in pairs(snap) do
         local old = g.members[guid]
         enrich(new, old)
-        if not old or old.note ~= new.note or old.onote ~= new.onote or old.rankIndex ~= new.rankIndex then
+        if not old or old.note ~= new.note or old.onote ~= new.onote or old.rankIndex ~= new.rankIndex
+            or old.rank ~= new.rank or old.name ~= new.name then
             PGM.notesVersion = PGM.notesVersion + 1
         end
         if not old then
@@ -259,11 +269,30 @@ function PGM:ApplyRoster(snap, complete)
         for guid in pairs(g.members) do
             if not snap[guid] then gone[#gone + 1] = guid end
         end
-        -- A third of the guild vanishing at once is a bad read, not an exodus.
+        -- A third of the guild vanishing at once is usually a bad read. But a
+        -- real purge (an officer's mass kick while we were away) looks the
+        -- same, so when the same people are still missing on reads a minute
+        -- apart, they're gone.
         local members = count(g.members)
+        local believe = true
         if #gone > 10 and #gone > members / 3 then
-            PGM.Debug("ignoring", #gone, "departures from a suspicious read")
+            local same = suspect and suspect.n == #gone
+            for _, guid in ipairs(gone) do
+                if not same then break end
+                same = suspect.set[guid] or false
+            end
+            if not same then
+                suspect = { n = #gone, first = GetTime(), set = {} }
+                for _, guid in ipairs(gone) do suspect.set[guid] = true end
+                believe = false
+            elseif GetTime() - suspect.first < SUSPECT_CONFIRM then
+                believe = false
+            end
+        end
+        if not believe then
+            PGM.Debug("holding", #gone, "departures from a suspicious read until a later read agrees")
         else
+            suspect = nil
             local leaving = {}
             for _, guid in ipairs(gone) do leaving[guid] = true end
             local me = g.members[PGM.MyGuid and PGM:MyGuid() or ""]

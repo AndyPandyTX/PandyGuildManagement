@@ -94,7 +94,8 @@ local function paint()
     panel.recipe:SetText(current.name or "")
     local list = PGM:KnownCrafters(current.line, current.recipe)
     if not list then
-        panel.count:SetText(PGM.Hex(C.text3) .. "Asking the guild...|r")
+        panel.count:SetText(PGM.Hex(C.text3) .. (PGM:CraftersAsking(current.line, current.recipe)
+            and "Asking the guild...|r" or "No answer from the server. Pick the recipe again to ask again.|r"))
         panel.list:SetData({})
         return
     end

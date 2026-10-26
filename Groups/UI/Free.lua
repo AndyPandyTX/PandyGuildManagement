@@ -4,7 +4,6 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 local C = PGM.C
 local UI = PGM.UI
@@ -104,17 +103,14 @@ local function build(p)
 end
 
 local function refresh(p)
-    if GU.Off(p) then
-        if p.offHook then p.offHook() end
-        return
-    end
+    if GU.Off(p) then return end
     local list = G:WhoList()
     local counts = { l = 0, f = 0 }
     for _, it in ipairs(list) do
         if counts[it.state] then counts[it.state] = counts[it.state] + 1 end
     end
     p.title:SetText(("Who's free: %d looking, %d free"):format(counts.l, counts.f))
-    p.sub:SetText("Guildies running Pandy Guild Groups say when they're free or grouped. Inside an instance they go quiet, and show as busy.")
+    p.sub:SetText("Guildies running Pandy Guild Management say when they're free or grouped. Inside an instance they go quiet, and show as busy.")
     p.looking:SetActive(G.opt("looking") and true or false)
     for k, chip in pairs(p.kindChips) do chip:SetActive(G.opt("lookingKinds")[k] and true or false) end
     p.addonOnly:SetActive(G.opt("freeAddonOnly") and true or false)

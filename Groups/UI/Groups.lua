@@ -8,7 +8,6 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 local C = PGM.C
 local UI = PGM.UI
@@ -67,7 +66,10 @@ function G.UI.FillForm(p)
         for _, r in ipairs(G.ROLES) do form.need[r]:Set(p.need[r]) end
     end
     form.note:SetText(p.note or "")
-    form.when:SetText((p.start or 0) > 0 and G.StartText(p.start):gsub("^Today ", "") or "")
+    local when = (p.start or 0) > 0 and G.StartText(p.start):gsub("^Today ", "") or ""
+    form.when:SetText(when)
+    -- Left as it is, Start keeps this exact start (see G.ParseWhen).
+    form.keepStart = (p.id and (p.start or 0) > 0) and { text = when, start = p.start } or nil
     form.team:SetValue(p.team or "")
     form.err:SetText("")
 end
@@ -83,7 +85,7 @@ local function teamChoices()
 end
 
 local function submit()
-    local start = G.ParseWhen(form.when:GetText())
+    local start = G.ParseWhen(form.when:GetText(), form.editId and form.keepStart)
     if not start then
         form.err:SetText(PGM.Hex(C.red) .. "Start: leave empty for now, or 20:30, Sat 20:30, +30.|r")
         return
@@ -268,14 +270,14 @@ end
 -- COMP SLOTS
 -- ============================================================
 
--- Small role icons (the game's tiny role atlas), or the role sheet's.
+-- Small role icons (the game's tiny role atlas), or the role sheet's
+-- square (G.ROLE_COORDS, in pixels of the 64x64 sheet).
 local ROLE_ATLAS = { T = "roleicon-tiny-tank", H = "roleicon-tiny-healer", D = "roleicon-tiny-dps" }
-local ROLE_COORDS = { T = { 0, 19 / 64, 22 / 64, 41 / 64 }, H = { 20 / 64, 39 / 64, 1 / 64, 20 / 64 },
-                      D = { 20 / 64, 39 / 64, 22 / 64, 41 / 64 } }
 local function setRoleIcon(tex, r)
     if not (tex.SetAtlas and pcall(tex.SetAtlas, tex, ROLE_ATLAS[r])) then
-        tex:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
-        tex:SetTexCoord(unpack(ROLE_COORDS[r]))
+        local c = G.ROLE_COORDS[r]
+        tex:SetTexture(G.ROLE_SHEET)
+        tex:SetTexCoord(c[1] / 64, c[2] / 64, c[3] / 64, c[4] / 64)
     end
 end
 
@@ -343,10 +345,9 @@ local COLS = {
     { "Character", 374, 78 }, { "Main", 456, 78 }, { "Warband", 538, 78 },
 }
 
+-- A spec's name by id, or nil (G.SpecInfo's first result).
 local function specName(id)
-    if not (id and id > 0 and GetSpecializationInfoByID) then return nil end
-    local ok, _, name = pcall(GetSpecializationInfoByID, id)
-    return ok and PGM.Plain(name) or nil
+    return (G.SpecInfo(id))
 end
 
 -- "3084 [D][h]", in the score's colour, or a dash.
@@ -587,7 +588,7 @@ local function refreshMine()
     local asks = G:Asks()
     mineUI.list:SetData(asks, true)
     mineUI.empty:SetText(#asks == 0 and (p or listed) and
-        "Nobody yet. Group Finder applicants and guildies asking through Pandy Guild Groups show here, guildies first." or "")
+        "Nobody yet. Group Finder applicants and guildies asking through the guild group finder show here, guildies first." or "")
 end
 
 -- ============================================================
@@ -945,107 +946,97 @@ end
 
 -- Titles can't be read by addons, but the Group Finder's own search box
 -- searches them on Blizzard's side: whatever is typed there goes with every
--- search, ours included. So while Browse is showing, the box moves into the
+-- search, ours included. Addons can't type into it for you (Blizzard turns
+-- SetText off on it), so while Browse is showing the box itself sits in the
 -- Filters panel, the way OAK LFG Sorter does it, and goes back when Browse
--- closes. Enter and its clear button search from here. If another addon has
--- the box already (OAK, with its panel open), it's left where it is.
-local borrowed   -- the box's own place and scripts, while it's here
-
-local SCRIPTS = { "OnEnterPressed", "OnEscapePressed", "OnTabPressed", "OnArrowPressed", "OnTextChanged" }
+-- closes. If another addon has the box already (OAK, with its panel open),
+-- it's left where it is.
+--
+-- TAINT: nothing of Blizzard's is replaced or dressed up. The box keeps its
+-- parent (the Group Finder's list of groups) and all its own scripts, so
+-- they run as Blizzard wrote them, against Blizzard's real panel: Enter and
+-- the clear button search there as they always do. Our part is hooked on
+-- after theirs (HookScript leaves their handler as it is) and does nothing
+-- unless the box is here. What's left is moving it: its anchors, strata and
+-- level are set from addon code. That's layout, not a Lua value Blizzard's
+-- code reads, so it doesn't taint that code; the cost is that the box (with
+-- Blizzard's Refresh button and autocomplete list, which hang off it) sits
+-- over our panel meanwhile. Keeping its parent also means the box shows only
+-- while Blizzard's list of groups is open; the note under it says so.
+local borrowed     -- the box's own anchors, size, strata and level, while it's here
+local boxHooked = false
 
 local function blizzardBox()
     local sp = LFGListFrame and LFGListFrame.SearchPanel
     return sp and sp.SearchBox, sp
 end
 
--- Blizzard's own handlers on the box (focus, text, autocomplete) look on
--- its parent for the panel's fields: the box, its autocomplete list, the
--- category and filters. While it's here the parent is our holder, so the
--- holder carries them too, kept to the category picked on Browse.
-local function dressHost(host, home)
+-- After Blizzard's Enter or clear button, which searched the category
+-- picked in its own window: if Browse is on another one, search that too,
+-- so the list shows what Browse is set to. Only while the box is here.
+local function afterBlizzardSearch()
+    if not borrowed then return end
+    local _, home = blizzardBox()
     local cat
     for _, c in ipairs(G.FINDER_CATS) do
         if c.id == state.cat then cat = c end
     end
-    host.SearchBox = home.SearchBox
-    host.AutoCompleteFrame = home.AutoCompleteFrame
-    host.categoryID = cat and cat.cat or home.categoryID
-    host.filters = (cat and cat.filters and cat.filters()) or home.filters or 0
-    host.preferredFilters = home.preferredFilters or 0
+    if cat and home and home.categoryID ~= cat.cat then
+        local ok, why = G:SearchFinder(state.cat)
+        if not ok then PGM.Print(why) end
+    else
+        G.searchKind, G.searchedAt = state.cat, GetTime()
+    end
+    UI:Refresh()
 end
 
 local function borrowSearchBox()
     local box, home = blizzardBox()
     local host = board.searchHost
-    if borrowed then
-        if box and host then dressHost(host, home) end   -- the category may have changed
-        return
-    end
     if not host then return end
     if not box then
         board.searchNote:SetText("Open the Group Finder once to search by key.")
         return
     end
-    if box:GetParent() ~= home then
-        board.searchNote:SetText("The Group Finder's search box is in use (OAK?).")
-        return
+    if not borrowed then
+        if box:GetParent() ~= home then
+            board.searchNote:SetText("The Group Finder's search box is in use (OAK?).")
+            return
+        end
+        borrowed = { points = {}, w = box:GetWidth(), h = box:GetHeight(),
+                     strata = box:GetFrameStrata(), level = box:GetFrameLevel() }
+        for i = 1, (box.GetNumPoints and box:GetNumPoints()) or 1 do
+            local point, rel, relPoint, x, y = box:GetPoint(i)
+            borrowed.points[i] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
+        end
+        if not boxHooked then
+            boxHooked = true
+            box:HookScript("OnEnterPressed", afterBlizzardSearch)
+            if box.clearButton then box.clearButton:HookScript("OnClick", afterBlizzardSearch) end
+        end
+        box:ClearAllPoints()
+        box:SetPoint("TOPLEFT", host, "TOPLEFT", 6, -1)
+        box:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 1)
+        box:SetFrameStrata("DIALOG")
+        box:SetFrameLevel(host:GetFrameLevel() + 5)
     end
-    local point, rel, relPoint, x, y = box:GetPoint(1)
-    borrowed = { point = point, rel = rel, relPoint = relPoint, x = x, y = y, w = box:GetWidth(), h = box:GetHeight(),
-                 strata = box:GetFrameStrata(), level = box:GetFrameLevel(), scripts = {},
-                 clear = box.clearButton and box.clearButton:GetScript("OnClick") }
-    for _, name in ipairs(SCRIPTS) do borrowed.scripts[name] = box:GetScript(name) or false end
-    board.searchNote:SetText("")
-    dressHost(host, home)
-    box:ClearAllPoints()
-    box:SetParent(host)
-    box:SetPoint("TOPLEFT", host, "TOPLEFT", 6, -1)
-    box:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 1)
-    box:SetFrameStrata("DIALOG")
-    box:SetFrameLevel(host:GetFrameLevel() + 5)
-    -- Blizzard's own handlers expect its panel around the box; these don't.
-    local function go(self)
-        self:ClearFocus()
-        local ok, why = G:SearchFinder(state.cat)
-        if not ok then PGM.Print(why) end
-        UI:Refresh()
-    end
-    box:SetScript("OnEnterPressed", go)
-    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    box:SetScript("OnTabPressed", nil)
-    box:SetScript("OnArrowPressed", nil)
-    box:SetScript("OnTextChanged", function(self)
-        if SearchBoxTemplate_OnTextChanged then SearchBoxTemplate_OnTextChanged(self) end
-    end)
-    if box.clearButton then
-        box.clearButton:SetScript("OnClick", function()
-            if C_LFGList.ClearSearchTextFields then pcall(C_LFGList.ClearSearchTextFields) end
-            go(box)
-        end)
-    end
-    box:Show()
+    -- It shows only while its own panel does.
+    board.searchNote:SetText(home:IsVisible() and "" or "Open the Group Finder's list of groups to search by key here.")
 end
 
 local function returnSearchBox()
     if not borrowed then return end
-    local box, home = blizzardBox()
+    local box = blizzardBox()
     local b = borrowed
     borrowed = nil
     if not box then return end
     box:ClearAllPoints()
-    box:SetParent(home)
-    if b.point and b.rel then box:SetPoint(b.point, b.rel, b.relPoint, b.x, b.y) end
+    for _, pt in ipairs(b.points) do
+        if pt.point and pt.rel then box:SetPoint(pt.point, pt.rel, pt.relPoint, pt.x, pt.y) end
+    end
     if b.w and b.h then box:SetSize(b.w, b.h) end
     if b.strata then box:SetFrameStrata(b.strata) end
     if b.level then box:SetFrameLevel(b.level) end
-    for name, fn in pairs(b.scripts) do box:SetScript(name, fn or nil) end
-    if box.clearButton then box.clearButton:SetScript("OnClick", b.clear) end
-    local host = board.searchHost
-    if host then
-        host.SearchBox, host.AutoCompleteFrame = nil, nil
-        host.categoryID, host.filters, host.preferredFilters = nil, nil, nil
-    end
-    box:Show()
 end
 G.UI.ReturnSearchBox = returnSearchBox
 
@@ -1107,7 +1098,7 @@ local function buildPanel(v)
         G.opt("board").minRating = tonumber(s:GetText()) or 0
         UI:Refresh()
     end
-    -- Blizzard's own search box lives here while Browse is open (see
+    -- Blizzard's own search box sits here while Browse is open (see
     -- borrowSearchBox): the server searches titles with what's typed in it.
     board.searchHost = CreateFrame("Frame", nil, panel, "BackdropTemplate")
     W.Backdrop(board.searchHost, { 0.02, 0.021, 0.025 }, C.frame, 1)
@@ -1331,7 +1322,6 @@ local function build(p)
     buildSettings(settings)
 
     p:HookScript("OnHide", returnSearchBox)
-    p.offHook = returnSearchBox
 
     -- The guild-first countdown ticks while My group is open.
     p.ticker = 0
@@ -1346,7 +1336,7 @@ end
 
 local function refresh(p)
     if GU.Off(p) then
-        if p.offHook then p.offHook() end
+        returnSearchBox()
         return
     end
     if state.view == "post" and G.mine and not state.editing and G.mine.fromLFG then state.view = "mine" end

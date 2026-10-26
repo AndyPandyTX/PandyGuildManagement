@@ -274,6 +274,9 @@ local tb = teamNamed(B, "Team Valor")
 check(tb and tb.members[gid(14)] == nil and tb.removed and tb.removed[gid(14)], "B sees Anvar removed")
 tb.tags = "Valor, VA, V"
 B.PGM:TouchTeam(tb)
+-- Not before B's catch-up is in (it could undo a removal B hasn't heard of).
+check(B.PGM:ImportTeamFromNotes(tb.id) == nil, "importing from notes waits for the catch-up")
+B.PGM.Sync.settled = true
 local added = B.PGM:ImportTeamFromNotes(tb.id)
 check(added == 6, "B imported 6 tagged mains (got " .. tostring(added) .. ")")
 check(tb.members[gid(14)] == nil, "import did not re-add removed Anvar")
@@ -831,11 +834,28 @@ do
     RECIPE_ANSWER = { line = 171, recipe = 1001, members = { "Magicpayne-MalGanis", "Nattypandy-MalGanis", "Stranger-Elsewhere" } }
     A.fire("GUILD_RECIPE_KNOWN_BY_MEMBERS")
     check(got and #got == 2, "the answer lists the guildies who know it (" .. (got and #got or "none") .. ")")
-    check(P:KnownCrafters(171, 1001) == got, "...and is kept")
+    check(#(P:KnownCrafters(171, 1001) or {}) == 2, "...and is kept")
     LAST_RECIPE_QUERY = nil
     local again
     P:RecipeCrafters(171, 1001, function(list) again = list end)
-    check(again == got and LAST_RECIPE_QUERY == nil, "asking again soon uses the kept answer")
+    check(again and #again == 2 and LAST_RECIPE_QUERY == nil, "asking again soon uses the kept answer")
+    -- Who's online is read fresh, not kept with the answer.
+    local g = A.g
+    local wasOnline = g.members[gid(11)].online
+    g.members[gid(11)] = setmetatable({ online = not wasOnline }, { __index = g.members[gid(11)] })
+    local fresh
+    for _, it in ipairs(P:KnownCrafters(171, 1001)) do if it.guid == gid(11) then fresh = it end end
+    check(fresh and fresh.rec.online == not wasOnline, "the kept answer shows who's online now")
+    g.members[gid(11)] = getmetatable(g.members[gid(11)]).__index
+    -- The server never answers: the question is dropped, so asking again asks again.
+    RECIPE_ANSWER = { line = 171, recipe = 1001, members = {} }   -- an old answer, for another recipe
+    P:RecipeCrafters(171, 1003, function() end)
+    check(P:CraftersAsking(171, 1003), "while waiting, it's asking")
+    run(4)
+    check(not P:CraftersAsking(171, 1003) and P:KnownCrafters(171, 1003) == nil, "no answer: it stops waiting")
+    LAST_RECIPE_QUERY = nil
+    P:RecipeCrafters(171, 1003, function() end)
+    check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[2] == 1003, "...and picking it again asks the server again")
     -- No event: the answer is read after a moment anyway.
     RECIPE_ANSWER = { line = 171, recipe = 1002, members = { "Magicpayne-MalGanis" } }
     local late
@@ -1006,6 +1026,7 @@ do
         [268256] = { 4, 4, "INVTYPE_HEAD" }, [268300] = { 4, 0, "INVTYPE_TRINKET" }, [268400] = { 15, 0, "" },
         [270000] = { 2, 7, "INVTYPE_WEAPON" }, [270001] = { 4, 1, "INVTYPE_FINGER" }, [271875] = { 4, 2, "INVTYPE_CHEST" },
         [251115] = { 4, 1, "INVTYPE_FINGER" }, [272000] = { 4, 3, "INVTYPE_LEGS" }, [999] = { 7, 0, "" },
+        [268650] = { 15, 0, "" },   -- "junk" that isn't a tier token (an upgrade shard)
     }
     local function link(id, q) return ("|cnIQ%d:|Hitem:%d::::::::90:102::::::::|h[Item %d]|h|r"):format(q or 4, id, id) end
     local function setup(cl)
@@ -1016,6 +1037,12 @@ do
             return id, "", "", it[3], 0, it[1], it[2]
         end }
         e.GetClassInfo = function(n) local f = { [5] = "PRIEST", [11] = "DRUID" } return "x", f[n], n end
+        -- Tooltips: a tier token says which classes may use it.
+        e.ITEM_CLASSES_ALLOWED = "Classes: %s"
+        e.C_TooltipInfo = { GetItemByID = function(id)
+            if id == 268400 then return { lines = { { leftText = "Token" }, { leftText = "Classes: Druid, Priest" } } } end
+            return { lines = { { leftText = "Item" }, { leftText = "Use: something" } } }
+        end }
         e.LOOT_ITEM_BONUS_ROLL = "%s receives bonus loot: %s."
         e.LOOT_ITEM_BONUS_ROLL_MULTIPLE = "%s receives bonus loot: %sx%d."
         e.C_LootHistory = {
@@ -1081,6 +1108,23 @@ do
     A.fire("ENCOUNTER_LOOT_RECEIVED", 0, 268300, link(268300), 1, "Codiex", "DEMONHUNTER")
     check(count(A) == 7, "outside a raid, drops aren't recorded")
 
+    -- Back in the raid: junk, stacks and a winner from another realm.
+    A.env.GetInstanceInfo = function() return "Voidspire", "raid", 15, "Heroic", 20, 0, false, 3004 end
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 268650, link(268650), 1, "Tiferis", "PALADIN")
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 268400, link(268400), 2, "Anvar", "HUNTER")
+    check(count(A) == 7, "miscellany that isn't a tier token, and stacks, aren't kept")
+    A.env.GetNumGroupMembers = function() return 2 end
+    A.env.GetRaidRosterInfo = function(i) return ({ "Speedyjosh-Hyjal", "Nattypandy" })[i] end
+    LOOT_DROPS = { { itemHyperlink = link(272000), lootListID = 9,
+        winner = { playerName = "Speedyjosh", playerClass = "MAGE", state = 3 } } }
+    A.fire("ENCOUNTER_END", 3445, "Entombed Sentinels", 15, 20, 1)
+    A.fire("LOOT_HISTORY_UPDATE_ENCOUNTER", 3445)
+    A.fire("LOOT_HISTORY_UPDATE_ENCOUNTER", 3445)
+    check(find(A, "Speedyjosh-Hyjal", 272000, "greed") ~= nil, "a winner from another realm gets their own realm, from the raid group")
+    check(count(A) == 8, "...and reading the drop again doesn't add it twice")
+    A.env.GetNumGroupMembers = function() return 0 end
+    A.env.GetInstanceInfo = town
+
     -- Pulled in from MRT and VoidcoreAdvisor.
     local now = BASE + math.floor(T)
     A.env.VMRT = { LootHistory = { bossNames = { [3430] = "Boss B", [2000] = "Dungeon Boss" },
@@ -1093,6 +1137,10 @@ do
         -- not for someone else's.
         ("%d#3429#3004#15#Nattypandy#11#1#item:268300::::::::90:102:::::::::#2"):format(now - 200000),
         ("%d#3429#3004#15#Codiex#12#1#item:270000::::::::90:102:::::::::#1"):format(now - 300000),
+        -- No realm in MRT's line; the records say Speedyjosh is from Hyjal.
+        ("%d#3429#3004#15#Speedyjosh#8#1#item:268256::::::::90:102:::::::::#1"):format(now - 500000),
+        -- Stacks aren't kept.
+        ("%d#3429#3004#15#Codiex#12#3#item:268400::::::::90:102:::::::::"):format(now - 600000),
     } } }
     A.env.VoidcoreAdvisorCharDB = { bonusRollLog = {
         { itemID = 270000, itemLink = link(270000), timestamp = now + 2, difficultyID = 15, raidInstanceID = 1314 },
@@ -1102,10 +1150,13 @@ do
         { itemID = 251115, itemLink = link(251115), timestamp = now - 2 * 86400, difficultyID = 23, sourceType = "MYTHIC_PLUS" },
     } }
     local fromMRT, fromVCA = P:PullLoot()
-    check(fromMRT == 4, "MRT: three raid items and an M+ item new; the repeat and the reagent skipped (got " .. tostring(fromMRT) .. ")")
+    check(fromMRT == 5, "MRT: four raid items and an M+ item new; the repeat, reagent and stack skipped (got " .. tostring(fromMRT) .. ")")
+    check(find(A, "Speedyjosh-Hyjal", 268256) ~= nil and find(A, "Speedyjosh-MalGanis", 268256) == nil,
+        "MRT: a name without a realm gets the one the other records say")
     check((find(A, "Nattypandy-MalGanis", 268300) or {}).how == "greed", "MRT: our own win shows how we rolled")
     check((find(A, "Codiex-MalGanis", 270000) or {}).how == "roll", "MRT: someone else's win stays just a won roll")
     check(fromVCA == 3, "VoidcoreAdvisor: three new bonus rolls, the live one not counted twice (got " .. tostring(fromVCA) .. ")")
+    check((find(A, "Nattypandy-MalGanis", 251115, "bonus") or {}).diff == 8, "an M+ bonus roll is Mythic Keystone, as MRT says it")
     local mp = find(A, "Codiex-MalGanis", 268300)
     check(mp and mp.kind == "mplus" and mp.where == "Ruby Life Pools", "MRT's M+ loot is kept as M+, with the dungeon")
     local filled = find(A, "Nattypandy-MalGanis", 270001, "bonus")
@@ -1149,6 +1200,10 @@ do
     check(P:LootNight(fh) == mercy, "Funkyshade's drop is on the night Funkyshade attended")
     check(P:LootNight(find(A, "Selwyne-MalGanis", 268300)) == honor, "...and Selwyne's on the other team's night")
     check(P:LootNight(cb) == nil, "an item from a night not recorded has no night")
+    local sj = find(A, "Speedyjosh-Hyjal", 272000)
+    sj.t = now
+    P:Fire("RAIDS")
+    check(P:LootNight(sj) == nil, "a non-guildie's drop when two teams raid at once is on neither night")
     for i = #A.g.raids.sessions, 1, -1 do
         local s = A.g.raids.sessions[i]
         if s == mercy or s == honor then table.remove(A.g.raids.sessions, i) end
@@ -1268,6 +1323,15 @@ do
         P.UI, A.env.CreateFrame, A.env.GameTooltip = realUI, realCreate, nil
     end
 
+    -- Old records under a realm we added: fixed, and repeats merged.
+    local before = #P:LootItems()
+    table.insert(P:LootItems(), { t = sj.t + 30, who = "Speedyjosh-MalGanis", id = 272000, link = "item:272000",
+        how = "greed", kind = "raid", src = "pgm" })
+    check(P:FixLootNames() >= 1 and #P:LootItems() == before, "a name we gave the wrong realm is fixed, and the repeat merged")
+    -- Deleting sticks: pulling MRT again doesn't bring it back.
+    P:DeleteLoot(cb)
+    P:PullLoot(true)
+    check(find(A, "Codiex-MalGanis", 272000) == nil, "a deleted entry stays deleted when MRT is read again")
     P:DeleteLoot(fh)
     check(find(A, "Funkyshade-MalGanis", 268256) == nil, "a record can be deleted")
 end
@@ -1284,6 +1348,173 @@ do
     local bt = teamNamed(B, "Made By Test")
     check(made.by == "Nattypandy" and bt and bt.by == "Nattypandy", "a team says who made it, on every copy")
     A.PGM:DeleteTeam(made.id)
+    run(10)
+end
+
+print("-- review fixes: purges, alt ranks, rank names with spaces, the closest event")
+do
+    -- A purge while we were away: the first read that's missing a third of
+    -- the guild is held back; a read a minute later missing the same people
+    -- is believed.
+    local F = newClient(gid(23), "Selwyne")
+    local g = F.g
+    local purged = {}
+    for n = 500, 539 do
+        local guid = gid(n)
+        purged[guid] = true
+        g.members[guid] = { guid = guid, name = ("Purged%03d-%s"):format(n, REALM), short = ("Purged%03d"):format(n),
+            realm = REALM, rank = "Member", rankIndex = 5, level = 90, class = "MAGE", note = "", onote = "" }
+    end
+    local function read(withPurged)
+        local snap = {}
+        for guid, rec in pairs(g.members) do
+            if withPurged or not purged[guid] then
+                local c = {}
+                for k, v in pairs(rec) do c[k] = v end
+                snap[guid] = c
+            end
+        end
+        F.PGM:ApplyRoster(snap, true)
+    end
+    local function members() local n = 0 for _ in pairs(g.members) do n = n + 1 end return n end
+    local before = members()
+    read(false)
+    check(members() == before, "a read missing a third of the guild is held back")
+    read(true)
+    check(members() == before, "...and a full read after it is fine")
+    read(false)
+    run(30)
+    read(false)
+    check(members() == before, "...still held half a minute later")
+    run(40)
+    read(false)
+    check(members() == before - 40, "the same people still missing a minute later: they're gone (" .. members() .. ")")
+    local leaves = 0
+    for _, e in ipairs(g.log) do if e.kind == "leave" and (e.name or ""):find("^Purged") then leaves = leaves + 1 end end
+    check(leaves == 40, "...and History has their leaves (" .. leaves .. ")")
+
+    -- Alt ranks are whole words.
+    check(not F.PGM.IsAltRank({ rank = "Exalted" }), "a rank called Exalted isn't an alt rank")
+    check(F.PGM.IsAltRank({ rank = "Raider Alts" }) and F.PGM.IsAltRank({ rank = "Alt" })
+        and F.PGM.IsAltRank({ rank = "Officer Alt" }), "...but Alt, Officer Alt and Raider Alts are")
+
+    -- A rank name with spaces doesn't swallow the member's name.
+    local P, ag = A.PGM, A.g
+    A.fire("CHAT_MSG_SYSTEM", "Magicpayne has promoted Codiex to Ready to Raid.")
+    local e = P:AddLog(ag, "promote", ag.members[gid(13)], { from = "Trial", to = "Ready to Raid" })
+    check(e.by == "Magicpayne", "a promotion to a rank with spaces is credited")
+
+    -- Kicked three days ago, re-invited, quit now: the quit explains today's leave.
+    GUILD_EVENTS = {
+        -- ("" not nil: a nil would end the row early when unpacked)
+        { "remove", "Magicpayne-MalGanis", "Bouncer-MalGanis", "", 0, 0, 3, 0 },
+        { "quit", "Bouncer-MalGanis", "", "", 0, 0, 0, 0 },
+    }
+    local leave = P:AddLog(ag, "leave", { guid = gid(44), short = "Bouncer", class = "ROGUE" })
+    A.fire("GUILD_EVENT_LOG_UPDATE")
+    check(leave.credited and not leave.removed, "today's leave is today's quit, not an old kick")
+end
+
+print("-- review fixes: deleted nights stay deleted, older copies, catch-up traffic, re-tagging")
+do
+    local now = BASE + math.floor(T)
+    local function count(cl, inst)
+        local n = 0
+        for _, x in ipairs(cl.g.raids and cl.g.raids.sessions or {}) do
+            if x.instance == inst then n = n + 1 end
+        end
+        return n
+    end
+    local function night(id, startOff, inst, present, leaders)
+        local n = { id = id, start = now + startOff, stop = now + startOff + 7200, instance = inst, diffID = 15,
+                    name = "Voidspire", present = {}, bosses = {} }
+        for _, gu in ipairs(present) do n.present[gu] = true end
+        if leaders then
+            n.leaders = {}
+            for _, gu in ipairs(leaders) do n.leaders[gu] = true end
+        end
+        return n
+    end
+
+    -- A deletes a night; a copy that missed the delete sends it again under
+    -- its own id later: it stays deleted everywhere.
+    local wed = night("wed-A", -7200, 6161, { gid(10), gid(21), gid(22) }, { gid(10) })
+    table.insert(A.g.raids.sessions, wed)
+    A.PGM:SyncRaid(wed)
+    run(10)
+    check(count(C, 6161) == 1, "the night arrived")
+    A.PGM:DeleteRaid(wed)
+    run(10)
+    check(count(A, 6161) == 0 and count(C, 6161) == 0, "...and is deleted")
+    B.PGM.SyncSend(false, "1S", "wed-B", now, now - 7100, now + 300, 6161, 15, "", 0, "Voidspire", "", gid(10))
+    run(5)
+    check(count(A, 6161) == 0 and count(C, 6161) == 0, "the same night under another id stays deleted")
+
+    -- Older copies send nights without leaders, and attendees after.
+    local mercy = night("mercy-new", -3600, 7171, { gid(10), gid(21), gid(22), gid(25), gid(26) }, { gid(10) })
+    table.insert(A.g.raids.sessions, mercy)
+    A.PGM:SyncRaid(mercy)
+    run(10)
+    -- Another team's raid at the same time, from an older copy: two nights.
+    B.PGM.SyncSend(false, "1S", "honor-old", now - 50, now - 3500, now + 3700, 7171, 15, "", 0, "Voidspire", "")
+    B.PGM.SyncSend(false, "1P", "honor-old", table.concat({ gid(1), gid(11), gid(12), gid(13), gid(14) }, ","))
+    run(10)
+    check(count(C, 7171) == 2, "an older copy's record of another team's raid stays its own night (" .. count(C, 7171) .. ")")
+    -- The same raid as Mercy's, from an older copy: one night.
+    B.PGM.SyncSend(false, "1S", "mercy-old", now - 40, now - 3400, now + 3600, 7171, 15, "", 0, "Voidspire", "")
+    B.PGM.SyncSend(false, "1P", "mercy-old", table.concat({ gid(10), gid(23) }, ","))
+    run(10)
+    check(count(C, 7171) == 2, "...and its record of Mercy's raid joins Mercy's night (" .. count(C, 7171) .. ")")
+    local m
+    for _, x in ipairs(C.g.raids.sessions) do if x.instance == 7171 and x.present[gid(10)] then m = x end end
+    check(m and m.present[gid(23)] and m.present[gid(25)], "...with everyone from both")
+
+    -- Overhearing someone else's catch-up counts as my own, when it started
+    -- no later than I'd caught up to and I heard all of it.
+    local H = C.PGM.SyncHandlers
+    local cs = C.g.sync
+    local officer = A.g.members[gid(10)]
+    local function overhear(since, newest, zone)
+        cs.caught = 1000
+        H.R({ "1R", "Nattypandy-MalGanis", tostring(since) }, "Selwyne-MalGanis")
+        if zone then C.fire("PLAYER_ENTERING_WORLD") end
+        H.E({ "1E", "Selwyne-MalGanis", "3", tostring(newest) }, "Nattypandy-MalGanis", officer)
+        return cs.caught
+    end
+    local edge = BASE + math.floor(T)
+    check(overhear(900, edge) == edge, "overhearing a catch-up from before mine catches me up too")
+    check(overhear(1100, edge) == 1000, "...not one that started after what I have")
+    run(1)
+    check(overhear(900, edge, true) == 1000, "...nor one I may have missed part of (a loading screen)")
+    cs.caught = math.max(cs.caught, cs.newest)
+    -- An officer's own edit, made while caught up, keeps them caught up.
+    local as = A.g.sync
+    as.caught = math.max(as.caught, as.newest)
+    local t = A.PGM:CreateTeam("Traffic Test")
+    check(as.caught == as.newest and as.caught >= t.u, "my own edit while caught up doesn't need a catch-up")
+    A.PGM:DeleteTeam(t.id)
+
+    -- Match past raids: not a night untagged by hand, but yes one whose team went.
+    local P, g = A.PGM, A.g
+    local team = P:CreateTeam("Retag Test")
+    for _, n in ipairs({ 10, 21, 22 }) do P:AddToTeam(team.id, gid(n)) end
+    local byHand = night("untagged-by-hand", -1800, 8181, { gid(10), gid(21), gid(22) })
+    local freed = night("freed-by-delete", -900, 8282, { gid(10), gid(21), gid(22) })
+    table.insert(g.raids.sessions, byHand)
+    table.insert(g.raids.sessions, freed)
+    P:AssignRaid(byHand, team.id)
+    P:AssignRaid(byHand, nil)
+    local gone = P:CreateTeam("Gone Team")
+    P:AssignRaid(freed, gone.id)
+    P:DeleteTeam(gone.id)
+    P:AutoAssignRaids()
+    check(byHand.team == nil, "Match past raids leaves a night you untagged alone")
+    check(freed.team == team.id, "...but tags a night whose team was deleted")
+    P:DeleteTeam(team.id)
+    for i = #g.raids.sessions, 1, -1 do
+        local s = g.raids.sessions[i]
+        if s == byHand or s == freed then table.remove(g.raids.sessions, i) end
+    end
     run(10)
 end
 

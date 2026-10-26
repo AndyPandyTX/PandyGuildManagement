@@ -3,7 +3,6 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 local C = PGM.C
 local UI = PGM.UI
@@ -184,7 +183,12 @@ local DAYS = { sun = 1, mon = 2, tue = 3, wed = 4, thu = 5, fri = 6, sat = 7 }
 
 -- "now", "+30" (minutes), "20:30" (next time it's 20:30) or "Sat 20:30",
 -- as a server-time stamp; 0 for now, nil when it can't be read.
-function G.ParseWhen(text)
+-- keep: { text, start } when editing a scheduled group, the Start text the
+-- form was filled with and the start it stands for. That same text, left
+-- alone, gives back that start: read afresh, a "20:30" that already began
+-- today would mean tomorrow and quietly move the group a day.
+function G.ParseWhen(text, keep)
+    if keep and keep.start and text == keep.text then return keep.start end
     text = strtrim((text or ""):lower())
     if text == "" or text == "now" then return 0 end
     local plus = text:match("^%+%s*(%d+)$")

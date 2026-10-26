@@ -77,20 +77,9 @@ local function rankIndexByName()
     return out
 end
 
--- The main of a group with none chosen: a non-alt rank first, then the best
--- M+ score, then the highest level.
+-- The main of a group with none chosen: the same order as alts use.
 local function pickMain(members, guids)
-    table.sort(guids, function(a, b)
-        local ra, rb = members[a], members[b]
-        local aa, ab = PGM.IsAltRank(ra), PGM.IsAltRank(rb)
-        if aa ~= ab then return ab end
-        local sa, sb = ra.score or 0, rb.score or 0
-        if sa ~= sb then return sa > sb end
-        local la, lb = ra.level or 0, rb.level or 0
-        if la ~= lb then return la > lb end
-        return (ra.short or "") < (rb.short or "")
-    end)
-    return guids[1]
+    return PGM.PickMain(members, guids)
 end
 
 -- Runs the import. Returns a summary table, or nil and a reason.

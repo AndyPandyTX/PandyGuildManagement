@@ -1,4 +1,4 @@
-# Pandy Guild Groups: design
+# Guild group finder: design
 
 A guild group finder that plugs into Pandy Guild Management (PGM). Guildies
 post a group (a Mythic+ key, a raid, a delve, anything), everyone running the
@@ -89,7 +89,7 @@ sub-type, then fields joined by `\031`.
 |---|---|---|
 | `P` | id u kind what level size needT needH needD have team start pugAt lfg note | a post, new or changed (whole post every time; the same `u` again is a heartbeat) |
 | `X` | id u why | post closed (`f` full, `c` closed, `l` no longer the leader) |
-| `Q` | | "what's posted?" (on login). Each leader answers with their own `P`, after a random wait |
+| `Q` | | "what's posted?" (on login). Each leader answers with their own `P`, and an `X` for each scheduled post they closed that hasn't expired (guildies offline for the close still hold it), after a random wait |
 | `A` | id leader role ilvl spec note | ask to join, addressed to the leader |
 | `C` | id leader | withdraw an ask |
 | `Y` | id asker answer | the leader's answer: `i` invited, `d` declined, `f` full |
@@ -103,8 +103,10 @@ sub-type, then fields joined by `\031`.
   (the id starts with the leader's GUID tail, and the sender must match). An
   `A`, `C` or `U` is about the sender only. A `Y` only from that post's
   leader. Keystones are low stakes, so a `K` counts from anyone (that's
-  what lets a catch-up relay them): newest wins, a stamp can't run more
-  than 5 minutes ahead, and keys from before the weekly reset are dropped.
+  what lets a catch-up relay them): newest wins, and keys from before the
+  weekly reset are dropped. Only the owner's own `K` may carry a stamp
+  ahead of now (up to 5 minutes); a relayed one is held to now, so it can't
+  beat the owner's next update.
 - **LibKeystone.** Outside PGM's sync: an `R` on LibKeystone's own `LibKS`
   prefix, to the guild, at login and when the Keystones page opens (at most
   every two minutes). Every guildie running BigWigs, LittleWigs, EllesmereUI
@@ -205,7 +207,6 @@ Added after the first build (GroupFinder.lua):
 ## Files
 
 ```
-PandyGuildGroups.toc   ## Dependencies: PandyGuildManagement
 Core.lua               namespace, saved data, API check, slash command
 Keystone.lua           my keystone, everyone's keystones, K/W/V
 Status.lua             my state (free / looking / grouped), S beacons, who's free

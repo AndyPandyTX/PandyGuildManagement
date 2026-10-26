@@ -21,7 +21,6 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 local C = PGM.C
 local P = PGM.Plain
@@ -63,7 +62,11 @@ local function listed()
     if not P(call(LFG.HasActiveEntryInfo)) then return nil end
     local entry = readable(call(LFG.GetActiveEntryInfo))
     local id = entry and (num(entry.activityID) or (readable(entry.activityIDs) and num(entry.activityIDs[1])))
-    -- The same fallback OAK LFG Sorter uses when the ids come back locked.
+    -- One more try, as OAK LFG Sorter makes it. It is no way round the
+    -- game's locks: securecallfunction runs our function with our own taint
+    -- (it only keeps taint and errors from flowing back to us), so a locked
+    -- table still errors (pcall catches it) and a secret id still fails num().
+    -- It only helps when the reads above failed for some other reason.
     if not id and securecallfunction then
         local ok, v = pcall(securecallfunction, function()
             local e = LFG.GetActiveEntryInfo()
@@ -534,7 +537,7 @@ end
 local function fromResult(r)
     return {
         result = r, kind = r.kind, what = r.what, level = r.level, size = r.size, need = r.need, has = r.has,
-        rec = r.rec, guild = r.rec ~= nil or r.mates > 0, note = r.note, score = r.score,
+        rec = r.rec, guild = r.rec ~= nil or r.mates > 0, note = r.note, score = r.score, scheduled = false,
         playstyle = r.playstyle, brez = r.brez, lust = r.lust, comp = r.comp, u = PGM.Now() - (r.age or 0),
         diff = r.diff,
     }
@@ -593,6 +596,8 @@ function G:Board(f)
     for _, row in ipairs(out) do
         row.icon = row.kind == "M" and G.DungeonIconByName(row.what) or nil
     end
+    -- Every key compared here is set on every row (booleans are true or
+    -- false, never nil), so this is a proper ordering for table.sort.
     table.sort(out, function(a, b)
         if a.pinned ~= b.pinned then return a.pinned end
         if f.guildFirst and a.guild ~= b.guild then return a.guild end
@@ -642,14 +647,25 @@ end
 -- TELLING THE GUILD, AND LISTING MY KEY
 -- ============================================================
 
--- The keystone in my bags, as a chat link, or nil.
+-- The keystone in my bags, as a chat link, or nil. My group's view asks
+-- every second (its Tell the guild tooltip), so the bag scan is kept until
+-- the bags change or the key the game reports does.
+local keyLink, keyLinkFor   -- the link, and the "map:level" it was found for
+G:RegisterEvent("BAG_UPDATE_DELAYED", function() keyLinkFor = nil end)
+
 function G.MyKeyLink()
     if not (C_Container and C_Item and C_Item.IsItemKeystoneByID) then return nil end
+    local map, level = G.ReadMyKey()
+    if not map then return nil end
+    local want = map .. ":" .. level
+    if keyLinkFor == want then return keyLink end
+    keyLink, keyLinkFor = nil, want
     for bag = 0, 4 do
         for slot = 1, num(call(C_Container.GetContainerNumSlots, bag)) or 0 do
             local id = num(call(C_Container.GetContainerItemID, bag, slot))
             if id and P(call(C_Item.IsItemKeystoneByID, id)) then
-                return str(call(C_Container.GetContainerItemLink, bag, slot))
+                keyLink = str(call(C_Container.GetContainerItemLink, bag, slot))
+                return keyLink
             end
         end
     end
@@ -825,9 +841,12 @@ local function hookBlizzard()
     end
     -- Browsing groups in Blizzard's window (its list of groups opening):
     -- the Groups page can open beside it (see UI/Groups.lua).
+    -- Its closing repaints the Groups page too: Blizzard's search box can
+    -- only show there while that list is open (see UI/Groups.lua).
     local panel = LFGListFrame and LFGListFrame.SearchPanel
     if panel and panel.HookScript then
         panel:HookScript("OnShow", function() G:Fire("FINDER_OPENED") end)
+        panel:HookScript("OnHide", function() G:Fire("FINDER_CLOSED") end)
     end
 end
 hookBlizzard()

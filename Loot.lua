@@ -7,8 +7,9 @@
 --   * bonus rolls: our own from BONUS_ROLL_RESULT, anywhere; everyone
 --     else's from the "receives bonus loot" line in loot chat, when the game
 --     lets addons read it.
--- Raid and M+ drops and bonus rolls are kept, and only epic or
--- better gear, tokens and the like; no reagents or currency.
+-- Raid and M+ drops and bonus rolls are kept, and only epic or better
+-- gear, tier tokens, mounts and pets; no reagents, currency or other
+-- miscellany, and nothing that drops as a stack.
 --
 -- Nothing goes out over guild sync. Loot moves between players by export
 -- and import (a PGM text or CSV), and comes in from MRT's loot history and
@@ -17,7 +18,9 @@
 -- the same way (a drop or a bonus roll), within 15 minutes, is one record.
 --
 -- PandyGuildDB.loot = { items = { record, ... }, bosses = { [encounter] =
--- name }, mrtUpTo = time, vcaUpTo = { ["Name-Realm"] = time } }. A record:
+-- name }, mrtUpTo = time, vcaUpTo = { ["Name-Realm"] = time }, deleted =
+-- { [key] = { time, ... } } (entries deleted by hand, so imports don't bring
+-- them back) }. A record:
 --   t      when it dropped (seconds)
 --   who    "Name-Realm"
 --   class  class file ("DRUID"), when known
@@ -36,6 +39,8 @@ local PGM = NS.PGM
 local P = PGM.Plain
 
 local SAME_WINDOW = 15 * 60      -- seconds within which two records are one
+local MAX_ITEMS = 20000          -- oldest records go past this
+local MAX_DELETED = 500
 local RECENT_BOSS = 15 * 60      -- a bonus roll this soon after a kill is for that boss
 
 -- Item classes worth keeping: weapons, armor, and miscellaneous (tokens,
@@ -95,6 +100,7 @@ local function store()
     l.items = l.items or {}
     l.bosses = l.bosses or {}
     l.vcaUpTo = l.vcaUpTo or {}
+    l.deleted = l.deleted or {}
     return l
 end
 
@@ -111,17 +117,6 @@ local function itemString(link)
     return type(link) == "string" and (link:match("(item:[^|%[]+)") or link) or nil
 end
 
--- "Name" gets our realm; the realm is kept as the game wrote it.
-local function fullName(who)
-    who = who and strtrim(who) or ""
-    if who == "" then return nil end
-    if not who:find("-", 1, true) then
-        local realm = GetNormalizedRealmName and GetNormalizedRealmName()
-        if realm and realm ~= "" then who = who .. "-" .. realm end
-    end
-    return who
-end
-
 -- Comparable form of "Name-Realm": lower case, realm without spaces or
 -- punctuation.
 local function nameKey(who)
@@ -129,6 +124,78 @@ local function nameKey(who)
     return (n or ""):lower() .. "-" .. ((r or ""):lower():gsub("[%s'%-]", ""))
 end
 PGM.LootNameKey = nameKey
+
+local function myRealm()
+    local realm = GetNormalizedRealmName and GetNormalizedRealmName()
+    return (realm and realm ~= "") and realm or nil
+end
+
+-- The realm most of this account's characters are on: where MRT's lines,
+-- which leave out the realm of whoever was recording, are from.
+local function homeRealm()
+    local count, best, n = {}, nil, 0
+    for _, c in pairs(PandyGuildDB and PandyGuildDB.chars or {}) do
+        if c.realm then
+            count[c.realm] = (count[c.realm] or 0) + 1
+            if count[c.realm] > n then best, n = c.realm, count[c.realm] end
+        end
+    end
+    return best or myRealm()
+end
+
+-- The game often gives names without a realm: a group-loot roll's winner
+-- always, even from another realm, and so do MRT's lines. Which realm: one
+-- the raid group, the guild roster, this account's characters or other
+-- records name for it, when they agree on one; else `realm` (ours).
+local hints   -- [lower name] = { ["Name-Realm"] = true }
+local function hint(full)
+    local short = (full or ""):match("^([^%-]+)%-.+$")
+    if not short then return end
+    local k = short:lower()
+    hints[k] = hints[k] or {}
+    hints[k][full] = true
+end
+local function buildHints()
+    hints = {}
+    local g = PGM.GuildDB()
+    for _, rec in pairs(g and g.members or {}) do hint(rec.name) end
+    for _, c in pairs(PandyGuildDB and PandyGuildDB.chars or {}) do
+        if c.name and c.realm then hint(c.name .. "-" .. c.realm) end
+    end
+    -- Records only count when their realm isn't one we may have added.
+    local mine, home = myRealm(), homeRealm()
+    for _, rec in ipairs(PandyGuildDB and PandyGuildDB.loot and PandyGuildDB.loot.items or {}) do
+        local realm = (rec.who or ""):match("%-(.+)$")
+        if realm and realm ~= mine and realm ~= home then hint(rec.who) end
+    end
+end
+PGM:On("ROSTER", function() hints = nil end)
+
+-- The raid group's own spelling of a name ("Name-Realm" for someone from
+-- another realm).
+local function inGroup(short)
+    for i = 1, (GetNumGroupMembers and GetNumGroupMembers() or 0) do
+        local ok, name = pcall(GetRaidRosterInfo, i)
+        name = ok and P(name)
+        if name and (name:match("^([^%-]+)") or name):lower() == short:lower() then
+            return name:find("-", 1, true) and name or nil
+        end
+    end
+end
+
+local function fullName(who, realm, live)
+    who = who and strtrim(who) or ""
+    if who == "" then return nil end
+    if who:find("-", 1, true) then return who end
+    local found = live and inGroup(who)
+    if found then return found end
+    if not hints then buildHints() end
+    local only, n = nil, 0
+    for full in pairs(hints[who:lower()] or {}) do only, n = full, n + 1 end
+    if n == 1 then return only end
+    realm = realm or myRealm()
+    return realm and (who .. "-" .. realm) or who
+end
 
 local function myName()
     local ok, name, realm = pcall(UnitFullName, "player")
@@ -164,12 +231,42 @@ local function itemInfo(id)
     return P(classID), P(subclassID), P(equipLoc)
 end
 
--- Epic or better, and gear, a token or the like. Unknown counts as yes.
-function PGM.LootWorthKeeping(link)
+-- A tier token: miscellaneous, and its tooltip says which classes may use
+-- it. True, false, or nil while the game hasn't loaded the item yet.
+local tokenCache = {}
+local function isToken(id)
+    if tokenCache[id] ~= nil then return tokenCache[id] end
+    local prefix = type(ITEM_CLASSES_ALLOWED) == "string" and ITEM_CLASSES_ALLOWED:match("^(.-)%%s")
+    if not (prefix and prefix ~= "" and C_TooltipInfo and C_TooltipInfo.GetItemByID) then return nil end
+    local ok, data = pcall(C_TooltipInfo.GetItemByID, id)
+    local lines = ok and type(data) == "table" and data.lines
+    if type(lines) ~= "table" or #lines < 2 then return nil end
+    local found = false
+    for _, line in ipairs(lines) do
+        local text = type(line) == "table" and P(line.leftText)
+        if type(text) == "string" and text:sub(1, #prefix) == prefix then found = true break end
+    end
+    tokenCache[id] = found
+    return found
+end
+PGM.LootIsToken = isToken
+
+-- Miscellaneous items worth keeping: companion pets (2) and mounts (5), and
+-- "junk" (0) only when it's a tier token.
+local KEEP_MISC = { [2] = true, [5] = true }
+
+-- Epic or better, and gear, a tier token, a mount or a pet; never a stack.
+-- What can't be told yet (an item the game hasn't loaded) counts as yes,
+-- and PruneLoot looks again later.
+function PGM.LootWorthKeeping(link, quantity)
     local id = itemId(link)
     if not id then return false end
-    local classID = itemInfo(id)
+    if (tonumber(quantity) or 1) > 1 then return false end
+    local classID, subclassID = itemInfo(id)
     if classID and not KEEP_CLASS[classID] then return false end
+    if classID == 15 and not KEEP_MISC[subclassID] then
+        if subclassID ~= 0 or isToken(id) == false then return false end
+    end
     local q = qualityOf(link)
     if q and q < 4 then return false end
     return true
@@ -196,7 +293,9 @@ function PGM.LootType(id)
     elseif equipLoc and equipLoc ~= "" and equipLoc ~= "INVTYPE_NON_EQUIP_IGNORE" then
         t = "armor"
     elseif classID == 15 and subclassID == 0 then
-        t = "token"   -- tier tokens are miscellaneous "junk" you can't equip
+        local token = isToken(id)
+        if token == nil then return "other" end   -- not loaded yet; don't remember the guess
+        t = token and "token" or "other"
     else
         t = "other"
     end
@@ -240,43 +339,167 @@ local function merge(into, from)
     end
 end
 
--- Keep a record unless it's a repeat. True if it was new.
-function PGM:AddLoot(rec)
-    local l = store()
-    if not (l and rec) then return false end
-    rec.who = fullName(rec.who)
+local function deletedKey(rec) return indexKey(rec) .. (rec.how == "bonus" and ":b" or "") end
+
+local function wasDeleted(l, rec)
+    for _, t in ipairs(l.deleted[deletedKey(rec)] or {}) do
+        if math.abs(t - rec.t) <= SAME_WINDOW then return true end
+    end
+    return false
+end
+
+-- Tidy a record for keeping. Returns it, or nil and why ("skip": not worth
+-- keeping or not a record at all).
+local function prepare(rec)
+    rec.who = fullName(rec.who, rec.src == "mrt" and homeRealm() or nil, rec.src == "pgm")
     rec.t = tonumber(rec.t)
     rec.id = rec.id or itemId(rec.link)
-    if not (rec.who and rec.t and rec.id) then return false end
+    if not (rec.who and rec.t and rec.id) then return nil end
     rec.link = rec.link or ("item:" .. rec.id)
-    if not PGM.LootWorthKeeping(rec.link) then return false end
+    if not PGM.LootWorthKeeping(rec.link, rec.qty) then return nil end
+    rec.qty = nil
+    return rec
+end
+
+-- Keep a record unless it's a repeat, junk, or deleted by hand. Returns
+-- true if it was new; else false and "known" or "skip".
+function PGM:AddLoot(rec)
+    local l = store()
+    if not (l and rec and prepare(rec)) then return false, "skip" end
+    if wasDeleted(l, rec) then return false, "skip" end
     local same = findSame(rec)
     if same then
         merge(same, rec)
-        return false
+        return false, "known"
     end
     table.insert(l.items, rec)
     local k = indexKey(rec)
     index[k] = index[k] or {}
     table.insert(index[k], rec)
+    if #l.items > MAX_ITEMS then
+        table.remove(l.items, 1)
+        index = nil
+    end
     return true
 end
 
--- Whether a record (say, from an import being previewed) is already kept.
-function PGM:LootKnown(rec)
-    local copy = { who = fullName(rec.who), t = tonumber(rec.t), id = rec.id or itemId(rec.link), how = rec.how }
-    if not (copy.who and copy.t and copy.id) then return false end
-    return findSame(copy) ~= nil
+-- What adding a record (say, from an import being previewed) would do:
+-- "new", "known" or "skip". Nothing is kept.
+function PGM:LootWouldAdd(rec)
+    local l = store()
+    local copy = {}
+    for k, v in pairs(rec) do copy[k] = v end
+    if not (l and prepare(copy)) or wasDeleted(l, copy) then return "skip" end
+    return findSame(copy) and "known" or "new"
 end
 
+function PGM:LootKnown(rec)
+    return PGM:LootWouldAdd(rec) == "known"
+end
+
+-- Deleted by hand: gone, and remembered, so pulling from MRT again or an
+-- import doesn't bring it back.
 function PGM:DeleteLoot(rec)
     local l = store()
     local i = l and tIndexOf(l.items, rec)
     if i then
         table.remove(l.items, i)
+        local key = deletedKey(rec)
+        l.deleted[key] = l.deleted[key] or {}
+        table.insert(l.deleted[key], rec.t)
+        l.deletedCount = (l.deletedCount or 0) + 1
+        if l.deletedCount > MAX_DELETED then
+            -- Forget the oldest half (by time), roughly.
+            local times = {}
+            for _, list in pairs(l.deleted) do
+                for _, t in ipairs(list) do times[#times + 1] = t end
+            end
+            table.sort(times)
+            local cut = times[math.floor(#times / 2)] or 0
+            local n = 0
+            for key2, list in pairs(l.deleted) do
+                for j = #list, 1, -1 do
+                    if list[j] <= cut then table.remove(list, j) else n = n + 1 end
+                end
+                if #list == 0 then l.deleted[key2] = nil end
+            end
+            l.deletedCount = n
+        end
         index = nil
         PGM:Fire("LOOT")
     end
+end
+
+-- Records that turn out not to be worth keeping, once the game has loaded
+-- their items (a tier token or not is in the tooltip). Returns how many it
+-- removed and how many items it couldn't tell yet.
+function PGM:PruneLoot()
+    local l = store()
+    if not l then return 0, 0 end
+    local removed, unsure = 0, 0
+    for i = #l.items, 1, -1 do
+        local rec = l.items[i]
+        local classID, subclassID = itemInfo(rec.id)
+        if classID == 15 and not KEEP_MISC[subclassID] then
+            local token = subclassID == 0 and isToken(rec.id)
+            if token == nil and subclassID == 0 then
+                unsure = unsure + 1
+                if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, rec.id) end
+            elseif not token then
+                table.remove(l.items, i)
+                removed = removed + 1
+            end
+        end
+    end
+    if removed > 0 then
+        index = nil
+        PGM:Fire("LOOT")
+    end
+    return removed, unsure
+end
+
+-- One player's records under two spellings of their name (a realm we added
+-- that wasn't theirs): spelled the way the hints say, and repeats merged.
+-- Returns how many records changed.
+function PGM:FixLootNames()
+    local l = store()
+    if not l then return 0 end
+    buildHints()
+    local mine, home = myRealm(), homeRealm()
+    local n = 0
+    for _, rec in ipairs(l.items) do
+        local short, realm = (rec.who or ""):match("^([^%-]+)%-(.+)$")
+        if short and (realm == mine or realm == home) then
+            local options, only, count = hints[short:lower()] or {}, nil, 0
+            for full in pairs(options) do only, count = full, count + 1 end
+            if count == 1 and only ~= rec.who and not options[rec.who] then
+                rec.who = only
+                n = n + 1
+            end
+        end
+    end
+    -- Now-identical records: keep the first, fold the rest into it.
+    if n > 0 then
+        index = {}
+        local keep = {}
+        for _, rec in ipairs(l.items) do
+            local k = indexKey(rec)
+            local twin
+            for _, it in ipairs(index[k] or {}) do
+                if (it.how == "bonus") == (rec.how == "bonus") and math.abs(it.t - rec.t) <= SAME_WINDOW then twin = it break end
+            end
+            if twin then
+                merge(twin, rec)
+            else
+                index[k] = index[k] or {}
+                table.insert(index[k], rec)
+                keep[#keep + 1] = rec
+            end
+        end
+        l.items = keep
+        PGM:Fire("LOOT")
+    end
+    return n
 end
 
 -- A bonus roll that doesn't say which boss (VoidcoreAdvisor's don't) is
@@ -295,7 +518,10 @@ function PGM:FillBonusBosses()
             local best, gap
             for _, d in ipairs(drops) do
                 local dt = math.abs((d.t or 0) - rec.t)
-                if dt <= BONUS_AFTER_KILL and d.kind == rec.kind and (not rec.diff or not d.diff or d.diff == rec.diff)
+                -- In M+ the difficulty is the key's, said differently by
+                -- different sources; raid difficulties must agree.
+                local diffOK = rec.kind == "mplus" or not rec.diff or not d.diff or d.diff == rec.diff
+                if dt <= BONUS_AFTER_KILL and d.kind == rec.kind and diffOK
                     and (not gap or dt < gap) then
                     best, gap = d, dt
                 end
@@ -310,15 +536,22 @@ function PGM:FillBonusBosses()
     return n
 end
 
--- Many records at once (an import). Returns how many were new and how
--- many were already known.
+-- Many records at once (an import). Returns how many were new, how many
+-- were already known, and how many weren't kept (junk, or deleted by hand).
 function PGM:ImportLoot(list)
-    local added, known = 0, 0
+    local added, known, skipped = 0, 0, 0
     for _, rec in ipairs(list or {}) do
-        if PGM:AddLoot(rec) then added = added + 1 else known = known + 1 end
+        local new, why = PGM:AddLoot(rec)
+        if new then
+            added = added + 1
+        elseif why == "known" then
+            known = known + 1
+        else
+            skipped = skipped + 1
+        end
     end
     if PGM:FillBonusBosses() > 0 or added > 0 then PGM:Fire("LOOT") end
-    return added, known
+    return added, known, skipped
 end
 
 function PGM:LootBossName(enc)
@@ -380,15 +613,18 @@ end)
 listen("BOSS_KILL", function(_, enc, name) killed(enc, name) end)
 
 -- Personal loot (in M+ too), and in some raids the winners of rolls.
-listen("ENCOUNTER_LOOT_RECEIVED", function(_, enc, _, link, _, who, class)
+listen("ENCOUNTER_LOOT_RECEIVED", function(_, enc, _, link, quantity, who, class)
     local w = where()
     if w.kind == "other" then return end
     enc = P(enc)
-    record({ t = PGM.Now(), who = P(who), class = P(class), link = P(link), how = "personal", enc = enc,
+    record({ t = PGM.Now(), who = P(who), class = P(class), link = P(link), qty = P(quantity), how = "personal", enc = enc,
         boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff, kind = w.kind, where = w.where, src = "pgm" })
 end)
 
--- Group loot: who won each drop of a boss, and how they rolled.
+-- Group loot: who won each drop of a boss, and how they rolled. Each drop
+-- is read again on every update (and after a /reload), so it's kept once,
+-- by encounter and drop, and later reads only fill in how it was won.
+local seenDrops = {}   -- ["enc:lootListID"] = record
 local function readDrops(enc)
     enc = P(enc)
     local w = where()
@@ -412,9 +648,17 @@ local function readDrops(enc)
                     end
                 end
             end
-            record({ t = PGM.Now(), who = who, class = P(win.playerClass), link = link, how = ROLL_STATE[state] or "roll",
+            local rec = { t = PGM.Now(), who = who, class = P(win.playerClass), link = link, how = ROLL_STATE[state] or "roll",
                 roll = tonumber(roll), enc = enc, boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff,
-                kind = "raid", where = w.where, src = "pgm" })
+                kind = "raid", where = w.where, src = "pgm" }
+            local key = enc .. ":" .. (P(d.lootListID) or link)
+            local seen = seenDrops[key]
+            if seen then
+                if SPECIFIC[rec.how] and not SPECIFIC[seen.how] then seen.how, seen.roll = rec.how, rec.roll end
+            else
+                record(rec)
+                seenDrops[key] = rec.who and findSame(rec) or nil
+            end
         end
     end
 end
@@ -438,7 +682,8 @@ listen("BONUS_ROLL_RESULT", function(_, kindOfReward, link)
 end)
 
 -- Everyone else's bonus rolls, from loot chat: "%s receives bonus loot: %s."
--- The pattern is built from the game's own text, so any language works.
+-- The pattern is built from the game's own text, so it follows the game's
+-- language (as long as the name comes before the item, as in English).
 local function patternOf(fmt)
     if type(fmt) ~= "string" then return nil end
     -- Placeholders for %s and %d (and "%1$s"), then the rest of the text
@@ -493,7 +738,7 @@ function PGM:LootFromMRT(since)
     local out = {}
     for _, line in ipairs(lh.list) do
         if type(line) == "string" then
-            local t, enc, inst, diff, name, classID, _, item, roll = strsplit("#", line)
+            local t, enc, inst, diff, name, classID, qty, item, roll = strsplit("#", line)
             t, enc, inst, diff = tonumber(t), tonumber(enc), tonumber(inst), tonumber(diff)
             local kind = diff and (RAID_DIFF[diff] and "raid" or (diff == 8 and "mplus")) or nil
             if t and t > (since or 0) and kind and name and name ~= "" and item then
@@ -502,7 +747,7 @@ function PGM:LootFromMRT(since)
                     local ok, _, file = pcall(GetClassInfo, tonumber(classID))
                     class = ok and file or nil
                 end
-                out[#out + 1] = { t = t, who = name, class = class, link = item,
+                out[#out + 1] = { t = t, who = name, class = class, link = item, qty = tonumber(qty),
                     how = (roll and roll ~= "") and "roll" or "drop", mrtRoll = (roll and roll ~= "") and roll or nil,
                     enc = enc ~= 0 and enc or nil, boss = enc and bosses[enc] or nil,
                     inst = inst ~= 0 and inst or nil, diff = diff, kind = kind, where = inst and places[inst] or nil,
@@ -525,8 +770,9 @@ function PGM:LootFromVCA(since)
         local t = type(e) == "table" and tonumber(e.timestamp)
         if t and t > (since or 0) and (e.itemLink or e.itemID) then
             local kind = (e.sourceType == "MYTHIC_PLUS" and "mplus") or (e.raidInstanceID and "raid") or "other"
+            -- M+ as Mythic Keystone (8), as MRT and the game's loot say it.
             out[#out + 1] = { t = t, who = me, class = class, link = e.itemLink or ("item:" .. e.itemID),
-                how = "bonus", diff = tonumber(e.difficultyID), kind = kind, src = "vca" }
+                how = "bonus", diff = kind == "mplus" and 8 or tonumber(e.difficultyID), kind = kind, src = "vca" }
         end
     end
     return out
@@ -563,7 +809,7 @@ function PGM:TypeOwnMRTRolls()
     return n
 end
 
-local PULL_VERSION = 3   -- 2: M+ loot and place names from MRT; 3: MRT's roll types
+local PULL_VERSION = 4   -- 2: M+ loot and place names from MRT; 3: MRT's roll types; 4: realms, junk
 function PGM:PullLoot(all)
     local l = store()
     if not l then return nil, nil end
@@ -571,6 +817,13 @@ function PGM:PullLoot(all)
     -- again (repeats only fill in what was missing).
     if (l.pullVersion or 0) < PULL_VERSION then
         all = true
+        if (l.pullVersion or 0) < 4 then
+            -- VoidcoreAdvisor's M+ rolls were kept as difficulty 23.
+            for _, rec in ipairs(l.items) do
+                if rec.src == "vca" and rec.kind == "mplus" then rec.diff = 8 end
+            end
+            PGM:FixLootNames()
+        end
         l.pullVersion = PULL_VERSION
     end
     local fromMRT, fromVCA
@@ -597,6 +850,10 @@ PGM:On("LOGIN", function()
         if (a or 0) > 0 then parts[#parts + 1] = a .. " from MRT" end
         if (b or 0) > 0 then parts[#parts + 1] = b .. " bonus rolls from VoidcoreAdvisor" end
         if #parts > 0 then PGM.Print("Loot: added " .. table.concat(parts, " and ") .. ".") end
+        -- Junk the game couldn't tell apart from tier tokens until it had
+        -- loaded the items: look again once it has.
+        local _, unsure = PGM:PruneLoot()
+        if unsure > 0 then C_Timer.After(30, function() PGM:PruneLoot() end) end
     end)
 end)
 
@@ -698,7 +955,12 @@ end
 local nightOf = setmetatable({}, { __mode = "k" })
 local guidByName
 PGM:On("RAIDS", function() nightOf = setmetatable({}, { __mode = "k" }) end)
+-- Only when who's in the guild changed: a roster read comes every few
+-- seconds in a busy guild, and working out nights isn't cheap.
+local membersSeen
 PGM:On("ROSTER", function()
+    if membersSeen == PGM.membersVersion then return end
+    membersSeen = PGM.membersVersion
     guidByName = nil
     nightOf = setmetatable({}, { __mode = "k" })
 end)
@@ -722,15 +984,22 @@ function PGM:LootNight(rec)
     if known ~= nil then return known or nil end
     local g = PGM.GuildDB()
     local guid = memberGuid(rec.who)
-    local best, bestScore
+    -- Two nights that fit equally well (two teams at once, and a winner
+    -- who isn't a guild member): neither, rather than whichever came first.
+    local best, bestScore, tied
     for _, s in ipairs(g and g.raids and g.raids.sessions or {}) do
         if (not rec.inst or not s.instance or s.instance == rec.inst)
             and (not rec.diff or not s.diffID or s.diffID == rec.diff)
             and rec.t >= (s.start or 0) - 900 and rec.t <= (s.stop or s.start or 0) + 1800 then
             local score = (guid and s.present and s.present[guid]) and 2 or 1
-            if not best or score > bestScore then best, bestScore = s, score end
+            if not best or score > bestScore then
+                best, bestScore, tied = s, score, false
+            elseif score == bestScore then
+                tied = true
+            end
         end
     end
+    if tied then best = nil end
     nightOf[rec] = best or false
     return best
 end

@@ -238,8 +238,7 @@ local function build(p)
         function() return PandyGuildGroups and PandyGuildGroups:IsEnabled() end,
         function(v)
             if not PandyGuildGroups then return end
-            PandyGuildGroups:SetEnabled(v)
-            UI:BuildNav()
+            PandyGuildGroups:SetEnabled(v)   -- rebuilds the sidebar
             UI:Refresh()
         end)
     p.groupsCheck:SetPoint("TOPLEFT", X, -468)

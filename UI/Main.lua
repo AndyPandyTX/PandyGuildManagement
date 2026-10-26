@@ -299,9 +299,14 @@ end
 function UI:Show(id)
     local f = self:Create()
     id = (id and self.tabs[id]) and id or self.current or "overview"
+    -- A hidden page (the group finder, switched off) has no button, and
+    -- isn't opened: the overview is.
+    local asked = self.tabs[id]
+    if asked and asked.hidden and asked.hidden() then id = "overview" end
     for tid, tab in pairs(self.tabs) do
         if tab.panel then tab.panel:SetShown(tid == id) end
-        f.navButtons[tid]:SetSelected(tid == id)
+        local b = f.navButtons[tid]
+        if b then b:SetSelected(tid == id) end
     end
     local tab = self.tabs[id]
     if not tab.panel then
@@ -350,7 +355,7 @@ function UI:Refresh()
     if self.profile and self.profile:IsVisible() and self.RefreshProfile then self:RefreshProfile() end
 end
 
--- Roster scans can arrive every few seconds; repaint at most once a second.
+-- Roster scans can arrive every few seconds; repaint at most twice a second.
 local refreshQueued = false
 local function queueRefresh()
     if refreshQueued then return end

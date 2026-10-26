@@ -69,17 +69,7 @@ function PGM:AccountMain(members)
     if #mine == 0 then return nil end
     local main = PandyGuildDB.myMain
     if not (main and members[main] and tContains(mine, main)) then
-        table.sort(mine, function(a, b)
-            local ra, rb = members[a], members[b]
-            local aa, ab = PGM.IsAltRank(ra), PGM.IsAltRank(rb)
-            if aa ~= ab then return ab end
-            local sa, sb = ra.score or 0, rb.score or 0
-            if sa ~= sb then return sa > sb end
-            local la, lb = ra.level or 0, rb.level or 0
-            if la ~= lb then return la > lb end
-            return (ra.short or "") < (rb.short or "")
-        end)
-        main = mine[1]
+        main = PGM.PickMain(members, mine)
     end
     return main, mine
 end
@@ -100,10 +90,27 @@ local PATTERNS = {
     W .. "%s+alt",
 }
 
--- Is this an alt rank? Guilds name them "Alt", "Alts", "Raider Alts"...
+-- The main of a group with none chosen: a non-alt rank first, then the best
+-- M+ score, then the highest level, then the name. Sorts `guids` that way.
+function PGM.PickMain(members, guids)
+    table.sort(guids, function(a, b)
+        local ra, rb = members[a], members[b]
+        local aa, ab = PGM.IsAltRank(ra), PGM.IsAltRank(rb)
+        if aa ~= ab then return ab end
+        local sa, sb = ra.score or 0, rb.score or 0
+        if sa ~= sb then return sa > sb end
+        local la, lb = ra.level or 0, rb.level or 0
+        if la ~= lb then return la > lb end
+        return (ra.short or "") < (rb.short or "")
+    end)
+    return guids[1]
+end
+
+-- Is this an alt rank? Guilds name them "Alt", "Alts", "Raider Alts"... As
+-- a word, so "Exalted" isn't one.
 function PGM.IsAltRank(rec)
     local r = rec and rec.rank
-    return r ~= nil and r:lower():find("alt", 1, true) ~= nil
+    return r ~= nil and r:lower():find("%f[%a]alts?%f[%A]") ~= nil
 end
 
 -- Only a name that is actually in the roster counts (and never their own),
@@ -371,5 +378,14 @@ end)
 PGM:RegisterEvent("PLAYER_LEVEL_UP", function() C_Timer.After(1, registerSelf) end)
 PGM:RegisterEvent("PLAYER_GUILD_UPDATE", function() C_Timer.After(2, registerSelf) end)
 
--- Rebuild before anything else listening for ROSTER reads the result.
-PGM:On("ROSTER", function() PGM:RebuildAlts() end)
+-- Rebuild before anything else listening for ROSTER reads the result; only
+-- when the roster changed in a way alts depend on (someone joined, left or
+-- was renamed, or a note or rank changed) or it's another guild. Links,
+-- claims and a picked main rebuild where they change.
+local builtFor
+PGM:On("ROSTER", function()
+    local v = (PGM.notesVersion or 0) .. ":" .. tostring(PGM.GuildKey())
+    if v == builtFor then return end
+    builtFor = v
+    PGM:RebuildAlts()
+end)

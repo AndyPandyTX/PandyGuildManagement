@@ -24,12 +24,10 @@
 
 local _, NS = ...
 local G = NS.G
-if not G.ok then return end
 local PGM = G.PGM
 
 local TTL = 10 * 60
 local HEARTBEAT = 4 * 60
-local SKEW = 300
 local SCHED_KEEP = 2 * 3600
 local MAX_ASKS = 40
 local PING_GAP = 60
@@ -48,11 +46,7 @@ local function isLeader(id, rec)
     return tail ~= nil and rec ~= nil and tail == G.GuidTail(rec.guid)
 end
 
-local function clampU(u)
-    u = tonumber(u)
-    if not u or u <= 0 then return nil end
-    return math.floor(math.min(u, PGM.Now() + SKEW))
-end
+local clampU = G.ClampStamp
 
 local function validRole(r)
     return (r == "T" or r == "H" or r == "D") and r or nil
@@ -112,6 +106,19 @@ local function newId()
     return G.GuidTail(PGM:MyGuid()) .. "." .. (PGM.Now() * 10 + counter % 10)
 end
 
+-- Who's in my group now becomes the post's starting point: recount only
+-- takes off what's needed for people who join after it. Anyone here who'd
+-- asked through the guild has joined.
+local function baseline(p)
+    p.counted, p.base = {}, {}
+    for _, m in ipairs(G.GroupNames()) do
+        local key = PGM.SyncNorm(m.name)
+        p.base[key] = true
+        local a = p.asks and p.asks[key]
+        if a then a.state = "joined" end
+    end
+end
+
 -- Post a group, or change mine. spec: { kind, what, level, size, need,
 -- team, start, guildFirst, note, id }. A start in the future makes it a
 -- scheduled group. Returns the post, or nil and why not.
@@ -119,13 +126,16 @@ function G:Post(spec)
     if not G.CanTalk() then return nil, G.WhyNot() end
     if not PGM:MyGuid() then return nil, "Your character isn't ready yet." end
     local now = PGM.Now()
-    local scheduled = (spec.start or 0) > now + 60
+    local old = spec.id and G.posts[spec.id]
+    if old and not old.mine then old = nil end
+    -- An edit that keeps a scheduled group's start keeps it scheduled, even
+    -- once that start has passed (it stays up two hours after).
+    local keepStart = old and (old.start or 0) > 0 and spec.start == old.start
+    local scheduled = keepStart or (spec.start or 0) > now + 60
     if not scheduled and G.InGroup() and not G.IsLeader() then
         return nil, "Only your group's leader can post it."
     end
     local d = G.DB()
-    local old = spec.id and G.posts[spec.id]
-    if old and not old.mine then old = nil end
     if not scheduled and G.mine and not (old and old.id == G.mine.id) then
         return nil, "You already have a group posted. Close it first."
     end
@@ -156,8 +166,14 @@ function G:Post(spec)
         p.fromLFG = spec.fromLFG or p.fromLFG
         if not old then
             p.pugAt = now + 60 * (tonumber(spec.guildFirst) or G.opt("guildFirst") or 0)
-            p.asks, p.counted, p.base = {}, {}, {}
-            for _, m in ipairs(G.GroupNames()) do p.base[PGM.SyncNorm(m.name)] = true end
+            p.asks = {}
+            baseline(p)
+        elseif spec.fromLFG then
+            -- A Group Finder listing's needs were just worked out from the
+            -- whole group (GroupFinder.lua), so everyone here is already off
+            -- them: start counting again from now, or recount would take the
+            -- same people off (or put a leaver back) a second time.
+            baseline(p)
         end
         G.mine = p
     end
@@ -192,6 +208,11 @@ function G:CloseScheduled(id)
     d.sched[id] = nil
     local u = PGM.Stamp(p.u)
     d.closed[id] = u
+    -- Guildies who are offline now still hold it in their saved data, so
+    -- it's said again whenever someone asks what's posted (Q), until it
+    -- would have expired anyway.
+    d.closedSched = d.closedSched or {}
+    d.closedSched[id] = { u = u, start = p.start }
     G.Send(true, "X", id, u, "c")
     G:Fire("POSTS")
 end
@@ -417,6 +438,22 @@ function G.handlers.X(f, sender, rec)
     G:Fire("POSTS")
 end
 
+-- Scheduled groups I closed that guildies may still hold from their saved
+-- data (they were offline for the X): { id = { u, start } }, until each
+-- would have expired anyway.
+local function closedScheduled()
+    local d = G.DB()
+    local list = d and d.closedSched or {}
+    local now = PGM.Now()
+    for id, c in pairs(list) do
+        if (c.start or 0) + SCHED_KEEP < now then list[id] = nil end
+    end
+    return list
+end
+
+-- Someone logged in and asks what's posted: each leader answers with their
+-- own posts, and with the scheduled ones they closed since (a close is said
+-- once, so a guildie who was offline for it would keep the post otherwise).
 function G.handlers.Q()
     G:AnswerStatus()
     if not G.CanTalk() then return end
@@ -424,11 +461,13 @@ function G.handlers.Q()
     for _, p in pairs(G.posts) do
         if p.mine then mine[#mine + 1] = p end
     end
-    if #mine == 0 then return end
+    local closed = closedScheduled()
+    if #mine == 0 and next(closed) == nil then return end
     C_Timer.After(1 + math.random() * 4, function()
         for _, p in ipairs(mine) do
             if G.posts[p.id] == p then sendPost(p, true) end
         end
+        for id, c in pairs(closed) do G.Send(true, "X", id, c.u, "c") end
     end)
 end
 
@@ -605,6 +644,7 @@ local function sweep()
     for id, u in pairs(d.closed) do
         if u < now - 2 * 86400 then d.closed[id] = nil end
     end
+    closedScheduled()   -- drops the ones past their time
     if changed then G:Fire("POSTS") end
 end
 

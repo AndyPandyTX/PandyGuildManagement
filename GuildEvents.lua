@@ -35,14 +35,20 @@ end
 -- SYSTEM MESSAGES
 -- ============================================================
 
--- "%s has promoted %s to %s." -> "^(.+) has promoted (.+) to (.+)%.$"
+-- "%s has promoted %s to %s." -> "^(%S+) has promoted (%S+) to (.+)%.$".
+-- Names have no spaces; the last capture (a rank, in promote and demote)
+-- may, so a rank like "Ready to Raid" doesn't swallow the member's name.
 local function toPattern(fmt)
     if type(fmt) ~= "string" then return nil end
     local parts = {}
     for piece in (fmt .. "%s"):gmatch("(.-)%%%d*%$?s") do
         parts[#parts + 1] = (piece:gsub("[%(%)%.%+%-%*%?%[%]%^%$%%]", "%%%0"))
     end
-    return "^" .. table.concat(parts, "(.+)") .. "$"
+    local out = parts[1]
+    for i = 2, #parts do
+        out = out .. (i < #parts and "(%S+)" or "(.+)") .. parts[i]
+    end
+    return "^" .. out .. "$"
 end
 
 -- Which capture is the doer and which the member, per message.
@@ -157,17 +163,23 @@ function PGM:CreditFromEventLog(events)
                 return not used[j] and ev.who == who and ev.typ == typ
                     and ev.at <= e.t + 3600 and ev.at >= e.t - 7 * 86400
             end
-            -- The event types that explain this entry, in order of
-            -- preference: a join was an invite if there was one (it names
-            -- who invited), else a Guild Finder join with nobody to credit.
+            -- The event types that explain this entry: a join was an invite
+            -- (it names who invited) or a Guild Finder join; a leave, a
+            -- removal or a quit. The event closest in time wins (to the hour
+            -- the log keeps), so Monday's kick doesn't explain Thursday's
+            -- quit after a re-invite; on a tie, the earlier type here.
             local order = (e.kind == "join" or e.kind == "rejoin") and { "invite", "join" }
                 or (e.kind == "leave" and { "remove", "quit" }) or { e.kind }
-            local found
-            for _, typ in ipairs(order) do
+            local found, bestGap, bestPref
+            for pref, typ in ipairs(order) do
                 for j, ev in ipairs(events) do
-                    if fits(j, ev, typ) then found = j break end
+                    if fits(j, ev, typ) then
+                        local gap = math.floor(math.abs(ev.at - e.t) / 3600)
+                        if not found or gap < bestGap or (gap == bestGap and pref < bestPref) then
+                            found, bestGap, bestPref = j, gap, pref
+                        end
+                    end
                 end
-                if found then break end
             end
             if found then
                 local ev = events[found]

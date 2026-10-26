@@ -61,8 +61,11 @@ character's score comes from the game; main, warband and roles need RaiderIO.
   - **Searching by key level:** Group Finder titles reach addons as
     protected strings (the game draws them, no addon can read them), so
     the search is Blizzard's: its own search box moves into the Filters
-    panel while Browse is open, the way OAK does it, and goes back after.
-    Type keys or words and press Enter. One level also finds the keys
+    panel while Browse and Blizzard's list of groups are both open, the way
+    OAK does it, and goes back after. Its own scripts stay as they are
+    (nothing of Blizzard's is replaced), so Enter searches as it does there,
+    then in Browse's category if that's another. Type keys or words and
+    press Enter. One level also finds the keys
     either side of it (10 finds 9 to 11); a range (10-12) is exact. If OAK
     has the box at the time, it's left there and the panel says so.
   - **Apply** sends a Group Finder application with your Apply as roles
@@ -145,7 +148,9 @@ hidden.
 - You go quiet: inside an instance addons can't talk, so a post with no
   heartbeat for 10 minutes is dropped. It comes back if you leave and it's
   still open.
-- Scheduled groups stay until two hours after they start.
+- Scheduled groups stay until two hours after they start. One closed while
+  you were offline goes when you log in: its leader says so again when
+  asked what's posted.
 
 A `/reload` keeps your open post.
 

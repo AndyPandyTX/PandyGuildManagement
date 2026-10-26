@@ -15,8 +15,9 @@ PandyGuildManagement = PGM
 PGM.NAME = "Pandy Guild Management"
 PGM.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 
--- Modules (separate addons that list this one in ## Dependencies) build on
--- the functions in the README's "Modules" section. Within one API number
+-- Modules (the group finder in Groups\, or a separate addon that lists
+-- this one in ## Dependencies) build on the functions in the README's
+-- "Modules" section. Within one API number
 -- those keep their names, arguments and results; a change that breaks one
 -- moves the number up, and a module asking for a newer one is told to update.
 PGM.API = 1
@@ -237,13 +238,16 @@ do
     end
 end
 
-local sortKeys = {}
+local sortKeys, sortKeyCount = {}, 0
 function PGM.SortKey(name)
     name = name or ""
     local key = sortKeys[name]
     if not key then
         key = name:lower():gsub("[\195-\197][\128-\191]", FOLD)
+        -- Search boxes add every string typed; start over now and then.
+        if sortKeyCount > 5000 then wipe(sortKeys) sortKeyCount = 0 end
         sortKeys[name] = key
+        sortKeyCount = sortKeyCount + 1
     end
     return key
 end

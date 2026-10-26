@@ -17,14 +17,14 @@ local G = {}
 NS.G = G
 PandyGuildGroups = G
 
-G.NAME = "Pandy Guild Groups"
+G.NAME = "Guild group finder"
 G.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 G.PGM = PGM
 
 -- Built into Pandy Guild Management (loaded after all of its files), so the
--- module hooks are always there; registering lists /pgg under /pgm help.
-G.ok = PGM.RegisterModule({ name = G.NAME, version = G.VERSION, api = 1, slash = "/pgg" })
-if not G.ok then return end
+-- module hooks are always there and the API always matches. Registering only
+-- lists /pgg under /pgm help.
+PGM.RegisterModule({ name = G.NAME, version = G.VERSION, api = 1, slash = "/pgg" })
 
 local P = PGM.Plain
 local SEP = "\031"
@@ -128,6 +128,17 @@ function G.Clean(text, max)
     return text
 end
 
+-- A stamp from another player, as a number, pulled back to at most five
+-- minutes ahead of ours (our clock is the server's), so a bad or hostile
+-- clock can't win "newest" for ever. Nil when it isn't a stamp. The same
+-- rule as PGM's own sync, whose copy is private to Sync.lua.
+G.SKEW = 300
+function G.ClampStamp(u)
+    u = tonumber(u)
+    if not u or u <= 0 then return nil end
+    return math.floor(math.min(u, PGM.Now() + G.SKEW))
+end
+
 -- "Player-1234-0ABCDEF0" -> "1234-0ABCDEF0": post ids start with it.
 function G.GuidTail(guid)
     return guid and guid:match("^Player%-(.+)$")
@@ -178,13 +189,17 @@ end
 -- M+ SCORES
 -- ============================================================
 
--- Role icons from the game's role sheet, dimmed for a role that only
--- partly earned a score (RaiderIO's "partial").
-local ROLE_COORDS = { T = "0:19:22:41", H = "20:39:1:20", D = "20:39:22:41" }
+-- Each role's square on the game's 64x64 role sheet, in pixels: left,
+-- right, top, bottom. Text icons and the pages' role textures both use it.
+G.ROLE_SHEET = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
+G.ROLE_COORDS = { T = { 0, 19, 22, 41 }, H = { 20, 39, 1, 20 }, D = { 20, 39, 22, 41 } }
+
+-- Role icons from the role sheet, dimmed for a role that only partly
+-- earned a score (RaiderIO's "partial").
 function G.RoleIcon(r, dim)
-    local coords = ROLE_COORDS[r]
+    local coords = G.ROLE_COORDS[r]
     if not coords then return "" end
-    return "|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:13:13:0:0:64:64:" .. coords
+    return "|T" .. G.ROLE_SHEET .. ":13:13:0:0:64:64:" .. table.concat(coords, ":")
         .. (dim and ":110:110:110" or "") .. "|t"
 end
 
@@ -529,10 +544,12 @@ function G.Start()
 end
 G:OnPGM("ROSTER", G.Start)
 
--- For PGM's Settings: switch the group finder on or off, at once. Going off,
--- it first closes my guild post (while it may still say so) and gives
--- Blizzard's search box back; then it goes quiet. Coming back on, it starts
--- up as at login if it hadn't yet this session.
+-- For PGM's Settings and /pgg on | off: switch the group finder on or off,
+-- at once. Going off, it first closes my guild post (while it may still say
+-- so) and gives Blizzard's search box back; then it goes quiet. Coming back
+-- on, it starts up as at login if it hadn't yet this session. Either way its
+-- pages join or leave PGM's sidebar, so the sidebar is laid out again (if the
+-- window has been built; it reads the pages' hidden() when it is).
 function G:SetEnabled(on)
     if not PandyGuildGroupsDB then return end
     on = on and true or false
@@ -546,6 +563,7 @@ function G:SetEnabled(on)
         if G.UI and G.UI.ReturnSearchBox then G.UI.ReturnSearchBox() end
         PandyGuildGroupsDB.off = true
     end
+    if PGM.UI.frame then PGM.UI:BuildNav() end
     PGM.UI:QueueRefresh()
 end
 
