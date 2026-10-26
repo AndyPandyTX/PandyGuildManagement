@@ -48,8 +48,16 @@ function PGM:MPlusScore(rec)
     if score and score > 0 then return math.floor(score + 0.5) end
 end
 
--- The game's own colour for a score (grey, green, blue, purple, orange).
+-- A score's colour: RaiderIO's when it's installed (its scale keeps going
+-- past orange into pink and red for the season's top scores, as LFG
+-- addons show them), else the game's own (grey, green, blue, purple,
+-- orange).
 function PGM:ScoreColor(score)
+    local rio = _G.RaiderIO
+    if score and type(rio) == "table" and type(rio.GetScoreColor) == "function" then
+        local ok, r, g, b = pcall(rio.GetScoreColor, score)
+        if ok and type(r) == "number" and type(g) == "number" and type(b) == "number" then return { r, g, b } end
+    end
     local getColor = C_ChallengeMode and C_ChallengeMode.GetDungeonScoreRarityColor
     if score and getColor then
         local ok, c = pcall(getColor, score)

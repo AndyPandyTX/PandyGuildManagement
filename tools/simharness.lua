@@ -1540,6 +1540,14 @@ if FOREVER then
     check(P:RaidProgress(scored) == nil, "no raid progress on Forever")
 else
     check(P:MPlusScore(scored) == 2400, "M+ score still shows on retail")
+    -- Score colours: RaiderIO's scale when it's there, else the game's.
+    A.env.C_ChallengeMode = { GetDungeonScoreRarityColor = function() return { r = 1, g = 0.5, b = 0 } end }
+    local game = P:ScoreColor(3900)
+    check(game[1] == 1 and game[2] == 0.5, "without RaiderIO, the game's colour")
+    A.env.RaiderIO = { GetScoreColor = function(score) return 0.9, 0.3, 0.6 end }
+    local rio = P:ScoreColor(3900)
+    check(rio[1] == 0.9 and rio[3] == 0.6, "with RaiderIO, its colour (pink at the top)")
+    A.env.RaiderIO, A.env.C_ChallengeMode = nil, nil
 end
 
 print(("\n%d passed, %d failed"):format(passes, failures))
