@@ -32,6 +32,7 @@ Progress.lua
 Stats.lua
 Bulk.lua
 Crafters.lua
+Loot.lua
 
 UI\Widgets.lua
 UI\Main.lua
@@ -39,8 +40,10 @@ UI\Overview.lua
 UI\Roster.lua
 UI\Professions.lua
 UI\Activity.lua
+UI\PasteBox.lua
 UI\Teams.lua
 UI\TeamPaste.lua
+UI\Loot.lua
 UI\Profile.lua
 UI\Log.lua
 UI\Users.lua

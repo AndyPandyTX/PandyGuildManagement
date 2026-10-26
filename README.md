@@ -161,6 +161,26 @@ Filter by team; a team's view lists its whole roster, so no-shows appear too.
 
 ![Raids](screenshots/07-raids.png)
 
+**Loot.** Raid drops and bonus rolls, recorded as they happen and kept on
+your account:
+- Group-loot winners (with Need, Greed or Transmog) and personal loot, for
+  the whole raid, addon or not. Only epic gear, tier tokens and the like.
+- Bonus rolls: your own, raid or M+, and everyone else's from the "receives
+  bonus loot" line in loot chat.
+- Already have MRT or VoidcoreAdvisor? Their loot history and bonus-roll log
+  are pulled in at login, so the page starts full. Repeats are dropped.
+- Filters that all combine: when, raids or M+, team, boss, difficulty, item
+  type (tier tokens, weapons, trinkets, rings and necks, armor), drops or
+  bonus rolls, and a search for a player, item or boss. Shortcuts for
+  **Mine**, **My bonus rolls** and **Tier tokens**.
+- **By player:** items, tier tokens, bonus rolls, raids attended and items
+  per raid, with alts counted as their main.
+- A drop belongs to the raid night it fell in, so the team filter shows
+  that team's raids, even when two teams raid at once.
+- Nothing is synced. **Export** what the filters show (PGM text for another
+  player's PGM, or CSV for a spreadsheet), and **Import** someone's export.
+  Right-click an entry to delete it.
+
 **Addon Users.** Everyone in the guild running Pandy Guild Management, with
 their version, and who needs to update. The Roster also has a "Has addon"
 filter.

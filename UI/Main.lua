@@ -15,7 +15,7 @@ local WIDTH, HEIGHT, SIDE_W = 1020, 660, 210
 -- Sidebar sections, in order. A page not listed lands in the last one.
 local NAV = {
     { heading = "Guild",   ids = { "overview", "roster", "activity", "professions" } },
-    { heading = "Raiding", ids = { "teams", "raids" } },
+    { heading = "Raiding", ids = { "teams", "raids", "loot" } },
     { heading = "Groups",  ids = { "groups", "free", "keys" } },   -- the group finder (Groups\)
     { heading = "Records", ids = { "log", "users", "bulk", "settings" } },
 }
@@ -27,6 +27,7 @@ local NAV_ICONS = {
     activity    = "Interface\\Icons\\INV_Misc_PocketWatch_02",
     teams       = "Interface\\Icons\\INV_Misc_GroupNeedMore",
     raids       = "Interface\\Icons\\Achievement_Boss_Ragnaros",
+    loot        = "Interface\\Icons\\INV_Misc_Bag_10",
     log         = "Interface\\Icons\\INV_Scroll_03",
     users       = "Interface\\Icons\\INV_Misc_GroupLooking",
     bulk        = "Interface\\Icons\\Ability_Warrior_RallyingCry",

@@ -998,6 +998,231 @@ do
     run(10)
 end
 
+print("-- loot tracking")
+do
+    -- Items: 268256 a helm, 268300 a trinket, 268400 a tier token, 999 a reagent.
+    local ITEMS = {
+        [268256] = { 4, 4, "INVTYPE_HEAD" }, [268300] = { 4, 0, "INVTYPE_TRINKET" }, [268400] = { 15, 0, "" },
+        [270000] = { 2, 7, "INVTYPE_WEAPON" }, [270001] = { 4, 1, "INVTYPE_FINGER" }, [271875] = { 4, 2, "INVTYPE_CHEST" },
+        [251115] = { 4, 1, "INVTYPE_FINGER" }, [272000] = { 4, 3, "INVTYPE_LEGS" }, [999] = { 7, 0, "" },
+    }
+    local function link(id, q) return ("|cnIQ%d:|Hitem:%d::::::::90:102::::::::|h[Item %d]|h|r"):format(q or 4, id, id) end
+    local function setup(cl)
+        local e = cl.env
+        e.C_Item = { GetItemInfoInstant = function(id)
+            local it = ITEMS[tonumber(id)]
+            if not it then return nil end
+            return id, "", "", it[3], 0, it[1], it[2]
+        end }
+        e.GetClassInfo = function(n) local f = { [5] = "PRIEST", [11] = "DRUID" } return "x", f[n], n end
+        e.LOOT_ITEM_BONUS_ROLL = "%s receives bonus loot: %s."
+        e.LOOT_ITEM_BONUS_ROLL_MULTIPLE = "%s receives bonus loot: %sx%d."
+        e.C_LootHistory = { GetSortedDropsForEncounter = function() return LOOT_DROPS end }
+        local fn, err = load(FILES["Loot.lua"], "@Loot.lua", "t", e)
+        if not fn then error(err) end
+        fn("PandyGuildManagement", cl.NS)
+    end
+    setup(A)
+    setup(B)
+    local P = A.PGM
+    local function count(cl) return #cl.PGM:LootItems() end
+    local function find(cl, who, id, how)
+        for _, r in ipairs(cl.PGM:LootItems()) do
+            if r.who == who and r.id == id and (not how or r.how == how) then return r end
+        end
+    end
+    local function town() return "Town", "none", 0, "" end
+
+    A.env.GetInstanceInfo = function() return "Voidspire", "raid", 15, "Heroic", 20, 0, false, 3004 end
+    A.fire("ENCOUNTER_END", 3429, "Boss A", 15, 20, 1)
+    LOOT_DROPS = {
+        { itemHyperlink = link(268256), winner = { playerName = "Funkyshade", playerClass = "PRIEST", state = 0 } },
+        { itemHyperlink = link(268300), winner = { playerName = "Selwyne-MalGanis", playerClass = "DRUID", state = 3 } },
+        { itemHyperlink = link(272000) },   -- still being rolled for
+    }
+    A.fire("LOOT_HISTORY_UPDATE_ENCOUNTER", 3429)
+    check(count(A) == 2, "group loot: the two decided drops are kept (got " .. count(A) .. ")")
+    local fh = find(A, "Funkyshade-MalGanis", 268256)
+    check(fh and fh.how == "need" and fh.boss == "Boss A" and fh.diff == 15 and fh.kind == "raid", "a Need win, with boss and difficulty")
+    check(find(A, "Selwyne-MalGanis", 268300, "greed") ~= nil, "a Greed win")
+    A.fire("LOOT_HISTORY_UPDATE_DROP", 3429, 1)
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 268256, link(268256), 1, "Funkyshade", "PRIEST")
+    check(count(A) == 2 and fh.how == "need", "the same drop reported again is one record, still a Need")
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 268400, link(268400), 1, "Tiferis", "PALADIN")
+    check(find(A, "Tiferis-MalGanis", 268400, "personal") ~= nil, "personal loot is kept")
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 999, link(999, 4), 3, "Tiferis", "PALADIN")
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 272000, link(272000, 3), 1, "Tiferis", "PALADIN")
+    check(count(A) == 3, "reagents and blue items aren't kept (got " .. count(A) .. ")")
+
+    -- Bonus rolls: ours from the game, everyone else's from loot chat.
+    A.fire("BONUS_ROLL_RESULT", "item", link(270000), 1, 102)
+    local mine = find(A, "Nattypandy-MalGanis", 270000, "bonus")
+    check(mine and mine.boss == "Boss A" and mine.kind == "raid", "my bonus roll, for the boss just killed")
+    A.fire("CHAT_MSG_LOOT", "Anvar receives bonus loot: " .. link(270001) .. ".")
+    A.fire("CHAT_MSG_LOOT", "Atlasqt-Stormrage receives bonus loot: " .. link(268256) .. "x2.")
+    A.fire("CHAT_MSG_LOOT", "Anvar receives loot: " .. link(268300) .. ".")
+    check(find(A, "Anvar-MalGanis", 270001, "bonus") ~= nil, "someone else's bonus roll from chat")
+    check(find(A, "Atlasqt-Stormrage", 268256, "bonus") ~= nil, "...and the several-of-it line, cross-realm")
+    check(count(A) == 6, "ordinary loot lines aren't bonus rolls (got " .. count(A) .. ")")
+
+    A.env.GetInstanceInfo = town
+    A.fire("ENCOUNTER_LOOT_RECEIVED", 0, 268300, link(268300), 1, "Codiex", "DEMONHUNTER")
+    check(count(A) == 6, "outside a raid, drops aren't recorded")
+
+    -- Pulled in from MRT and VoidcoreAdvisor.
+    local now = BASE + math.floor(T)
+    A.env.VMRT = { LootHistory = { bossNames = { [3430] = "Boss B" }, list = {
+        ("%d#3429#3004#15#Funkyshade#5#1#item:268256::::::::90:102:::::::::#1"):format(now - 60),   -- already here
+        ("%d#3430#3004#16#Codiex#12#1#item:272000::::::::90:102:::::::::"):format(now - 86400),      -- new
+        ("%d#2000#2813#8#Codiex#12#1#item:268300::::::::90:102:::::::::"):format(now - 3600),        -- M+: skipped
+        ("%d#3430#3004#16#Codiex#12#3#item:999::::::::90:102:::::::::"):format(now - 3600),          -- reagent
+    } } }
+    A.env.VoidcoreAdvisorCharDB = { bonusRollLog = {
+        { itemID = 270000, itemLink = link(270000), timestamp = now + 2, difficultyID = 15, raidInstanceID = 1314 },
+        { itemID = 271875, itemLink = link(271875), timestamp = now - 7 * 86400, difficultyID = 15, raidInstanceID = 1314 },
+        { itemID = 251115, itemLink = link(251115), timestamp = now - 2 * 86400, difficultyID = 23, sourceType = "MYTHIC_PLUS" },
+    } }
+    local fromMRT, fromVCA = P:PullLoot()
+    check(fromMRT == 1, "MRT: one new raid item; the repeat, M+ and reagent lines skipped (got " .. tostring(fromMRT) .. ")")
+    check(fromVCA == 2, "VoidcoreAdvisor: two new bonus rolls, the live one not counted twice (got " .. tostring(fromVCA) .. ")")
+    local cb = find(A, "Codiex-MalGanis", 272000)
+    check(cb and cb.boss == "Boss B" and cb.diff == 16 and cb.src == "mrt", "MRT's record keeps boss and difficulty")
+    check((find(A, "Nattypandy-MalGanis", 251115, "bonus") or {}).kind == "mplus", "an M+ bonus roll is marked M+")
+    local again1, again2 = P:PullLoot()
+    check(again1 == 0 and again2 == 0, "pulling again brings nothing new")
+
+    -- What kind of item.
+    check(P.LootType(268400) == "token", "a tier token")
+    check(P.LootType(268300) == "trinket" and P.LootType(270000) == "weapon"
+        and P.LootType(270001) == "jewelry" and P.LootType(268256) == "armor", "trinket, weapon, ring, armor")
+
+    -- Export, and import on another copy.
+    local all = P:LootItems()
+    local text = P:LootExportText(all)
+    check(text:sub(1, 8) == "PGMLOOT1", "export without the game's packer is plain text")
+    local parsed = B.PGM:ParseLootExport(text)
+    check(parsed and #parsed == #all, "the export reads back whole (" .. tostring(parsed and #parsed) .. " of " .. #all .. ")")
+    check(not B.PGM:LootKnown(parsed[1]), "before importing, B doesn't have it")
+    local added = B.PGM:ImportLoot(parsed)
+    check(added == #all and count(B) == #all, "B imports every record")
+    local fb = find(B, "Funkyshade-MalGanis", 268256)
+    check(fb and fb.how == "need" and fb.boss == "Boss A" and fb.diff == 15, "...with how, boss and difficulty")
+    check(B.PGM:ImportLoot(B.PGM:ParseLootExport(text)) == 0, "importing it twice adds nothing")
+    check(B.PGM:ParseLootExport("hello") == nil, "random text isn't an export")
+    check(P:LootCSV(all):match("^Date,Player,Item") ~= nil, "CSV has a header row")
+
+    -- Which raid night, and so which team.
+    A.g.raids = A.g.raids or { sessions = {} }
+    local mercy = { id = "loot-night-1", start = now - 3600, stop = now + 3600, instance = 3004, diffID = 15,
+        present = { [gid(22)] = true }, bosses = {}, team = "team-mercy" }
+    local honor = { id = "loot-night-2", start = now - 3600, stop = now + 3600, instance = 3004, diffID = 15,
+        present = { [gid(23)] = true }, bosses = {}, team = "team-honor" }
+    table.insert(A.g.raids.sessions, mercy)
+    table.insert(A.g.raids.sessions, honor)
+    P:Fire("RAIDS")
+    check(P:LootNight(fh) == mercy, "Funkyshade's drop is on the night Funkyshade attended")
+    check(P:LootNight(find(A, "Selwyne-MalGanis", 268300)) == honor, "...and Selwyne's on the other team's night")
+    check(P:LootNight(cb) == nil, "an item from a night not recorded has no night")
+    for i = #A.g.raids.sessions, 1, -1 do
+        local s = A.g.raids.sessions[i]
+        if s == mercy or s == honor then table.remove(A.g.raids.sessions, i) end
+    end
+    -- The Loot page draws, under every filter choice and in both views. The
+    -- window is stand-ins that take any call (as in simgroups.lua), so the
+    -- page's own code runs: building, filtering, every row and its tooltip.
+    -- Buttons keep their click handlers and menus their entries, so the
+    -- test can click through them.
+    do
+        local MockMT = {}
+        local function Mock() return setmetatable({}, MockMT) end
+        MockMT.__index = function() return Mock() end
+        MockMT.__call = function() return Mock() end
+        MockMT.__concat = function(a, b) return (type(a) == "string" and a or "") .. (type(b) == "string" and b or "") end
+        MockMT.__len = function() return 0 end
+        local function clickable()
+            local b = Mock()
+            rawset(b, "SetScript", function(self, k, f) rawset(self, k, f) end)
+            rawset(b, "HasFocus", function() return false end)
+            rawset(b, "GetText", function() return "" end)
+            return b
+        end
+        local W = setmetatable({}, { __index = function() return function() return Mock() end end })
+        local rows, lastMenu = 0, nil
+        rawset(W, "List", function(_, _, buildRow, updateRow)
+            local l = Mock()
+            rawset(l, "SetData", function(self, data)
+                for i, d in ipairs(data or {}) do
+                    local r = buildRow(self, i)
+                    updateRow(r, d, i)
+                    if rawget(r, "onEnter") then r.onEnter(r) end
+                    rows = rows + 1
+                end
+            end)
+            return l
+        end)
+        rawset(W, "Button", function() return clickable() end)
+        rawset(W, "EditBox", function() return clickable() end)
+        rawset(W, "Chip", function(_, _, onClick)
+            local c = clickable()
+            rawset(c, "OnClick", onClick)
+            return c
+        end)
+        rawset(W, "Menu", function(_, _, entries) lastMenu = entries end)
+        local UI = { W = W, tabs = {} }
+        function UI:AddTab(t) self.tabs[t.id] = t end
+        function UI:QueueRefresh() end
+        function UI:Refresh() end
+        local exported = {}
+        function UI:ShowExport(title, text) exported[#exported + 1] = text end
+        local realUI, realCreate = P.UI, A.env.CreateFrame
+        P.UI = UI
+        A.env.CreateFrame = function() return Mock() end
+        A.env.GameTooltip = Mock()
+        local fn, err = load(FILES["UI/Loot.lua"], "@UI/Loot.lua", "t", A.env)
+        if not fn then error(err) end
+        local ok, why = pcall(fn, "PandyGuildManagement", A.NS)
+        check(ok, "the Loot page loads (" .. tostring(why) .. ")")
+        local tab = UI.tabs.loot
+        local page = Mock()
+        local choices = 0
+        ok, why = pcall(function()
+            tab.build(page)
+            tab.refresh(page)
+            for _, chip in ipairs({ "viewItems", "viewPlayers" }) do
+                rawget(page, chip).OnClick(rawget(page, chip))
+                tab.refresh(page)
+                for _, b in ipairs(rawget(page, "menus")) do
+                    b.OnClick(b)
+                    for _, e in ipairs(lastMenu or {}) do
+                        if e.toggle then
+                            e.toggle()
+                            tab.refresh(page)
+                            choices = choices + 1
+                        end
+                    end
+                    rawget(page, "clear").OnClick(rawget(page, "clear"))
+                end
+                for _, name in ipairs({ "mine", "myBonus", "tokens", "alts" }) do
+                    local c = rawget(page, name)
+                    c.OnClick(c)
+                    tab.refresh(page)
+                    c.OnClick(c)
+                end
+                local ex = rawget(page, "export")
+                ex.OnClick(ex)
+                for _, e in ipairs(lastMenu or {}) do if e[2] then e[2]() end end
+            end
+        end)
+        check(ok, "the Loot page builds and refreshes under every filter (" .. tostring(why) .. ")")
+        check(#exported == 4 and exported[1]:sub(1, 7) == "PGMLOOT", "export from the page gives PGM text and CSV")
+        check(choices >= 20 and rows > 0, "...through " .. choices .. " menu choices, drawing " .. rows .. " rows")
+        P.UI, A.env.CreateFrame, A.env.GameTooltip = realUI, realCreate, nil
+    end
+
+    P:DeleteLoot(fh)
+    check(find(A, "Funkyshade-MalGanis", 268256) == nil, "a record can be deleted")
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)
