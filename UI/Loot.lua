@@ -68,6 +68,136 @@ local function myKeys()
     return keys
 end
 
+-- ---- bosses, by tier ----
+-- The boss filter is an encounter id, a whole tier ("tier:1", "tier:old"
+-- for raids in no tier, "tier:mplus" for M+), "?" for loot with no boss
+-- known, or a boss name for records that only have a name.
+
+local function bossKey(rec)
+    if rec.enc and rec.enc ~= 0 then return rec.enc end
+    return rec.boss or "?"
+end
+
+local function bossMatches(rec, want)
+    if not want then return true end
+    local tier = type(want) == "string" and want:match("^tier:(.+)$")
+    if tier == "mplus" then return rec.kind == "mplus" end
+    if tier == "old" then return rec.kind == "raid" and PGM.LootTierOf(rec.enc) == nil end
+    if tier then return PGM.LootTierOf(rec.enc) == tonumber(tier) end
+    return bossKey(rec) == want
+end
+
+-- Every boss with loot here: key -> { name, tier, raid, kind }. A boss's
+-- raid is its tier's raid, or the place its loot was recorded most.
+local function bossesWithLoot()
+    local out, places = {}, {}
+    for _, rec in ipairs(PGM:LootItems()) do
+        local key = bossKey(rec)
+        local b = out[key]
+        if not b then
+            local tier, raid = PGM.LootTierOf(rec.enc)
+            b = { key = key, name = rec.boss or PGM:LootBossName(rec.enc), tier = tier, raid = raid, kind = rec.kind }
+            out[key] = b
+            places[key] = {}
+        end
+        b.name = b.name or rec.boss
+        if rec.where then places[key][rec.where] = (places[key][rec.where] or 0) + 1 end
+    end
+    for key, b in pairs(out) do
+        if not b.raid then
+            local best, n = nil, 0
+            for place, c in pairs(places[key]) do
+                if c > n then best, n = place, c end
+            end
+            b.raid = best or "Other"
+        end
+    end
+    return out
+end
+
+local function bossLabel(want)
+    if not want then return "Any boss" end
+    if want == "?" then return "Boss not known" end
+    local tier = type(want) == "string" and want:match("^tier:(.+)$")
+    if tier == "mplus" then return "All Mythic+" end
+    if tier == "old" then return "All older raids" end
+    if tier then return (PGM.LOOT_TIERS[tonumber(tier)] or {}).name or "Tier" end
+    local b = bossesWithLoot()[want]
+    return b and b.name or tostring(want)
+end
+
+-- The Boss menu: the current tier's bosses right there, by raid; earlier
+-- tiers, older raids and M+ dungeons as submenus.
+local function bossMenu()
+    local bosses = bossesWithLoot()
+    local function pick(value, label)
+        return { label, checked = function() return state.boss == value end,
+            toggle = function()
+                state.boss = value
+                UI:Refresh()
+            end }
+    end
+    local function tierEntries(i, tier)
+        local list = { pick("tier:" .. i, "All of " .. tier.name) }
+        for _, raid in ipairs(tier.raids) do
+            local shown = {}
+            for _, enc in ipairs(raid.bosses) do
+                local b = bosses[enc]
+                if b and b.name then shown[#shown + 1] = pick(enc, b.name) end
+            end
+            if #shown > 0 then
+                list[#list + 1] = { raid.name, title = true }
+                for _, e in ipairs(shown) do list[#list + 1] = e end
+            end
+        end
+        return list
+    end
+    -- Raids in no tier, and M+ dungeons, by place.
+    local function byPlace(kind, allValue, allLabel)
+        local places, order = {}, {}
+        for _, b in pairs(bosses) do
+            if b.kind == kind and not b.tier and b.key ~= "?" then
+                if not places[b.raid] then
+                    places[b.raid] = {}
+                    order[#order + 1] = b.raid
+                end
+                table.insert(places[b.raid], b)
+            end
+        end
+        if #order == 0 then return nil end
+        table.sort(order)
+        local list = { pick(allValue, allLabel) }
+        for _, place in ipairs(order) do
+            list[#list + 1] = { place, title = true }
+            table.sort(places[place], function(a, b) return (a.name or "") < (b.name or "") end)
+            for _, b in ipairs(places[place]) do list[#list + 1] = pick(b.key, b.name or tostring(b.key)) end
+        end
+        return list
+    end
+
+    local entries = { pick(nil, "Any boss") }
+    local current = PGM.LOOT_TIERS[1]
+    if current and state.kind ~= "mplus" then
+        entries[#entries + 1] = { divider = true }
+        entries[#entries + 1] = { current.name, title = true }
+        for _, e in ipairs(tierEntries(1, current)) do entries[#entries + 1] = e end
+    end
+    entries[#entries + 1] = { divider = true }
+    if state.kind ~= "mplus" then
+        for i = 2, #PGM.LOOT_TIERS do
+            entries[#entries + 1] = { PGM.LOOT_TIERS[i].name, sub = tierEntries(i, PGM.LOOT_TIERS[i]) }
+        end
+        local old = byPlace("raid", "tier:old", "All older raids")
+        if old then entries[#entries + 1] = { "Older raids", sub = old } end
+    end
+    if state.kind ~= "raid" then
+        local mplus = byPlace("mplus", "tier:mplus", "All Mythic+")
+        if mplus then entries[#entries + 1] = { "Mythic+", sub = mplus } end
+    end
+    if bosses["?"] then entries[#entries + 1] = pick("?", "Boss not known") end
+    return entries
+end
+
 local function itemName(rec)
     local name = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(rec.link)
     return name
@@ -83,7 +213,7 @@ local function filtered()
             and (state.kind == "all" or rec.kind == state.kind)
             and (not state.diff or rec.diff == state.diff)
             and (not state.how or (state.how == "bonus") == (rec.how == "bonus"))
-            and (not state.boss or (rec.boss or "?") == state.boss)
+            and bossMatches(rec, state.boss)
             and (not state.itype or PGM.LootType(rec.id) == state.itype)
             and (not mine or mine[PGM.LootNameKey(rec.who)])
         if ok and state.team then
@@ -209,7 +339,7 @@ local function itemRow(list)
             end } }
             if rec.boss then
                 entries[#entries + 1] = { "Only " .. rec.boss, function()
-                    state.boss = rec.boss
+                    state.boss = bossKey(rec)
                     UI:Refresh()
                 end }
             end
@@ -295,11 +425,18 @@ local function header(p, cols)
     return h
 end
 
-local function menuButton(p, width, title, list, key, after)
+-- A filter button showing its current choice. `list` is { value, label }
+-- pairs (or a function giving them); or `custom` = { menu = fn() giving
+-- menu entries, label = fn(value) }, for a menu with headings and submenus.
+local function menuButton(p, width, title, list, key, after, custom)
     local b = W.Button(p, "", width, 22, C.text2)
     b.fs:SetWidth(width - 10)
     b.fs:SetWordWrap(false)
     b:SetScript("OnClick", function(s)
+        if custom then
+            W.Menu(s, title, custom.menu())
+            return
+        end
         local entries = {}
         for _, o in ipairs(type(list) == "function" and list() or list) do
             entries[#entries + 1] = { o[2], checked = function() return state[key] == o[1] end,
@@ -312,6 +449,11 @@ local function menuButton(p, width, title, list, key, after)
         W.Menu(s, title, entries)
     end)
     b.sync = function()
+        if custom then
+            b:SetLabel(trim(custom.label(state[key]), 18))
+            b:SetAccent(state[key] ~= nil and C.text or C.text2)
+            return
+        end
         local current = type(list) == "function" and list() or list
         b:SetLabel(trim(labelOf(current, state[key]), 18))
         b:SetAccent((state[key] ~= current[1][1]) and C.text or C.text2)
@@ -322,27 +464,6 @@ end
 local function teamList()
     local out = { { nil, "Any team" } }
     for _, t in ipairs(PGM:Teams()) do out[#out + 1] = { t.id, t.name } end
-    return out
-end
-
-local function bossList()
-    local seen, names = {}, {}
-    for _, rec in ipairs(PGM:LootItems()) do
-        if (state.kind == "all" or rec.kind == state.kind) then
-            local b = rec.boss or "?"
-            if not seen[b] then
-                seen[b] = true
-                names[#names + 1] = b
-            end
-        end
-    end
-    table.sort(names, function(a, b)
-        if a == "?" then return false end
-        if b == "?" then return true end
-        return a < b
-    end)
-    local out = { { nil, "Any boss" } }
-    for _, n in ipairs(names) do out[#out + 1] = { n, n == "?" and "Boss not known" or n } end
     return out
 end
 
@@ -435,7 +556,7 @@ local function build(p)
         menuButton(p, 92, "When", WHEN, "when"),
         menuButton(p, 92, "Raids or M+", KIND, "kind", function() state.boss = nil end),
         menuButton(p, 104, "Team", teamList, "team"),
-        menuButton(p, 120, "Boss", bossList, "boss"),
+        menuButton(p, 120, "Boss", nil, "boss", nil, { menu = bossMenu, label = bossLabel }),
         menuButton(p, 100, "Difficulty", DIFF, "diff"),
         menuButton(p, 100, "Item type", ITYPE, "itype"),
         menuButton(p, 104, "Drops or bonus rolls", HOW, "how"),

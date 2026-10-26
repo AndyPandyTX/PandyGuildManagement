@@ -1223,6 +1223,29 @@ do
             end
         end)
         check(ok, "the Loot page builds and refreshes under every filter (" .. tostring(why) .. ")")
+        -- The Boss menu, by tier: Boss A (3429) is in the current tier, Boss B
+        -- (3430) in none, so it's under Older raids.
+        ok, why = pcall(function()
+            local bossButton = rawget(page, "menus")[4]
+            bossButton.OnClick(bossButton)
+            local labels, older = {}, nil
+            for _, e in ipairs(lastMenu or {}) do
+                if e[1] then labels[e[1]] = e end
+                if e[1] == "Older raids" then older = e.sub end
+            end
+            check(labels["Midnight Season 2"] and labels["Midnight Season 2"].title, "the current tier heads the Boss menu")
+            check(labels["Boss A"] ~= nil and labels["Boss B"] == nil, "...with its bosses right there, older ones not")
+            local inOlder = false
+            for _, e in ipairs(older or {}) do if e[1] == "Boss B" then inOlder = true end end
+            check(inOlder, "a boss in no tier is under Older raids")
+            labels["All of Midnight Season 2"].toggle()
+            tab.refresh(page)
+            local items, wrong = rawget(page, "items") or {}, 0
+            for _, rec in ipairs(items) do if P.LootTierOf(rec.enc) ~= 1 then wrong = wrong + 1 end end
+            check(#items > 0 and wrong == 0, "All of Midnight Season 2 shows only that tier (" .. #items .. " items)")
+            rawget(page, "clear").OnClick(rawget(page, "clear"))
+        end)
+        check(ok, "the Boss menu works (" .. tostring(why) .. ")")
         check(#exported == 4 and exported[1]:sub(1, 7) == "PGMLOOT", "export from the page gives PGM text and CSV")
         check(choices >= 20 and rows > 0, "...through " .. choices .. " menu choices, drawing " .. rows .. " rows")
         P.UI, A.env.CreateFrame, A.env.GameTooltip = realUI, realCreate, nil

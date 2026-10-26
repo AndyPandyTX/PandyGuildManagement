@@ -512,10 +512,13 @@ end
 --   { "Text", sub = { entries } }        a submenu
 --   { "Text", checked = fn, toggle = fn } a tick box
 --   { divider = true }
+--   { "Text", title = true }              a heading
 local function addEntries(parent, entries)
     for _, e in ipairs(entries) do
         if e.divider then
             parent:CreateDivider()
+        elseif e.title then
+            parent:CreateTitle(e[1])
         elseif e.checked then
             parent:CreateCheckbox(e[1], e.checked, e.toggle)
         elseif e.sub then

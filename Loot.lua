@@ -46,6 +46,40 @@ local ROLL_STATE = { [0] = "need", [1] = "offspec", [2] = "tmog", [3] = "greed" 
 local SPECIFIC = { need = true, offspec = true, greed = true, tmog = true }
 
 -- ============================================================
+-- RAID TIERS
+-- ============================================================
+-- Which tier each boss belongs to, by encounter id, newest tier first; the
+-- first is the current one. Add a tier here each season. Bosses in none of
+-- these count as older raids.
+PGM.LOOT_TIERS = {
+    { name = "Midnight Season 2", raids = {
+        { name = "The Venomous Abyss", bosses = { 3420, 3421, 3429, 3445, 3455, 3470, 3492, 3497 } },
+        { name = "The Tidebound Grotto", bosses = { 3379 } },
+        { name = "The Unbinding of Kith'ix", bosses = { 3513 } },
+    } },
+    { name = "Midnight Season 1", raids = {
+        { name = "The Voidspire", bosses = { 3176, 3177, 3178, 3179, 3180, 3181 } },
+        { name = "The Dreamrift", bosses = { 3306 } },
+        { name = "March on Quel'Danas", bosses = { 3182, 3183 } },
+        { name = "Sporefall", bosses = { 3159 } },
+    } },
+}
+
+local tierOf, raidOf = {}, {}
+for i, tier in ipairs(PGM.LOOT_TIERS) do
+    for _, raid in ipairs(tier.raids) do
+        for _, enc in ipairs(raid.bosses) do
+            tierOf[enc], raidOf[enc] = i, raid.name
+        end
+    end
+end
+
+-- The tier (its index in LOOT_TIERS) and raid a boss is in, or nil.
+function PGM.LootTierOf(enc)
+    return enc and tierOf[enc], enc and raidOf[enc]
+end
+
+-- ============================================================
 -- THE STORE
 -- ============================================================
 
