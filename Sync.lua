@@ -38,9 +38,9 @@
 --   K id u                                          team deleted
 --   M team guid u state role status                 one team spot (i = on, x = removed)
 --   A guid u main [guid u main ...]                 alt links ("0" = not an alt, "" = none)
---   S id u start stop instance diff team teamU name bosses   raid night
+--   S id u start stop instance diff team teamU name bosses leaders   raid night
 --   P id guid,guid,...                              raid night attendees (merged in)
---   D id u                                          raid night deleted
+--   D id u [instance diff start stop leaders]        raid night deleted
 --   C u officerRank                                 guild master's officer cut-off
 --   J guid u joined [guid u joined ...]             join dates (e.g. from GRM)
 --   B guid u main [guid u main ...]                 "this character's main is main"
@@ -339,13 +339,37 @@ local function sendLink(g, guid)
     sendPacked("1A", { linkRow(g, guid) }, bulkMode)
 end
 
+-- The raid leaders a night saw, at most three, as "guid,guid". Sent last in
+-- S and D records (older copies ignore it) so two teams' raids at the same
+-- time stay two nights (Attendance.lua's SameRaidNight).
+local function leadersText(s)
+    local list = {}
+    for guid in pairs(s and s.leaders or {}) do
+        if #list < 3 then list[#list + 1] = guid end
+    end
+    table.sort(list)
+    return table.concat(list, ",")
+end
+
+local function leadersOf(text)
+    local out
+    for guid in (text or ""):gmatch("[^,]+") do
+        if isGuid(guid) then
+            out = out or {}
+            out[guid] = true
+        end
+    end
+    return out
+end
+
 local function sendRaid(s)
+    local leaders = leadersText(s)
     local fixed = table.concat({ "1S", s.id, s.u or 0, s.start or 0, s.stop or 0, s.instance or 0,
         s.diffID or 0, s.team or "", s.teamU or 0 }, SEP)
-    local name = fit(s.name or "Raid", #fixed + 2)
-    local bosses = fit(table.concat(s.bosses or {}, ";"), #fixed + #name + 2)
+    local name = fit(s.name or "Raid", #fixed + #leaders + 3)
+    local bosses = fit(table.concat(s.bosses or {}, ";"), #fixed + #name + #leaders + 3)
     send("1S", s.id, s.u or 0, s.start or 0, s.stop or 0, s.instance or 0, s.diffID or 0,
-        s.team or "", s.teamU or 0, name, bosses)
+        s.team or "", s.teamU or 0, name, bosses, leaders)
     -- Attendees in as many records as it takes; each one only adds.
     local batch, size = {}, #("1P" .. SEP .. s.id .. SEP)
     for guid in pairs(s.present or {}) do
@@ -441,7 +465,8 @@ function PGM:SyncRaidDeleted(session)
     bump(stamp)
     for _, id in ipairs(ids) do
         s.raidDel[id] = stamp
-        send("1D", id, stamp, session.instance or 0, session.diffID or 0, session.start or 0, session.stop or 0)
+        send("1D", id, stamp, session.instance or 0, session.diffID or 0, session.start or 0, session.stop or 0,
+            leadersText(session))
     end
 end
 
@@ -720,7 +745,8 @@ function handlers.S(f)
     if (s.raidDel[id] or 0) >= u then return end
     g.raids = g.raids or { sessions = {} }
     g.raids.sessions = g.raids.sessions or {}
-    local r = findRaid(id, { instance = instance, diffID = diffID, start = start, stop = stop })
+    local leaders = leadersOf(f[12])
+    local r = findRaid(id, { instance = instance, diffID = diffID, start = start, stop = stop, leaders = leaders })
     -- Deleted here under our own id for it.
     if r and (s.raidDel[r.id] or 0) >= u then return end
     if not r then
@@ -741,6 +767,10 @@ function handlers.S(f)
     r.instance = r.instance or instance
     for boss in (f[11] or ""):gmatch("[^;]+") do
         if not tContains(r.bosses, boss) then table.insert(r.bosses, boss) end
+    end
+    for guid in pairs(leaders or {}) do
+        r.leaders = r.leaders or {}
+        r.leaders[guid] = true
     end
     if teamU > (r.teamU or 0) then r.team, r.teamU = team, teamU end
     r.u = math.max(r.u or 0, u)
@@ -772,7 +802,7 @@ function handlers.P(f)
     end
 end
 
--- D id u [instance diffID start stop]: the night is found by id, by alias,
+-- D id u [instance diffID start stop leaders]: the night is found by id, by alias,
 -- or (when the sender said which raid and when) by matching it, so a copy
 -- that knows it under its own id deletes it too.
 function handlers.D(f)
@@ -780,7 +810,8 @@ function handlers.D(f)
     local g, s = store()
     if not (id and u) or (s.raidDel[id] or 0) >= u then return end
     s.raidDel[id] = u
-    local night = { instance = known(f[4]), diffID = known(f[5]), start = known(f[6]), stop = known(f[7]) }
+    local night = { instance = known(f[4]), diffID = known(f[5]), start = known(f[6]), stop = known(f[7]),
+                    leaders = leadersOf(f[8]) }
     local r = findRaid(id, night)
     if r and (r.u or 0) <= u then
         for i, x in ipairs(g.raids.sessions) do

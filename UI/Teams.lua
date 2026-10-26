@@ -344,7 +344,7 @@ local function build(p)
     end)
     p.match = W.Button(d, "Match past raids", 124, 24)
     p.match:SetPoint("LEFT", p.addGroup, "RIGHT", 6, 0)
-    p.match.tip = "Tags recorded raid nights that have no team yet to the team that was there (half or more of its roster)."
+    p.match.tip = "Tags recorded raid nights that have no team yet to the team that was there (10 or more of its members)."
     p.match:SetScript("OnClick", function()
         local n = PGM:AutoAssignRaids()
         PGM.Print(("Matched %d raid night%s to a team."):format(n, n == 1 and "" or "s"))

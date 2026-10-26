@@ -155,7 +155,7 @@ max-level ding, with filters.
 
 **Raids.** Raid nights are recorded automatically when you're in a raid
 instance with enough guildies. Each night is tagged to the raid team that
-showed up (half or more of its non-bench roster). Right-click a night to
+showed up (10 or more of its members). Right-click a night to
 retag it, and use "Match past raids" on the Raid Teams page to tag older ones.
 Filter by team; a team's view lists its whole roster, so no-shows appear too.
 

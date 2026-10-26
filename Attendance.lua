@@ -63,14 +63,35 @@ PGM.MAX_RAID_NIGHTS = MAX_SESSIONS
 -- same difficulty and they overlap in time, or started within half an hour:
 -- two officers recording one night, or a late joiner's shorter record. A
 -- Normal night and a later Heroic one, or two teams back to back, stay apart.
+--
+-- Two teams can run the same raid and difficulty at the same time, though.
+-- Those are two groups: each record keeps the raid leaders it saw, and two
+-- raids at once never share a leader. Records from older copies have no
+-- leaders; then two full records with nobody in common are two raids.
 local SAME_START = 30 * 60
+local function twoGroups(a, b)
+    if a.leaders and b.leaders and next(a.leaders) and next(b.leaders) then
+        for guid in pairs(a.leaders) do
+            if b.leaders[guid] then return false end
+        end
+        return true
+    end
+    local na, nb = 0, 0
+    for guid in pairs(a.present or {}) do
+        na = na + 1
+        if b.present and b.present[guid] then return false end
+    end
+    for _ in pairs(b.present or {}) do nb = nb + 1 end
+    return na >= 5 and nb >= 5
+end
+
 function PGM:SameRaidNight(a, b)
     if not (a.instance and a.instance ~= 0 and a.instance == b.instance) then return false end
     local da, db = a.diffID, b.diffID
     if da and db and da ~= 0 and db ~= 0 and da ~= db then return false end
     local as, bs = a.start or 0, b.start or 0
-    if math.abs(as - bs) <= SAME_START then return true end
-    return as < (b.stop or bs) and bs < (a.stop or as)
+    if math.abs(as - bs) > SAME_START and not (as < (b.stop or bs) and bs < (a.stop or as)) then return false end
+    return not twoGroups(a, b)
 end
 
 -- The saved night that `night` is a record of, if any (never `except`).
@@ -93,6 +114,10 @@ function PGM:MergeRaidNight(into, from)
         if not tContains(into.bosses, boss) then table.insert(into.bosses, boss) end
     end
     if (from.teamU or 0) > (into.teamU or 0) then into.team, into.teamU = from.team, from.teamU end
+    for guid in pairs(from.leaders or {}) do
+        into.leaders = into.leaders or {}
+        into.leaders[guid] = true
+    end
     into.diffID = into.diffID or from.diffID
     into.diff = into.diff or from.diff
     into.count = presentCount(into)
@@ -116,10 +141,20 @@ local function sample()
     end
     for i = 1, (GetNumGroupMembers() or 0) do
         -- Online and in this zone. When the game won't say, count them.
-        local ok, _, _, _, _, _, _, zone, online = pcall(GetRaidRosterInfo, i)
+        local ok, _, rank, _, _, _, _, zone, online = pcall(GetRaidRosterInfo, i)
         zone, online = ok and P(zone), ok and P(online)
         local away = (online == false) or (here and zone and zone ~= here)
         if not away then add("raid" .. i) end
+        -- Who leads this group tells it apart from another team's raid in
+        -- the same place (see SameRaidNight).
+        if ok and P(rank) == 2 then
+            local okG, guid = pcall(UnitGUID, "raid" .. i)
+            guid = okG and P(guid) or nil
+            if guid then
+                s.leaders = s.leaders or {}
+                s.leaders[guid] = true
+            end
+        end
     end
     add("player")
     s.samples = (s.samples or 0) + 1

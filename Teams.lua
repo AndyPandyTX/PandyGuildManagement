@@ -2,8 +2,8 @@
 -- own roster, roles, schedule note and attendance.
 --
 -- Raid nights are matched to a team on their own: when a raid is saved, the
--- team with at least half its (non-bench) roster there gets it. A wrong guess
--- is one right-click to fix on the Raids page.
+-- team with the most of its members there gets it, if that's at least ten.
+-- A wrong guess is one right-click to fix on the Raids page.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -237,24 +237,30 @@ local function attended(s, guid)
     return false
 end
 
--- The team a raid night belongs to, or nil: the team with the largest share
--- of its active roster present, if that share is at least half.
+-- How many of a team's members make a raid night theirs. A team smaller
+-- than that needs all of them (and at least three).
+PGM.TEAM_NIGHT_MIN = 10
+
+-- The team a raid night belongs to, or nil: the team with the most members
+-- there (bench included, alts counting for their main), if that's at least
+-- TEAM_NIGHT_MIN. A tie goes to the team with more of its roster there.
 function PGM:GuessTeam(s)
     local g = PGM.GuildDB()
-    local best, bestShare
+    local best, bestHere, bestShare
     for _, t in ipairs(PGM:Teams()) do
         local size, here = 0, 0
-        for guid, e in pairs(t.members) do
+        for guid in pairs(t.members) do
             -- Members who left the guild stay on file (they may come back)
             -- but would otherwise count as permanent no-shows.
-            if e.status ~= "bench" and g and g.members[guid] then
+            if g and g.members[guid] then
                 size = size + 1
                 if attended(s, guid) then here = here + 1 end
             end
         end
+        local need = math.max(3, math.min(PGM.TEAM_NIGHT_MIN, size))
         local share = size > 0 and here / size or 0
-        if here >= 3 and share >= 0.5 and (not bestShare or share > bestShare) then
-            best, bestShare = t.id, share
+        if here >= need and (not best or here > bestHere or (here == bestHere and share > bestShare)) then
+            best, bestHere, bestShare = t.id, here, share
         end
     end
     return best

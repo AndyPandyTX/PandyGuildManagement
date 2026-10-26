@@ -898,6 +898,106 @@ do
     run(10)
 end
 
+print("-- two teams in the same raid at the same time")
+do
+    local now = BASE + math.floor(T)
+    local function night(id, startOff, present, leaders)
+        local n = { id = id, start = now + startOff, stop = now + startOff + 7200, instance = 5151, diffID = 15,
+                    name = "Voidspire", present = {}, bosses = {} }
+        for _, gu in ipairs(present) do n.present[gu] = true end
+        if leaders then
+            n.leaders = {}
+            for _, gu in ipairs(leaders) do n.leaders[gu] = true end
+        end
+        return n
+    end
+    local function voidspire(cl)
+        local list = {}
+        for _, x in ipairs(cl.g.raids and cl.g.raids.sessions or {}) do
+            if x.instance == 5151 then list[#list + 1] = x end
+        end
+        return list
+    end
+    local function share(cl, n)
+        table.insert(cl.g.raids.sessions, n)
+        cl.PGM:SyncRaid(n)
+    end
+    -- Mercy (led by Nattypandy) and Honor (led by Magicpayne), same raid,
+    -- same difficulty, same start.
+    share(A, night("mercy-A", -7200, { gid(10), gid(21), gid(22) }, { gid(10) }))
+    share(B, night("honor-B", -7100, { gid(11), gid(23), gid(24) }, { gid(11) }))
+    run(15)
+    check(#voidspire(C) == 2, "two raids led by different people stay two nights (C has " .. #voidspire(C) .. ")")
+    check(#voidspire(A) == 2 and #voidspire(B) == 2, "...for the officers too")
+    -- RL recorded Mercy's raid as well: it joins Mercy's night.
+    share(RL, night("mercy-RL", -7000, { gid(12), gid(25) }, { gid(10) }))
+    run(15)
+    check(#voidspire(C) == 2, "a second record of Mercy's raid merges (C has " .. #voidspire(C) .. ")")
+    local mercy
+    for _, x in ipairs(voidspire(C)) do if x.leaders and x.leaders[gid(10)] then mercy = x end end
+    local p = 0 for _ in pairs(mercy and mercy.present or {}) do p = p + 1 end
+    check(p == 5, "...into Mercy's night, not Honor's (got " .. p .. " there)")
+    -- Deleting Honor's night leaves Mercy's alone.
+    local honorA
+    for _, x in ipairs(voidspire(A)) do if x.leaders and x.leaders[gid(11)] then honorA = x end end
+    A.PGM:DeleteRaid(honorA)
+    run(15)
+    check(#voidspire(C) == 1 and voidspire(C)[1].leaders[gid(10)], "deleting one team's night keeps the other")
+    check(#voidspire(B) == 1, "...for the officer who recorded it too")
+
+    -- Records from older copies (no leaders): two full raids with nobody in
+    -- common stay apart; small ones still merge as before.
+    for _, cl in ipairs({ A, B, C, RL }) do
+        for i = #cl.g.raids.sessions, 1, -1 do
+            if cl.g.raids.sessions[i].instance == 5151 then table.remove(cl.g.raids.sessions, i) end
+        end
+    end
+    local older = night("old-1", -3600, { gid(1), gid(10), gid(12), gid(13), gid(14) })
+    local other = night("old-2", -3500, { gid(11), gid(21), gid(22), gid(23), gid(24) })
+    check(not A.PGM:SameRaidNight(older, other), "older records: two full raids with nobody shared are two nights")
+    local small = night("old-3", -3500, { gid(11), gid(21), gid(22) })
+    check(A.PGM:SameRaidNight(older, small), "...but a small record still merges")
+    local sameRaid = night("old-4", -3500, { gid(10), gid(25), gid(26), gid(30), gid(40) })
+    check(A.PGM:SameRaidNight(older, sameRaid), "...and records sharing someone are one night")
+end
+
+print("-- which team a raid night belongs to")
+do
+    local P, g = A.PGM, A.g
+    for n = 300, 325 do
+        g.members[gid(n)] = { guid = gid(n), name = ("Teamer%02d-%s"):format(n, REALM), short = ("Teamer%02d"):format(n),
+            realm = REALM, rank = "Raider", rankIndex = 4, level = 90, class = "WARRIOR", note = "", onote = "" }
+    end
+    local big = P:CreateTeam("Night Big")
+    for n = 300, 311 do P:AddToTeam(big.id, gid(n)) end            -- 12 members
+    P:CycleStatus(big.id, gid(311)) P:CycleStatus(big.id, gid(311)) -- one on the bench
+    local other = P:CreateTeam("Night Other")
+    for n = 312, 325 do P:AddToTeam(other.id, gid(n)) end          -- 14 members
+    local small = P:CreateTeam("Night Small")
+    for _, n in ipairs({ 1, 13, 30, 40 }) do P:AddToTeam(small.id, gid(n)) end -- 4 members
+    local function guess(list)
+        local s = { present = {} }
+        for _, n in ipairs(list) do s.present[gid(n)] = true end
+        return P:GuessTeam(s)
+    end
+    local function range(a, b, extra)
+        local out = {}
+        for n = a, b do out[#out + 1] = n end
+        for _, n in ipairs(extra or {}) do out[#out + 1] = n end
+        return out
+    end
+    check(guess(range(300, 309)) == big.id, "10 of a team's members make it their night")
+    check(guess(range(300, 308)) == nil, "9 isn't enough")
+    check(guess(range(302, 311)) == big.id, "a benched member who shows up counts")
+    check(guess(range(300, 310, range(312, 323))) == other.id, "with two teams there, the one with more members wins")
+    check(guess(range(300, 310, range(312, 322))) == big.id, "...and a tie goes to the team with more of its roster there")
+    check(guess({ 1, 13, 30, 40 }) == small.id, "a team under 10 needs all of its members")
+    check(guess({ 1, 13, 30 }) == nil, "...not just most of them")
+    for _, t in ipairs({ big, other, small }) do P:DeleteTeam(t.id) end
+    for n = 300, 325 do g.members[gid(n)] = nil end
+    run(10)
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)
