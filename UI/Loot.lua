@@ -367,6 +367,7 @@ local function itemUpdate(r, rec)
     r.who:SetText(whoText(rec.who, rec.class))
     r.item:SetText(itemText(rec))
     local how = PGM.LOOT_HOW_LABEL[rec.how] or rec.how or ""
+    if rec.roll then how = how .. " " .. rec.roll end
     r.how:SetText(rec.how == "bonus" and (PGM.Hex(C.gold) .. how .. "|r") or how)
 end
 

@@ -24,10 +24,12 @@
 --   link   an item link, or an item string ("item:...")
 --   id     item id
 --   how    need | offspec | greed | tmog | roll | personal | drop | bonus
+--   roll   the winning roll (1-100), when known
 --   kind   raid | mplus | other
 --   enc, boss, inst, diff   encounter id and name, instance id, difficulty id
 --   where  the raid or dungeon's name
 --   src    pgm | mrt | vca | import
+--   mrtRoll  MRT's roll type for the drop (see TypeOwnMRTRolls)
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -229,7 +231,7 @@ end
 
 -- A second account of the same drop fills in what the first didn't know.
 local function merge(into, from)
-    for _, k in ipairs({ "class", "enc", "boss", "inst", "diff", "kind", "where" }) do
+    for _, k in ipairs({ "class", "enc", "boss", "inst", "diff", "kind", "where", "roll", "mrtRoll" }) do
         if into[k] == nil then into[k] = from[k] end
     end
     if SPECIFIC[from.how] and not SPECIFIC[into.how] then into.how = from.how end
@@ -398,10 +400,21 @@ local function readDrops(enc)
         local link = type(d) == "table" and P(d.itemHyperlink)
         local who = type(win) == "table" and P(win.playerName)
         if link and who then
-            local state = P(win.state)
+            local state, roll = P(win.state), P(win.roll)
+            -- If the drop's summary leaves out how the winner rolled, the
+            -- full list of everyone's rolls says.
+            if state == nil and C_LootHistory.GetSortedInfoForDrop and P(d.lootListID) then
+                local okI, info = pcall(C_LootHistory.GetSortedInfoForDrop, enc, P(d.lootListID))
+                for _, r in ipairs(okI and type(info) == "table" and type(info.rollInfos) == "table" and info.rollInfos or {}) do
+                    if type(r) == "table" and P(r.isWinner) then
+                        state, roll = P(r.state), P(r.roll)
+                        break
+                    end
+                end
+            end
             record({ t = PGM.Now(), who = who, class = P(win.playerClass), link = link, how = ROLL_STATE[state] or "roll",
-                enc = enc, boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff, kind = "raid", where = w.where,
-                src = "pgm" })
+                roll = tonumber(roll), enc = enc, boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff,
+                kind = "raid", where = w.where, src = "pgm" })
         end
     end
 end
@@ -490,7 +503,7 @@ function PGM:LootFromMRT(since)
                     class = ok and file or nil
                 end
                 out[#out + 1] = { t = t, who = name, class = class, link = item,
-                    how = (roll and roll ~= "") and "roll" or "drop",
+                    how = (roll and roll ~= "") and "roll" or "drop", mrtRoll = (roll and roll ~= "") and roll or nil,
                     enc = enc ~= 0 and enc or nil, boss = enc and bosses[enc] or nil,
                     inst = inst ~= 0 and inst or nil, diff = diff, kind = kind, where = inst and places[inst] or nil,
                     src = "mrt" }
@@ -528,7 +541,29 @@ end
 -- New records from MRT and VoidcoreAdvisor since last time. `all` reads
 -- their whole history again (repeats are still dropped). Returns how many
 -- were added from each, or nil for an addon that isn't loaded.
-local PULL_VERSION = 2   -- 2: M+ loot and place names from MRT too
+-- MRT saves how the person playing rolled on each drop, not how the winner
+-- did. So its roll type is the winner's only where the winner is one of
+-- this account's characters (only one of them can be in the raid). 1 is
+-- Need, 2 Greed, 3 Transmog.
+local MRT_ROLL = { ["1"] = "need", ["2"] = "greed", ["3"] = "tmog" }
+function PGM:TypeOwnMRTRolls()
+    local mine = {}
+    for _, c in pairs(PandyGuildDB and PandyGuildDB.chars or {}) do
+        if c.name then mine[nameKey(c.name .. "-" .. (c.realm or ""))] = true end
+    end
+    local me = myName()
+    if me then mine[nameKey(me)] = true end
+    local n = 0
+    for _, rec in ipairs(PGM:LootItems()) do
+        if rec.src == "mrt" and not SPECIFIC[rec.how] and MRT_ROLL[rec.mrtRoll or ""] and mine[nameKey(rec.who)] then
+            rec.how = MRT_ROLL[rec.mrtRoll]
+            n = n + 1
+        end
+    end
+    return n
+end
+
+local PULL_VERSION = 3   -- 2: M+ loot and place names from MRT; 3: MRT's roll types
 function PGM:PullLoot(all)
     local l = store()
     if not l then return nil, nil end
@@ -550,6 +585,7 @@ function PGM:PullLoot(all)
         fromVCA = PGM:ImportLoot(vca)
         l.vcaUpTo[me] = math.max(l.vcaUpTo[me] or 0, newest(vca))
     end
+    if PGM:TypeOwnMRTRolls() > 0 then PGM:Fire("LOOT") end
     return fromMRT, fromVCA
 end
 
@@ -568,7 +604,7 @@ end)
 -- EXPORT AND IMPORT
 -- ============================================================
 -- One record per line, fields split by ";": time; who; class; item string;
--- how; kind; encounter; instance; difficulty; boss; place. Compressed and base64
+-- how; kind; encounter; instance; difficulty; boss; place; roll. Compressed and base64
 -- when the game can ("PGMLOOT2:"), plain text otherwise ("PGMLOOT1").
 
 local function clean(s) return (tostring(s or ""):gsub("[;\r\n]", ",")) end
@@ -577,7 +613,7 @@ local function lootLines(list)
     local lines = {}
     for _, r in ipairs(list) do
         lines[#lines + 1] = table.concat({ r.t, clean(r.who), clean(r.class), clean(itemString(r.link)), clean(r.how),
-            clean(r.kind), r.enc or "", r.inst or "", r.diff or "", clean(r.boss), clean(r.where) }, ";")
+            clean(r.kind), r.enc or "", r.inst or "", r.diff or "", clean(r.boss), clean(r.where), r.roll or "" }, ";")
     end
     return table.concat(lines, "\n")
 end
@@ -623,13 +659,13 @@ function PGM:ParseLootExport(text)
             out[#out + 1] = { t = t, who = f[2], class = f[3] ~= "" and f[3] or nil, link = item,
                 how = f[5] ~= "" and f[5] or "drop", kind = f[6] ~= "" and f[6] or "raid",
                 enc = tonumber(f[7]), inst = tonumber(f[8]), diff = tonumber(f[9]),
-                boss = f[10] ~= "" and f[10] or nil, where = (f[11] or "") ~= "" and f[11] or nil, src = "import" }
+                boss = f[10] ~= "" and f[10] or nil, where = (f[11] or "") ~= "" and f[11] or nil, roll = tonumber(f[12]), src = "import" }
         end
     end
     return out
 end
 
-local HOW_LABEL = { need = "Need", offspec = "Need (off-spec)", greed = "Greed", tmog = "Transmog", roll = "Won roll",
+local HOW_LABEL = { need = "Need", offspec = "Need (OS)", greed = "Greed", tmog = "Transmog", roll = "Won roll",
     personal = "Personal", drop = "Drop", bonus = "Bonus roll" }
 PGM.LOOT_HOW_LABEL = HOW_LABEL
 local DIFF_LABEL = { [17] = "LFR", [14] = "Normal", [15] = "Heroic", [16] = "Mythic", [8] = "Mythic+", [23] = "Mythic" }

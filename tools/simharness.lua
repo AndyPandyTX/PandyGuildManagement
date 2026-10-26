@@ -1018,7 +1018,10 @@ do
         e.GetClassInfo = function(n) local f = { [5] = "PRIEST", [11] = "DRUID" } return "x", f[n], n end
         e.LOOT_ITEM_BONUS_ROLL = "%s receives bonus loot: %s."
         e.LOOT_ITEM_BONUS_ROLL_MULTIPLE = "%s receives bonus loot: %sx%d."
-        e.C_LootHistory = { GetSortedDropsForEncounter = function() return LOOT_DROPS end }
+        e.C_LootHistory = {
+            GetSortedDropsForEncounter = function() return LOOT_DROPS end,
+            GetSortedInfoForDrop = function(_, id) return LOOT_INFO and LOOT_INFO[id] end,
+        }
         local fn, err = load(FILES["Loot.lua"], "@Loot.lua", "t", e)
         if not fn then error(err) end
         fn("PandyGuildManagement", cl.NS)
@@ -1040,20 +1043,28 @@ do
         { itemHyperlink = link(268256), winner = { playerName = "Funkyshade", playerClass = "PRIEST", state = 0 } },
         { itemHyperlink = link(268300), winner = { playerName = "Selwyne-MalGanis", playerClass = "DRUID", state = 3 } },
         { itemHyperlink = link(272000) },   -- still being rolled for
+        -- The summary doesn't say how Vdovdr rolled; the full list does.
+        { itemHyperlink = link(271875), lootListID = 7, winner = { playerName = "Vdovdr", playerClass = "PRIEST" } },
     }
+    LOOT_INFO = { [7] = { rollInfos = {
+        { playerName = "Anvar", state = 0, roll = 40, isWinner = false },
+        { playerName = "Vdovdr", state = 2, roll = 77, isWinner = true },
+    } } }
     A.fire("LOOT_HISTORY_UPDATE_ENCOUNTER", 3429)
-    check(count(A) == 2, "group loot: the two decided drops are kept (got " .. count(A) .. ")")
+    check(count(A) == 3, "group loot: the three decided drops are kept (got " .. count(A) .. ")")
+    local vd = find(A, "Vdovdr-MalGanis", 271875)
+    check(vd and vd.how == "tmog" and vd.roll == 77, "how the winner rolled, from the full roll list, with the roll")
     local fh = find(A, "Funkyshade-MalGanis", 268256)
     check(fh and fh.how == "need" and fh.boss == "Boss A" and fh.diff == 15 and fh.kind == "raid", "a Need win, with boss and difficulty")
     check(find(A, "Selwyne-MalGanis", 268300, "greed") ~= nil, "a Greed win")
     A.fire("LOOT_HISTORY_UPDATE_DROP", 3429, 1)
     A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 268256, link(268256), 1, "Funkyshade", "PRIEST")
-    check(count(A) == 2 and fh.how == "need", "the same drop reported again is one record, still a Need")
+    check(count(A) == 3 and fh.how == "need", "the same drop reported again is one record, still a Need")
     A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 268400, link(268400), 1, "Tiferis", "PALADIN")
     check(find(A, "Tiferis-MalGanis", 268400, "personal") ~= nil, "personal loot is kept")
     A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 999, link(999, 4), 3, "Tiferis", "PALADIN")
     A.fire("ENCOUNTER_LOOT_RECEIVED", 3429, 272000, link(272000, 3), 1, "Tiferis", "PALADIN")
-    check(count(A) == 3, "reagents and blue items aren't kept (got " .. count(A) .. ")")
+    check(count(A) == 4, "reagents and blue items aren't kept (got " .. count(A) .. ")")
 
     -- Bonus rolls: ours from the game, everyone else's from loot chat.
     A.fire("BONUS_ROLL_RESULT", "item", link(270000), 1, 102)
@@ -1064,11 +1075,11 @@ do
     A.fire("CHAT_MSG_LOOT", "Anvar receives loot: " .. link(268300) .. ".")
     check(find(A, "Anvar-MalGanis", 270001, "bonus") ~= nil, "someone else's bonus roll from chat")
     check(find(A, "Atlasqt-Stormrage", 268256, "bonus") ~= nil, "...and the several-of-it line, cross-realm")
-    check(count(A) == 6, "ordinary loot lines aren't bonus rolls (got " .. count(A) .. ")")
+    check(count(A) == 7, "ordinary loot lines aren't bonus rolls (got " .. count(A) .. ")")
 
     A.env.GetInstanceInfo = town
     A.fire("ENCOUNTER_LOOT_RECEIVED", 0, 268300, link(268300), 1, "Codiex", "DEMONHUNTER")
-    check(count(A) == 6, "outside a raid, drops aren't recorded")
+    check(count(A) == 7, "outside a raid, drops aren't recorded")
 
     -- Pulled in from MRT and VoidcoreAdvisor.
     local now = BASE + math.floor(T)
@@ -1078,6 +1089,10 @@ do
         ("%d#3430#3004#16#Codiex#12#1#item:272000::::::::90:102:::::::::"):format(now - 86400),      -- new
         ("%d#2000#2813#8#Codiex#12#1#item:268300::::::::90:102:::::::::"):format(now - 3600),        -- M+
         ("%d#3430#3004#16#Codiex#12#3#item:999::::::::90:102:::::::::"):format(now - 3600),          -- reagent
+        -- MRT's roll type is how this account rolled: right for our own win,
+        -- not for someone else's.
+        ("%d#3429#3004#15#Nattypandy#11#1#item:268300::::::::90:102:::::::::#2"):format(now - 200000),
+        ("%d#3429#3004#15#Codiex#12#1#item:270000::::::::90:102:::::::::#1"):format(now - 300000),
     } } }
     A.env.VoidcoreAdvisorCharDB = { bonusRollLog = {
         { itemID = 270000, itemLink = link(270000), timestamp = now + 2, difficultyID = 15, raidInstanceID = 1314 },
@@ -1087,7 +1102,9 @@ do
         { itemID = 251115, itemLink = link(251115), timestamp = now - 2 * 86400, difficultyID = 23, sourceType = "MYTHIC_PLUS" },
     } }
     local fromMRT, fromVCA = P:PullLoot()
-    check(fromMRT == 2, "MRT: a raid item and an M+ item new; the repeat and the reagent skipped (got " .. tostring(fromMRT) .. ")")
+    check(fromMRT == 4, "MRT: three raid items and an M+ item new; the repeat and the reagent skipped (got " .. tostring(fromMRT) .. ")")
+    check((find(A, "Nattypandy-MalGanis", 268300) or {}).how == "greed", "MRT: our own win shows how we rolled")
+    check((find(A, "Codiex-MalGanis", 270000) or {}).how == "roll", "MRT: someone else's win stays just a won roll")
     check(fromVCA == 3, "VoidcoreAdvisor: three new bonus rolls, the live one not counted twice (got " .. tostring(fromVCA) .. ")")
     local mp = find(A, "Codiex-MalGanis", 268300)
     check(mp and mp.kind == "mplus" and mp.where == "Ruby Life Pools", "MRT's M+ loot is kept as M+, with the dungeon")
