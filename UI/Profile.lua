@@ -37,22 +37,14 @@ end
 
 local rankName = PGM.RankName
 
--- The commands that move someone from one rank to another: /gpromote or
--- /gdemote once per rank, as many as fit in one macro (any left over go
--- with the next click). Rank 0 is the guild master, so a lower index is a
--- higher rank.
-local MACRO_MAX = 255
+-- The command that moves someone one rank towards another: /gpromote or
+-- /gdemote, once. Rank 0 is the guild master, so a lower index is a higher
+-- rank. One per click: several in one click don't land in order (some are
+-- dropped, some arrive after the roster has been read again), which took
+-- people past the rank picked.
 local function rankMacro(name, from, to)
     if not (name and from and to) or from == to then return nil end
-    local line = (to < from and "/gpromote " or "/gdemote ") .. name
-    local lines, size = {}, 0
-    for _ = 1, math.abs(from - to) do
-        local extra = #line + (size > 0 and 1 or 0)
-        if size + extra > MACRO_MAX then break end
-        lines[#lines + 1] = line
-        size = size + extra
-    end
-    return table.concat(lines, "\n")
+    return (to < from and "/gpromote " or "/gdemote ") .. name
 end
 
 local function buildSecure()
@@ -70,10 +62,9 @@ local function buildSecure()
     end
     h.setRank = btn("Set rank", C.jade)
     h.setRank:SetWidth(110)
-    h.setRank.tip = "Moves them to the rank picked on the left, as many ranks as it takes, in one click."
+    h.setRank.tip = "Moves them one rank towards the rank picked on the left. Click again for the next rank once their rank has updated."
     -- Ask for the roster straight away, so the new rank shows quickly. Until
-    -- it does, the button does nothing: its lines move them by a number of
-    -- ranks, so a second click would move them again.
+    -- it does, the button does nothing: a second click would move them again.
     h.setRank:HookScript("PostClick", function(s, _, down)
         if (down and true or false) ~= GetCVarBool("ActionButtonUseKeyDown") then return end
         h.sent = { name = h.target, from = h.fromRank, at = GetTime() }
@@ -280,6 +271,11 @@ local function build()
         end
         W.Menu(s, "Move " .. (rec.short or "them") .. " to", entries)
     end)
+    -- How Set rank goes, over it: the game moves a rank per click. A child
+    -- of the picker, so it shows only when they can be moved.
+    p.rankHelp = W.FS(p.rankPick, 11, C.text3, "RIGHT")
+    p.rankHelp:SetPoint("BOTTOMRIGHT", p.secureSpot, "TOPRIGHT", 0, 4)
+    p.rankHelp:SetText("One rank per click: wait for it to update, then click again.")
     p.combatNote = W.FS(p, 11, C.text3, "RIGHT")
     p.combatNote:SetPoint("BOTTOMRIGHT", 0, 6)
 
@@ -478,7 +474,8 @@ function UI:RefreshProfile()
         local promoting = target < rec.rankIndex
         if (promoting and can.promote) or (not promoting and can.demote) then
             text = rankMacro(rec.name, rec.rankIndex, target)
-            h.setRank:SetLabel(promoting and "Promote" or "Demote")
+            local left = math.abs(target - rec.rankIndex)
+            h.setRank:SetLabel((promoting and "Promote" or "Demote") .. (left > 1 and (" (" .. left .. ")") or ""))
         else
             h.setRank:SetLabel(promoting and "Can't promote" or "Can't demote")
         end

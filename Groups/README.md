@@ -52,6 +52,14 @@ character's score comes from the game; main, warband and roles need RaiderIO.
   - **Group Finder:** Mythic+, Raids, Delves or Custom. Clicking one
     searches the Group Finder (the game only searches from a click), and
     **Refresh** runs it again.
+  - **The list holds still** until the next search (Refresh, Enter,
+    another category) or a filter change: rows keep their places, so
+    nothing moves under the cursor. A group that's delisted (or a guild
+    post that's closed) stays put, turns red and says **Delisted**; a full
+    one says **Full**. Neither can be applied to. The next search clears
+    them. A five-player group with no place left for any role you apply
+    as says **No room for** that role, with Apply off (right-click still
+    offers the roles it has room for).
   - **Filters** panel, like OAK's: **Apply as** (the roles Apply signs you
     up as), playstyle, leader rating, then tick boxes for Fits my role,
     Hide declined, Need or Has tank, Need or Has healer, Need DPS, Battle
@@ -69,7 +77,8 @@ character's score comes from the game; main, warband and roles need RaiderIO.
     has the box at the time, it's left there and the panel says so.
   - **Apply** sends a Group Finder application with your Apply as roles
     (right-click for one role). On a guild post it's **Ask to join**.
-  - **Your requests go to the top**, whatever the filters, tinted by how
+  - **Your requests go to the top** on the next search, whatever the
+    filters, tinted by how
     they stand: **Pending** (amber, with a **Cancel** button), **Invited**
     (accept Blizzard's popup), then **Joined** or **Declined** (red). A
     decline stays on top for two minutes, then Hide declined hides it.

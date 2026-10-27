@@ -616,11 +616,14 @@ local function rowAction(row)
         local n = G:SignupsLeft(p)
         return ("Invite next (%d)"):format(n), n > 0 and p.start - PGM.Now() < 1800
     end
+    if row.gone then return "Delisted", false end
     local state = row.state
     if state == "pending" then return "Cancel", true end
     if state == "invited" then return "Invited", false end
     if state == "joined" then return "Joined", false end
     if state == "declined" then return "Declined", false end
+    if row.full then return "Full", false end
+    if row.noRoom then return "No room", false end
     if res then return "Apply", true end
     if (p.start or 0) > 0 then
         local s = p.signups and p.signups[PGM:MyGuid() or ""]
@@ -644,6 +647,9 @@ end
 -- Act on a row: role is a pick from the menu, or nil for the button.
 local function act(row, role)
     local p, res = row.post, row.result
+    if row.gone or (row.full and not row.state) then return end
+    -- No room for my roles: only a pick from the menu of one that's open.
+    if row.noRoom and not row.state and not (role and (row.need[role] or 0) > 0) then return end
     if p and p.mine then
         if not G:InviteNextSignup(p.id) then
             PGM.Print("Nobody left to invite: everyone signed up is in your group or offline.")
@@ -670,16 +676,22 @@ local function rowMenu(owner, row)
         entries[#entries + 1] = { "Edit", function() state.view = "post" G.UI.FillForm(p) UI:Refresh() end }
         entries[#entries + 1] = { "Cancel this group", function() G:CloseScheduled(p.id) end }
     else
-        local verb = row.result and "Apply as " or ((p and (p.start or 0) > 0) and "Sign up as " or "Ask as ")
-        for _, r in ipairs(G.ROLES) do
-            entries[#entries + 1] = { verb .. PGM.ROLE_LABEL[G.ROLE_KEY[r]], function() act(row, r) end }
+        -- Nothing to ask for on a delisted or full group: just its leader.
+        if not (row.gone or (row.full and not row.state)) then
+            local verb = row.result and "Apply as " or ((p and (p.start or 0) > 0) and "Sign up as " or "Ask as ")
+            for _, r in ipairs(G.ROLES) do
+                -- A five-player group's taken roles are greyed out.
+                local taken = (row.size or 5) <= 5 and (row.need[r] or 0) == 0
+                entries[#entries + 1] = { verb .. PGM.ROLE_LABEL[G.ROLE_KEY[r]], function() act(row, r) end, disabled = taken }
+            end
         end
         if rec then
-            entries[#entries + 1] = { divider = true }
+            if #entries > 0 then entries[#entries + 1] = { divider = true } end
             entries[#entries + 1] = { "Whisper " .. (rec.short or "leader"), function() UI:Whisper(rec) end }
             entries[#entries + 1] = { "Open profile", function() UI:OpenProfile(rec.guid) end }
         end
     end
+    if #entries == 0 then return end
     W.Menu(owner, G.PostTitle(row), entries)
 end
 
@@ -761,11 +773,31 @@ end
 local STATE_LOOK = {
     pending = { C.amber, "Pending" }, invited = { C.jade, "Invited: accept the popup" },
     joined = { C.jade, "Joined" }, declined = { C.red, "Declined" },
+    gone = { C.red, "Delisted" }, full = { C.red, "Full" },
 }
+
+-- "Tank or DPS": the roles I apply as, for "No room for ...".
+local function myRolesText()
+    local names = {}
+    local mine = G.MyRoles()
+    for _, r in ipairs(G.ROLES) do
+        if mine[r] then names[#names + 1] = r == "D" and "DPS" or PGM.ROLE_LABEL[G.ROLE_KEY[r]] end
+    end
+    return #names > 0 and table.concat(names, " or ") or "you"
+end
+
+-- A row's look: gone (delisted, closed), full or no room for me first,
+-- then my request.
+local function lookOf(row)
+    if row.gone then return STATE_LOOK.gone end
+    if row.state then return STATE_LOOK[row.state] end
+    if row.full then return STATE_LOOK.full end
+    if row.noRoom then return { C.red, "No room for " .. myRolesText() } end
+end
 
 local function boardUpdate(r, row)
     r.row = row
-    local look = row.state and STATE_LOOK[row.state]
+    local look = lookOf(row)
     local col = look and look[1] or C.jade
     r.wash:SetColorTexture(col[1], col[2], col[3], look and 0.10 or 0.06)
     r.edge:SetColorTexture(col[1], col[2], col[3], 1)
@@ -841,7 +873,7 @@ local function boardUpdate(r, row)
         when = "live"
     end
     if look then
-        r.when:SetText(PGM.Hex(look[1]) .. look[2] .. "|r  -  " .. when)
+        r.when:SetText(PGM.Hex(look[1]) .. look[2] .. "|r" .. (row.gone and "" or ("  -  " .. when)))
     else
         r.when:SetText(source and (source .. "  -  " .. when) or when)
     end
@@ -861,6 +893,7 @@ end
 local PANEL_W = 214
 
 local function search()
+    G:ResortBoard()   -- Refresh re-sorts and drops delisted rows, searched or not
     local ok, why = G:SearchFinder(state.cat)
     if not ok then PGM.Print(why) end
     UI:Refresh()
@@ -999,8 +1032,11 @@ local function dressHost(host, home)
     host.preferredFilters = home.preferredFilters or 0
 end
 
-local function search(box)
+-- Enter or the clear button in the box: a new search, of Browse's category.
+-- (Named apart from the page's search(), which the buttons below use.)
+local function searchFromBox(box)
     box:ClearFocus()
+    G:ResortBoard()
     local ok, why = G:SearchFinder(state.cat)
     if not ok then PGM.Print(why) end
     UI:Refresh()
@@ -1041,7 +1077,7 @@ local function borrowSearchBox()
     box:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 1)
     box:SetFrameStrata(host:GetFrameStrata())
     box:SetFrameLevel(host:GetFrameLevel() + 5)
-    box:SetScript("OnEnterPressed", search)
+    box:SetScript("OnEnterPressed", searchFromBox)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     box:SetScript("OnTabPressed", nil)
     box:SetScript("OnArrowPressed", nil)
@@ -1051,7 +1087,7 @@ local function borrowSearchBox()
     if box.clearButton then
         box.clearButton:SetScript("OnClick", function()
             if C_LFGList.ClearSearchTextFields then pcall(C_LFGList.ClearSearchTextFields) end
-            search(box)
+            searchFromBox(box)
         end)
     end
     box:Show()

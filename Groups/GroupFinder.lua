@@ -350,6 +350,7 @@ local LUST = { MAGE = true, SHAMAN = true, EVOKER = true, HUNTER = true }
 
 local results = {}
 local declinedAt = {}   -- [resultID] = when I saw it turn declined
+local freshList = false -- a new search came in: the next read starts a new board
 
 local DECLINED = { declined = true, declined_full = true, declined_delisted = true }
 local PIN_DECLINED = 120   -- a decline stays at the top this long
@@ -459,6 +460,10 @@ local function readResults()
         end
     end
     G.resultsAt = GetTime()
+    if freshList then
+        freshList = false
+        G.resultsGen = (G.resultsGen or 0) + 1
+    end
     G:Fire("FINDER")
 end
 
@@ -543,6 +548,42 @@ local function fromResult(r)
     }
 end
 
+-- The board holds still between searches: rows keep their places, new
+-- ones go at the bottom, and a group that's delisted (or a guild post
+-- that's closed) stays where it was, marked, until a new search (Refresh,
+-- Enter, another category) or a filter change sorts it afresh. Rows moving
+-- under the cursor made it easy to apply to the wrong one.
+local held = {}   -- [filter settings] = { gen, order = { keys }, rows = { [key] = row } }
+
+local function rowKey(row)
+    return row.post and ("p" .. tostring(row.post.id)) or ("r" .. tostring(row.result.id))
+end
+
+-- The filter settings as one string, so a change to any of them shows.
+local function settingsKey(f)
+    local keys = {}
+    for k in pairs(f) do keys[#keys + 1] = tostring(k) end
+    table.sort(keys)
+    local parts = {}
+    for _, k in ipairs(keys) do
+        local v = f[k]
+        if type(v) == "table" then
+            local sub = {}
+            for kk, vv in pairs(v) do if vv then sub[#sub + 1] = tostring(kk) end end
+            table.sort(sub)
+            v = "{" .. table.concat(sub, ",") .. "}"
+        end
+        parts[#parts + 1] = k .. "=" .. tostring(v)
+    end
+    return table.concat(parts, ";")
+end
+
+-- Sort the board afresh on its next draw (the Refresh button, even when the
+-- game won't search).
+function G:ResortBoard()
+    G.boardGen = (G.boardGen or 0) + 1
+end
+
 -- The board's rows for filter settings f (see the Groups page).
 function G:Board(f)
     local rows, byLeader = {}, {}
@@ -590,10 +631,21 @@ function G:Board(f)
         local state, since = G:RowState(row)
         row.state = state
         row.pinned = state ~= nil and (state ~= "declined" or (since and GetTime() - since < PIN_DECLINED)) or false
+        -- A Group Finder group with every place taken: nothing to apply to.
+        row.full = row.result ~= nil and not row.post and row.result.members >= (row.size or 5) or false
+        -- None of the roles I apply as is open any more (five-player groups:
+        -- a raid's open places are flexible, not real needs).
+        row.noRoom = false
+        if not row.full and (row.size or 5) <= 5 and not (row.post and row.post.mine) then
+            row.noRoom = true
+            for r in pairs(roles) do
+                if (row.need[r] or 0) > 0 then row.noRoom = false end
+            end
+        end
         if keep and f.hideDeclined and state == "declined" then keep = false end
         if keep or row.pinned then out[#out + 1] = row end
     end
-    for _, row in ipairs(out) do
+    for _, row in ipairs(rows) do
         row.icon = row.kind == "M" and G.DungeonIconByName(row.what) or nil
     end
     -- Every key compared here is set on every row (booleans are true or
@@ -606,7 +658,49 @@ function G:Board(f)
         if f.sort == "rating" and a.score ~= b.score then return a.score > b.score end
         return (a.u or 0) > (b.u or 0)
     end)
-    return out
+
+    -- Between searches: the rows as they were, in the same order.
+    local gen = tostring(G.resultsGen or 0) .. ":" .. tostring(G.boardGen or 0)
+    local sk = settingsKey(f)
+    local h = held[sk]
+    if not (h and h.gen == gen) then
+        for k, old in pairs(held) do
+            if old.gen ~= gen then held[k] = nil end
+        end
+        h = { gen = gen, order = {}, rows = {} }
+        held[sk] = h
+        for _, row in ipairs(out) do
+            local key = rowKey(row)
+            h.order[#h.order + 1] = key
+            h.rows[key] = row
+        end
+        return out
+    end
+    local now, shown = {}, {}
+    for _, row in ipairs(rows) do now[rowKey(row)] = row end
+    for _, row in ipairs(out) do shown[rowKey(row)] = row end
+    local kept = {}
+    for _, key in ipairs(h.order) do
+        local row = shown[key] or now[key]
+        if not row then
+            -- Gone since the search: kept, marked, never acted on.
+            row = h.rows[key]
+            row.gone, row.pinned = true, false
+        end
+        h.rows[key] = row
+        kept[#kept + 1] = row
+        shown[key] = nil
+    end
+    -- New since the search (a guild post, say): at the bottom.
+    for _, row in ipairs(out) do
+        local key = rowKey(row)
+        if shown[key] then
+            h.order[#h.order + 1] = key
+            h.rows[key] = row
+            kept[#kept + 1] = row
+        end
+    end
+    return kept
 end
 
 -- The dungeons, raids or delves to filter by: { name, icon, best }. For
@@ -863,7 +957,10 @@ G:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE", function()
     queueSync()
     queueApplicants()
 end)
-G:RegisterEvent("LFG_LIST_SEARCH_RESULTS_RECEIVED", queueResults)
+G:RegisterEvent("LFG_LIST_SEARCH_RESULTS_RECEIVED", function()
+    freshList = true
+    queueResults()
+end)
 G:RegisterEvent("LFG_LIST_SEARCH_RESULT_UPDATED", queueResults)
 G:RegisterEvent("LFG_LIST_APPLICATION_STATUS_UPDATED", queueResults)
 G:RegisterEvent("LFG_LIST_APPLICANT_LIST_UPDATED", queueApplicants)

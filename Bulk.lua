@@ -4,9 +4,11 @@
 -- key press, so no addon can work through a list on its own. Instead, rules
 -- build a queue, and each press of the Bulk Actions button (or its hotkey)
 -- runs the next batch: as many commands as fit in one macro's 255
--- characters, so several people per press. After each press the roster is
--- read again. Anyone whose change shows up is done; anyone it didn't take
--- for is tried once more, then counted as failed.
+-- characters, so several people per press, but only one rank per person
+-- (several for one person don't land in order, and could take them past
+-- the rank asked for). After each press the roster is read again. Anyone
+-- at their rank is done, anyone partway is queued for the next rank, and
+-- anyone it didn't take for is tried once more, then counted as failed.
 --
 -- Nothing here is shared with the guild: the rules and the ignore list are
 -- this player's own, kept per guild.
@@ -148,7 +150,7 @@ local function daysAway(rec)
     return PGM.DaysSince(rec.lastOnline)
 end
 
--- How many /gpromote or /gdemote lines it takes to get them there.
+-- How many ranks they still have to move (one /gpromote or /gdemote each).
 local function stepsTo(action, rec, toRank)
     if action == "kick" then return 1 end
     if not (toRank and rec.rankIndex) then return 0 end
@@ -365,17 +367,13 @@ function PGM:BulkBatch()
             elseif n == 0 then
                 Bulk.state[item.guid] = { s = "done", tries = 0 }
             elseif rec.name then
+                -- One rank per person per press (see the top of the file).
                 local line = verb .. " " .. rec.name
-                local added = 0
-                for _ = 1, n do
-                    local extra = #line + (size > 0 and 1 or 0)
-                    if size + extra > MACRO_MAX then break end
-                    lines[#lines + 1] = line
-                    size = size + extra
-                    added = added + 1
-                end
-                if added > 0 then items[#items + 1] = item end
-                if added < n then break end   -- the macro is full
+                local extra = #line + (size > 0 and 1 or 0)
+                if size + extra > MACRO_MAX then break end   -- the macro is full
+                lines[#lines + 1] = line
+                size = size + extra
+                items[#items + 1] = item
             end
         end
     end

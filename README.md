@@ -138,7 +138,7 @@ that member's play time.
 - Their characters (main and alts), with Link, Unlink and Make main buttons
 - Their last 10 raids, as a strip of boxes
 - Their history
-- Buttons to add them to a raid team, and, if your rank allows it, a rank picker with Set rank (any rank below yours, in one click) and Remove
+- Buttons to add them to a raid team, and, if your rank allows it, a rank picker with Set rank (any rank below yours, one rank per click) and Remove
 
 ![Profile](screenshots/03-profile.png)
 

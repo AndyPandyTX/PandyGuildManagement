@@ -590,7 +590,7 @@ pr.ranks, pr.toRank, pr.skipTeams = { [6] = true }, 4, nil
 check(P:BulkRuleCount("promote", pr) == 1, "promote rule picks the trial")
 P:BulkStart("promote")
 local pt, pi = P:BulkBatch()
-check(pt == "/gpromote Yinsane-MalGanis\n/gpromote Yinsane-MalGanis", "two ranks up is two commands")
+check(pt == "/gpromote Yinsane-MalGanis", "two ranks up is one command per press")
 P:BulkSent(pi)
 yin.rankIndex = 5
 P:Fire("ROSTER")

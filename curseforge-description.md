@@ -61,7 +61,7 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click the panda but
 **Member profiles**
 - Join date, M+ score, raid progress (with RaiderIO installed), professions, teams, notes and their characters
 - Last 10 raids, history, and a private note only you can see
-- Pick any rank below yours and set it in one click, or remove them, if your rank allows it
+- Pick any rank below yours and move them there a rank per click, or remove them, if your rank allows it
 
 **Bulk actions** (officers)
 - Kick, promote or demote by rules: time away, rank, level, time in the guild, note text

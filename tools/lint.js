@@ -11,6 +11,18 @@ for (const f of files) {
   try { ast = luaparse.parse(src, { luaVersion: '5.1', scope: true, locations: true }); }
   catch (e) { console.log('SYNTAX', path.relative(root,f), e.message); bad++; continue; }
   const rel = path.relative(root, f);
+  // A file-level local declared twice: the second hides the first from
+  // everything below it (two "local function search" broke Refresh).
+  const top = new Map();
+  for (const st of ast.body) {
+    const names = st.type === 'FunctionDeclaration' && st.isLocal && st.identifier ? [st.identifier]
+      : (st.type === 'LocalStatement' ? st.variables : []);
+    for (const id of names) {
+      if (id.name === '_') continue;
+      if (top.has(id.name)) { console.log('REDECLARED', rel + ':' + id.loc.start.line, 'local ' + id.name + ' (first at line ' + top.get(id.name) + ')'); bad++; }
+      else top.set(id.name, id.loc.start.line);
+    }
+  }
   (function visit(n, parent){
     if (!n || typeof n !== 'object') return;
     if (Array.isArray(n)) { n.forEach(x=>visit(x,parent)); return; }
@@ -31,4 +43,5 @@ for (const f of files) {
 const SET_ELSEWHERE = new Set(['UI.frame', 'UI.current']);
 for (const t of ['PGM','UI','W']) for (const [k,loc] of used[t]) if (!defined[t].has(k) && !SET_ELSEWHERE.has(t+'.'+k)) console.log('UNDEFINED', t+'.'+k, loc);
 console.log('GLOBALS:', [...globals.keys()].sort().join(' '));
-console.log(files.length, 'files,', bad, 'syntax errors');
+console.log(files.length, 'files,', bad, 'problems');
+if (bad) process.exitCode = 1;

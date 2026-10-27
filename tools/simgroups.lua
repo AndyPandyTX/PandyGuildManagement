@@ -439,8 +439,9 @@ local function board(c, kind, extra)
     f.kind = kind or "M"
     for k, v in pairs(extra or {}) do f[k] = v end
     local t = {}
-    for _, row in ipairs(c.G:Board(f)) do t[#t + 1] = (row.guild and "G:" or "") .. (row.what or "?") .. (row.level ~= "" and ("+" .. row.level) or "") end
-    return table.concat(t, ",")
+    local rows = c.G:Board(f)
+    for _, row in ipairs(rows) do t[#t + 1] = (row.guild and "G:" or "") .. (row.what or "?") .. (row.level ~= "" and ("+" .. row.level) or "") end
+    return table.concat(t, ","), rows
 end
 
 -- ================== SCENARIO ==================
@@ -716,18 +717,60 @@ local acts = C.G:BoardActivities("M")
 check(#acts == 2 and acts[1].icon == "icon501" and acts[1].best == 14, "this season's dungeons, with icons and my best")
 
 print("-- applying")
+local before = board(C)
 C.G:ApplyFinder(101)
 check(L.applied[1] == "101:falsefalsetrue", "applies with the roles I play")
-check(board(C):sub(1, 14) == "Dungeon501+14,", "my application goes to the top")
+check(board(C) == before, "applying doesn't move the rows")
+C.G:ResortBoard()
+check(board(C):sub(1, 14) == "Dungeon501+14,", "my application goes to the top on Refresh")
 check(C.G:Board({ kind = "M", minRating = 9999 })[1].state == "pending", "pending shows past the filters")
 C.G:CancelFinder(101)
+C.G:ResortBoard()
 check(board(C):sub(1, 6) == "G:Dung", "cancelling unpins it")
 L.appStatus[103] = "declined"
 C.fire("LFG_LIST_SEARCH_RESULT_UPDATED")
 run(1)
+C.G:ResortBoard()
 check(board(C):sub(1, 14) == "Dungeon501+20,", "a fresh decline is pinned on top")
 run(130, 1)
+C.G:ResortBoard()
 check(not board(C):find("+20", 1, true), "then Hide declined hides it")
+
+print("-- the board holds still between searches")
+local function rowOf(rows, id)
+    for _, row in ipairs(rows) do if row.result and row.result.id == id then return row end end
+end
+local held = board(C)
+L.results[101].isDelisted = true
+C.fire("LFG_LIST_SEARCH_RESULT_UPDATED")
+run(1)
+local now, rows = board(C)
+check(now == held, "a delisted group keeps its place (" .. now .. ")")
+check(rowOf(rows, 101) and rowOf(rows, 101).gone, "...marked delisted")
+C.fire("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+run(1)
+check(not board(C):find("+14", 1, true), "a new search drops it")
+L.results[101].isDelisted = nil
+L.results[101].numMembers = 5
+C.fire("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+run(1)
+_, rows = board(C)
+check(rowOf(rows, 101) and rowOf(rows, 101).full and not rowOf(rows, 101).gone, "a full group is marked full")
+L.results[101].numMembers = 2
+C.fire("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+run(1)
+-- I apply as DPS; the group takes its last DPS.
+L.counts[101].DAMAGER = 3
+C.fire("LFG_LIST_SEARCH_RESULT_UPDATED")
+run(1)
+_, rows = board(C)
+check(rowOf(rows, 101) and rowOf(rows, 101).noRoom, "no room left for my roles is marked")
+check(rowOf(rows, 102) and not rowOf(rows, 102).noRoom, "...and not where there's still a DPS spot")
+L.counts[101].DAMAGER = 1
+C.fire("LFG_LIST_SEARCH_RESULT_UPDATED")
+run(1)
+_, rows = board(C)
+check(rowOf(rows, 101) and not rowOf(rows, 101).noRoom, "a spot opening up clears it")
 C.fire("LFG_LIST_APPLICATION_STATUS_UPDATED", 101, "applied", "none")
 check(C.st.opened[#C.st.opened] == "groups", "applying anywhere opens the Groups page")
 
