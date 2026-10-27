@@ -1,6 +1,6 @@
 ## Interface: 120105, 120100, 120007, 120001, 16001
 ## Title: |cff55d194Pandy|r Guild Management
-## Notes: Guild roster, overview, group finder, play-time activity, professions, raid teams, alts, history and attendance for Midnight and WoW Forever.
+## Notes: Guild roster, overview, group finder, play-time activity, professions, raid teams, loot, alts, history and attendance for Midnight and WoW Forever.
 ## Author: Pandy
 ## Version: 0.10.0
 ## Category: Guild

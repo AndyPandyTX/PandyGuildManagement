@@ -47,6 +47,20 @@ function UI:AddTab(tab)
     if self.frame then self:BuildNav() end
 end
 
+-- The biggest scale at which the whole window fits on screen. Bigger, and
+-- the game keeps it on screen by pushing its top past the edge, where the
+-- header can't be grabbed to move it.
+local function maxScale()
+    local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+    if not (w and h and w > 0 and h > 0) then return 1.6 end
+    return math.max(0.6, math.min(1.6, w * 0.98 / WIDTH, h * 0.98 / HEIGHT))
+end
+
+-- A scale that fits: the one asked for, or the biggest that fits.
+function UI:FitScale(scale)
+    return math.min(scale or 1, maxScale())
+end
+
 local function savePosition(f)
     local point, _, relPoint, x, y = f:GetPoint()
     PandyGuildDB.window = { point, relPoint, x, y }
@@ -172,7 +186,7 @@ function UI:Create()
     f:SetSize(WIDTH, HEIGHT)
     local pos = PandyGuildDB.window
     if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("CENTER") end
-    f:SetScale(PGM.opt("scale") or 1)
+    f:SetScale(UI:FitScale(PGM.opt("scale")))
     f:SetFrameStrata("HIGH")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
@@ -271,18 +285,20 @@ function UI:Create()
         if not s.dragging then return end
         local x, yy = GetCursorPosition()
         local delta = ((x - s.x) - (yy - s.y)) / (2 * UIParent:GetEffectiveScale())
-        f:SetScale(math.max(0.6, math.min(1.6, s.scale + delta / 800)))
+        f:SetScale(math.max(0.6, math.min(maxScale(), s.scale + delta / 800)))
     end)
     grab:SetScript("OnMouseUp", function(s)
         if not s.dragging then return end
         s.dragging = false
-        local scale = math.floor(f:GetScale() * 20 + 0.5) / 20
+        local scale = UI:FitScale(math.floor(f:GetScale() * 20 + 0.5) / 20)
         f:SetScale(scale)
         PGM.setOpt("scale", scale)
         UI:Fire("MOVED")
     end)
 
     f:SetScript("OnShow", function()
+        -- The screen may have changed since (resolution, UI scale).
+        f:SetScale(UI:FitScale(PGM.opt("scale")))
         PGM:RequestRoster()
         UI:Refresh()
     end)
@@ -323,6 +339,28 @@ function UI:Show(id)
     f:Show()
     self:Refresh()
 end
+
+-- Back to the middle of the screen at normal size (/pgm reset), for a
+-- window that ended up somewhere it can't be dragged back from.
+function UI:ResetWindow()
+    PandyGuildDB.window = nil
+    PGM.setOpt("scale", 1)
+    local f = self.frame
+    if f then
+        f:ClearAllPoints()
+        f:SetPoint("CENTER")
+        f:SetScale(UI:FitScale(1))
+        UI:Fire("MOVED")
+    end
+end
+
+-- Resolution or UI scale changed: refit an open window.
+PGM:RegisterEvent("UI_SCALE_CHANGED", function()
+    if UI.frame then UI.frame:SetScale(UI:FitScale(PGM.opt("scale"))) end
+end)
+PGM:RegisterEvent("DISPLAY_SIZE_CHANGED", function()
+    if UI.frame then UI.frame:SetScale(UI:FitScale(PGM.opt("scale"))) end
+end)
 
 function UI:Toggle()
     local f = self:Create()

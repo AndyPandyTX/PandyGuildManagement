@@ -1518,6 +1518,84 @@ do
     run(10)
 end
 
+print("-- addon users, one row per player")
+do
+    local P, g = A.PGM, A.g
+    -- Yinsane is Tiferis's alt (linked by hand earlier); both run it.
+    local savedMain, saved = g.users[gid(25)], g.users[gid(26)]
+    g.users[gid(25)] = { v = "9.9.9", seen = BASE + math.floor(T) - 30 }
+    g.users[gid(26)] = { v = "0.1.0", seen = BASE + math.floor(T) - 60 }
+    local players, latest, chars = P:AddonUsersByMain()
+    local natty
+    for _, p in ipairs(players) do if p.guid == gid(25) then natty = p end end
+    check(natty and #natty.chars == 2, "a player's characters are one row (" .. (natty and #natty.chars or 0) .. ")")
+    check(natty and natty.chars[1].guid == gid(25), "...their main first")
+    check(natty and not natty.outdated and natty.v ~= "0.1.0", "...on their newest version, not the old alt's")
+    local rows = 0
+    for _ in pairs(g.users) do rows = rows + 1 end
+    check(chars == rows and #players == rows - 1, "players count each person once, characters every one")
+    g.users[gid(25)], g.users[gid(26)] = savedMain, saved
+
+    -- The page draws, folded and unfolded, and as every character.
+    local MockMT = {}
+    local function Mock() return setmetatable({}, MockMT) end
+    MockMT.__index = function() return Mock() end
+    MockMT.__call = function() return Mock() end
+    MockMT.__concat = function(a, b) return (type(a) == "string" and a or "") .. (type(b) == "string" and b or "") end
+    MockMT.__len = function() return 0 end
+    local shown = 0
+    local list
+    local W = setmetatable({}, { __index = function() return function() return Mock() end end })
+    rawset(W, "List", function(_, _, buildRow, updateRow)
+        local l = Mock()
+        rawset(l, "SetData", function(self, data)
+            list = { build = buildRow, data = data }
+            shown = #data
+            for i, d in ipairs(data) do updateRow(buildRow(self, i), d, i) end
+        end)
+        return l
+    end)
+    rawset(W, "Row", function()
+        local r = Mock()
+        rawset(r, "SetScript", function(self, k, f) rawset(self, "_" .. k, f) end)
+        return r
+    end)
+    rawset(W, "Chip", function(_, _, onClick)
+        local c = Mock()
+        rawset(c, "click", onClick)
+        return c
+    end)
+    local UI = { W = W, tabs = {} }
+    function UI:AddTab(t) self.tabs[t.id] = t end
+    function UI:Refresh() end
+    local realUI, realCreate = P.UI, A.env.CreateFrame
+    P.UI = UI
+    A.env.CreateFrame = function() return Mock() end
+    g.users[gid(25)] = { v = "9.9.9", seen = BASE + math.floor(T) - 30 }
+    g.users[gid(26)] = { v = "0.1.0", seen = BASE + math.floor(T) - 60 }
+    local fn, err = load(FILES["UI/Users.lua"], "@UI/Users.lua", "t", A.env)
+    if not fn then error(err) end
+    local ok, why = pcall(function()
+        fn("PandyGuildManagement", A.NS)
+        local tab, page = UI.tabs.users, Mock()
+        tab.build(page)
+        tab.refresh(page)
+        local folded = shown
+        -- Click Nattypandy's row: her characters show under it.
+        local row
+        for i, d in ipairs(list.data) do if d.guid == gid(25) then row = list.build(nil, i) row.it = d end end
+        row._OnClick(row, "LeftButton")
+        tab.refresh(page)
+        check(shown == folded + 2, "clicking a player shows their characters (" .. folded .. " -> " .. shown .. ")")
+        rawget(page, "every").click()
+        tab.refresh(page)
+        check(shown == folded + 1, "Every character lists each one (" .. shown .. ")")
+    end)
+    check(ok, "the Addon Users page draws (" .. tostring(why) .. ")")
+    g.users[gid(25)], g.users[gid(26)] = savedMain, saved
+    P.UI, A.env.CreateFrame = realUI, realCreate
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)

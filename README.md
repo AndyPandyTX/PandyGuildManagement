@@ -16,7 +16,9 @@ A guild manager for retail WoW (Midnight), built for big raiding guilds:
   promote/demote buttons
 
 Type `/pgm` (or `/pandy`) to open it, click the panda button on the minimap,
-or click it in Blizzard's AddOns button there.
+or click it in Blizzard's AddOns button there. If the window ever ends up
+somewhere you can't drag it back from, `/pgm reset` puts it back in the
+middle at normal size.
 
 The minimap button can be dragged around the minimap's edge, and minimap
 button collectors pick it up. Right-click it for Settings, where it can be
@@ -182,8 +184,10 @@ your account:
   Right-click an entry to delete it.
 
 **Addon Users.** Everyone in the guild running Pandy Guild Management, with
-their version, and who needs to update. The Roster also has a "Has addon"
-filter.
+their version, and who needs to update: one row per player (their main),
+with how many of their characters run it. Click a player to see those
+characters, or tick "Every character" for the full list. The Roster also
+has a "Has addon" filter.
 
 ![Addon Users](screenshots/09-addon-users.png)
 

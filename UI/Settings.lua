@@ -103,7 +103,7 @@ local function build(p)
             v = math.floor(v * 100 + 0.5) / 100
             PGM.setOpt("scale", v)
             UI:HideSecure()
-            UI.frame:SetScale(v)
+            UI.frame:SetScale(UI:FitScale(v))
         end, 0.6, 1.6, 0.05, "%.2f")
 
     -- Accent colour swatches, on their own row under Scale.

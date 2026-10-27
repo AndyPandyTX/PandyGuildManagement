@@ -10,7 +10,7 @@ const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 
 const addon = process.argv[2];
 const mode = process.argv[3];
-const files = ['Core.lua', 'Club.lua', 'Roster.lua', 'GuildEvents.lua', 'Alts.lua', 'Attendance.lua', 'Teams.lua', 'Sync.lua', 'Grm.lua', 'Activity.lua', 'Stats.lua', 'Progress.lua', 'Bulk.lua', 'Crafters.lua', 'Loot.lua', 'UI/Loot.lua'];
+const files = ['Core.lua', 'Club.lua', 'Roster.lua', 'GuildEvents.lua', 'Alts.lua', 'Attendance.lua', 'Teams.lua', 'Sync.lua', 'Grm.lua', 'Activity.lua', 'Stats.lua', 'Progress.lua', 'Bulk.lua', 'Crafters.lua', 'Loot.lua', 'UI/Loot.lua', 'UI/Users.lua'];
 const groupFiles = ['Core.lua', 'Keystone.lua', 'Status.lua', 'Posts.lua', 'GroupFinder.lua', 'UI/Common.lua', 'UI/Groups.lua', 'UI/Free.lua', 'UI/Keys.lua'];
 
 let harnessName = 'simharness.lua';

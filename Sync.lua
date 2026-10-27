@@ -1381,6 +1381,42 @@ function PGM:AddonUsers()
     return out, latest
 end
 
+-- The same, one row per player: their main (or the character itself when
+-- no main is known), with every character of theirs that runs it, newest
+-- heard first. A player's version is their newest; they're out of date if
+-- even that is behind. Online first, then by name.
+function PGM:AddonUsersByMain()
+    local users, latest = PGM:AddonUsers()
+    local g = PGM.GuildDB()
+    local byMain, out = {}, {}
+    for _, it in ipairs(users) do
+        local main = PGM:MainOf(it.guid) or it.guid
+        local p = byMain[main]
+        if not p then
+            p = { guid = main, rec = g.members[main] or it.rec, chars = {}, seen = 0 }
+            byMain[main] = p
+            out[#out + 1] = p
+        end
+        table.insert(p.chars, it)
+        if not p.v or PGM.NewerVersion(it.v, p.v) then p.v = it.v end
+        p.seen = math.max(p.seen, it.seen or 0)
+        p.online = p.online or it.rec.online or false
+    end
+    for _, p in ipairs(out) do
+        p.outdated = PGM.NewerVersion(latest, p.v)
+        table.sort(p.chars, function(a, b)
+            if a.guid == p.guid then return true end
+            if b.guid == p.guid then return false end
+            return (a.seen or 0) > (b.seen or 0)
+        end)
+    end
+    table.sort(out, function(a, b)
+        if a.online ~= b.online then return a.online end
+        return PGM.NameLess(a.rec.short, b.rec.short)
+    end)
+    return out, latest, #users
+end
+
 function PGM:AddonUserOf(guid)
     local g = PGM.GuildDB()
     return g and g.users and g.users[guid]
