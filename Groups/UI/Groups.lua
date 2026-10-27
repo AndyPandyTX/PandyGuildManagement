@@ -947,96 +947,135 @@ end
 -- Titles can't be read by addons, but the Group Finder's own search box
 -- searches them on Blizzard's side: whatever is typed there goes with every
 -- search, ours included. Addons can't type into it for you (Blizzard turns
--- SetText off on it), so while Browse is showing the box itself sits in the
--- Filters panel, the way OAK LFG Sorter does it, and goes back when Browse
--- closes. If another addon has the box already (OAK, with its panel open),
--- it's left where it is.
+-- SetText off on it), so while Browse is showing the box itself moves into
+-- the Filters panel, the way OAK LFG Sorter does it, and goes back when
+-- Browse closes. It has to change parent: left on Blizzard's panel and only
+-- drawn over ours, it shows but never gets the click.
 --
--- TAINT: nothing of Blizzard's is replaced or dressed up. The box keeps its
--- parent (the Group Finder's list of groups) and all its own scripts, so
--- they run as Blizzard wrote them, against Blizzard's real panel: Enter and
--- the clear button search there as they always do. Our part is hooked on
--- after theirs (HookScript leaves their handler as it is) and does nothing
--- unless the box is here. What's left is moving it: its anchors, strata and
--- level are set from addon code. That's layout, not a Lua value Blizzard's
--- code reads, so it doesn't taint that code; the cost is that the box (with
--- Blizzard's Refresh button and autocomplete list, which hang off it) sits
--- over our panel meanwhile. Keeping its parent also means the box shows only
--- while Blizzard's list of groups is open; the note under it says so.
-local borrowed     -- the box's own anchors, size, strata and level, while it's here
-local boxHooked = false
+-- Blizzard's handlers on the box look on its parent for the panel's
+-- fields, so the holder carries the ones they read (dressHost), and the
+-- handlers that need the rest of Blizzard's panel (Enter, Escape, the
+-- clear button, autocomplete) are swapped for ours while it's here and put
+-- back after. Those run as addon code, on the box only.
+--
+-- If another addon has the box already (OAK, with its Filters open), it's
+-- left where it is. OAK hands it back to whoever had it before, which can
+-- be us after we've let go: then it's taken home from our holder.
+local borrowed     -- true while the box is in our holder
+local heldIn       -- the holder it went into (it may be handed back there)
+local original     -- the box at home: anchors, size, strata, level, scripts
+
+local SCRIPTS = { "OnEnterPressed", "OnEscapePressed", "OnTabPressed", "OnArrowPressed", "OnTextChanged" }
 
 local function blizzardBox()
     local sp = LFGListFrame and LFGListFrame.SearchPanel
     return sp and sp.SearchBox, sp
 end
 
--- After Blizzard's Enter or clear button, which searched the category
--- picked in its own window: if Browse is on another one, search that too,
--- so the list shows what Browse is set to. Only while the box is here.
-local function afterBlizzardSearch()
-    if not borrowed then return end
-    local _, home = blizzardBox()
+-- The note in the box's place, for when the box can't be here.
+local function searchNoteText()
+    local box, home = blizzardBox()
+    if not box then return "Open the Group Finder once to search by key." end
+    local parent = box:GetParent()
+    if parent ~= home and parent ~= heldIn then return "The Group Finder's search box is in use (OAK?)." end
+    return ""
+end
+
+local function updateSearchNote()
+    if board.searchNote then board.searchNote:SetText(searchNoteText()) end
+end
+
+-- The fields Blizzard's handlers read off the box's parent: the box, its
+-- autocomplete list, the category and filters (kept to Browse's category).
+local function dressHost(host, home)
     local cat
     for _, c in ipairs(G.FINDER_CATS) do
         if c.id == state.cat then cat = c end
     end
-    if cat and home and home.categoryID ~= cat.cat then
-        local ok, why = G:SearchFinder(state.cat)
-        if not ok then PGM.Print(why) end
-    else
-        G.searchKind, G.searchedAt = state.cat, GetTime()
-    end
+    host.SearchBox = home.SearchBox
+    host.AutoCompleteFrame = home.AutoCompleteFrame
+    host.categoryID = cat and cat.cat or home.categoryID
+    host.filters = (cat and cat.filters and cat.filters()) or home.filters or 0
+    host.preferredFilters = home.preferredFilters or 0
+end
+
+local function search(box)
+    box:ClearFocus()
+    local ok, why = G:SearchFinder(state.cat)
+    if not ok then PGM.Print(why) end
     UI:Refresh()
 end
 
 local function borrowSearchBox()
     local box, home = blizzardBox()
     local host = board.searchHost
-    if not host then return end
-    if not box then
-        board.searchNote:SetText("Open the Group Finder once to search by key.")
+    if not (host and box) then
+        updateSearchNote()
         return
     end
-    if not borrowed then
-        if box:GetParent() ~= home then
-            board.searchNote:SetText("The Group Finder's search box is in use (OAK?).")
-            return
-        end
-        borrowed = { points = {}, w = box:GetWidth(), h = box:GetHeight(),
-                     strata = box:GetFrameStrata(), level = box:GetFrameLevel() }
+    local parent = box:GetParent()
+    if borrowed and parent ~= heldIn then borrowed = nil end   -- taken from us (OAK)
+    if borrowed then
+        dressHost(host, home)   -- the category may have changed
+        return
+    end
+    if parent ~= home and parent ~= heldIn then
+        updateSearchNote()
+        return
+    end
+    if not original then
+        original = { points = {}, w = box:GetWidth(), h = box:GetHeight(),
+                     strata = box:GetFrameStrata(), level = box:GetFrameLevel(), scripts = {},
+                     clear = box.clearButton and box.clearButton:GetScript("OnClick") }
         for i = 1, (box.GetNumPoints and box:GetNumPoints()) or 1 do
             local point, rel, relPoint, x, y = box:GetPoint(i)
-            borrowed.points[i] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
+            original.points[i] = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
         end
-        if not boxHooked then
-            boxHooked = true
-            box:HookScript("OnEnterPressed", afterBlizzardSearch)
-            if box.clearButton then box.clearButton:HookScript("OnClick", afterBlizzardSearch) end
-        end
-        box:ClearAllPoints()
-        box:SetPoint("TOPLEFT", host, "TOPLEFT", 6, -1)
-        box:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 1)
-        box:SetFrameStrata("DIALOG")
-        box:SetFrameLevel(host:GetFrameLevel() + 5)
+        for _, name in ipairs(SCRIPTS) do original.scripts[name] = box:GetScript(name) or false end
     end
-    -- It shows only while its own panel does.
-    board.searchNote:SetText(home:IsVisible() and "" or "Open the Group Finder's list of groups to search by key here.")
+    borrowed, heldIn = true, host
+    dressHost(host, home)
+    box:ClearAllPoints()
+    box:SetParent(host)
+    box:SetPoint("TOPLEFT", host, "TOPLEFT", 6, -1)
+    box:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -2, 1)
+    box:SetFrameStrata(host:GetFrameStrata())
+    box:SetFrameLevel(host:GetFrameLevel() + 5)
+    box:SetScript("OnEnterPressed", search)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    box:SetScript("OnTabPressed", nil)
+    box:SetScript("OnArrowPressed", nil)
+    box:SetScript("OnTextChanged", function(self)
+        if SearchBoxTemplate_OnTextChanged then SearchBoxTemplate_OnTextChanged(self) end
+    end)
+    if box.clearButton then
+        box.clearButton:SetScript("OnClick", function()
+            if C_LFGList.ClearSearchTextFields then pcall(C_LFGList.ClearSearchTextFields) end
+            search(box)
+        end)
+    end
+    box:Show()
+    updateSearchNote()
 end
 
 local function returnSearchBox()
-    if not borrowed then return end
-    local box = blizzardBox()
-    local b = borrowed
+    local box, home = blizzardBox()
+    local host = heldIn
     borrowed = nil
-    if not box then return end
+    if not (box and host and original) or box:GetParent() ~= host then return end
     box:ClearAllPoints()
-    for _, pt in ipairs(b.points) do
+    box:SetParent(home)
+    for _, pt in ipairs(original.points) do
         if pt.point and pt.rel then box:SetPoint(pt.point, pt.rel, pt.relPoint, pt.x, pt.y) end
     end
-    if b.w and b.h then box:SetSize(b.w, b.h) end
-    if b.strata then box:SetFrameStrata(b.strata) end
-    if b.level then box:SetFrameLevel(b.level) end
+    if original.w and original.h then box:SetSize(original.w, original.h) end
+    if original.strata then box:SetFrameStrata(original.strata) end
+    if original.level then box:SetFrameLevel(original.level) end
+    for name, fn in pairs(original.scripts) do box:SetScript(name, fn or nil) end
+    if box.clearButton then box.clearButton:SetScript("OnClick", original.clear) end
+    host.SearchBox, host.AutoCompleteFrame = nil, nil
+    host.categoryID, host.filters, host.preferredFilters = nil, nil, nil
+    box:Show()
 end
 G.UI.ReturnSearchBox = returnSearchBox
 
@@ -1108,6 +1147,12 @@ local function buildPanel(v)
     board.searchNote = W.FS(board.searchHost, 10, C.text3)
     board.searchNote:SetPoint("LEFT", 6, 0)
     board.searchNote:SetPoint("RIGHT", -6, 0)
+    -- A click here means Blizzard's box isn't over it: say why.
+    board.searchHost:EnableMouse(true)
+    board.searchHost:SetScript("OnMouseDown", function()
+        local why = searchNoteText()
+        if why ~= "" then PGM.Print(why) end
+    end)
     local hint = W.FS(panel, 10, C.text3)
     hint:SetPoint("TOPLEFT", x, -158)
     hint:SetPoint("RIGHT", -8, 0)

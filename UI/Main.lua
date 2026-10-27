@@ -190,15 +190,38 @@ function UI:Create()
     f:SetFrameStrata("HIGH")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
-    f:SetMovable(true)
+    if f.SetDontSavePosition then f:SetDontSavePosition(true) end
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
+    -- Moved by hand, from where the cursor is against where the window was
+    -- when the drag started. The client's own StartMoving keeps its idea of
+    -- the window's place, which goes stale after a /pgm reset or a rescale:
+    -- the window jumped and then trailed the cursor.
+    local mover = CreateFrame("Frame", nil, f)
+    mover:Hide()
+    mover:SetScript("OnUpdate", function(s)
+        local scale = f:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        local x = s.left + cx / scale - s.cx
+        local y = s.top + cy / scale - s.cy
+        local sw = UIParent:GetWidth() * UIParent:GetEffectiveScale() / scale
+        local sh = UIParent:GetHeight() * UIParent:GetEffectiveScale() / scale
+        x = math.max(0, math.min(x, sw - f:GetWidth()))
+        y = math.min(sh, math.max(y, f:GetHeight()))
+        f:ClearAllPoints()
+        f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+    end)
     f:SetScript("OnDragStart", function()
         UI:HideSecure()
-        f:StartMoving()
+        local scale = f:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        mover.cx, mover.cy = cx / scale, cy / scale
+        mover.left, mover.top = f:GetLeft(), f:GetTop()
+        if mover.left and mover.top then mover:Show() end
     end)
     f:SetScript("OnDragStop", function()
-        f:StopMovingOrSizing()
+        if not mover:IsShown() then return end
+        mover:Hide()
         savePosition(f)
         UI:Fire("MOVED")
     end)

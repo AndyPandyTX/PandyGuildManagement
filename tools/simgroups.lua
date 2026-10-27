@@ -735,29 +735,34 @@ print("-- Blizzard's search box")
 C.G.UI.ShowView("board")
 drawPages(C)
 local box = C.searchBox
-check(box.parent == C.searchHome and box.anchors[1] ~= "home", "moved into Browse, still Blizzard's child")
-check(box.setScripts == 0 and box.clearButton.setScripts == 0, "Blizzard's scripts are never replaced")
-check(box.hooks.OnEnterPressed and box.clearButton.hooks.OnClick, "ours are hooked on after them")
+local home = C.searchHome
+local host = box.parent
+check(host ~= home and box.anchors[1] ~= "home", "moved into Browse's Filters panel, as its child")
+check(host.SearchBox == box and host.categoryID == 2 and host.AutoCompleteFrame == home.AutoCompleteFrame,
+    "the holder carries what Blizzard's handlers read off the parent")
 local searched = #L.searches
 box:Press("OnEnterPressed")
-check(#L.searches == searched + 1 and L.searches[#L.searches] == "2:0", "Enter is Blizzard's search, once")
-C.searchHome.categoryID = 3
-box:Press("OnEnterPressed")
-check(#L.searches == searched + 3 and L.searches[#L.searches] == "2:65", "then Browse's category if Blizzard's was another")
-C.searchHome.categoryID = 2
+check(#L.searches == searched + 1 and L.searches[#L.searches] == "2:65", "Enter searches Browse's category, once")
 C.G.UI.ShowView("mine")
 drawPages(C)
-check(box.anchors[1] == "home", "given back on leaving Browse")
+check(box.parent == home and box.anchors[1] == "home", "given back on leaving Browse")
+check(rawget(host, "SearchBox") == nil and rawget(host, "categoryID") == nil, "...and the holder's copies cleared")
 searched = #L.searches
 box:Press("OnEnterPressed")
-check(#L.searches == searched + 1, "given back, our hook stands aside")
+check(#L.searches == searched + 1 and L.searches[#L.searches] == "2:0", "given back, Blizzard's own Enter is back")
 box.parent = "oak"
 C.G.UI.ShowView("board")
 drawPages(C)
-check(box.anchors[1] == "home", "left alone when another addon has it")
-box.parent = C.searchHome
+check(box.parent == "oak", "left alone when another addon has it")
+-- OAK hands it back to whoever had it before it: our holder, after we let go.
 C.G.UI.ShowView("mine")
 drawPages(C)
+box.parent = host
+C.G.UI.ShowView("board")
+drawPages(C)
+C.G.UI.ShowView("mine")
+drawPages(C)
+check(box.parent == home and box.anchors[1] == "home", "handed back to our holder, it still goes home")
 
 print("-- tell the guild, list my key")
 check(A.G:Announce() == false, "nothing to tell without a group")
