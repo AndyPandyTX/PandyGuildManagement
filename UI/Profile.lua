@@ -182,6 +182,7 @@ local function build()
     end
     p.link:SetScript("OnClick", doLink)
     p.linkBox.onEnter = doLink
+    W.NameSuggest(p.linkBox, { up = true, skip = function(guid) return guid == p.guid end })
     p.unlink = W.Button(left, "Unlink", 60, 22, C.text2)
     p.unlink:SetPoint("LEFT", p.link, "RIGHT", 6, 0)
     p.unlink:SetScript("OnClick", function() PGM:UnlinkAlt(p.guid) end)

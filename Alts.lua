@@ -389,3 +389,41 @@ PGM:On("ROSTER", function()
     builtFor = v
     PGM:RebuildAlts()
 end)
+
+-- ============================================================
+-- MAINS IN CHAT
+-- ============================================================
+
+-- When a guildie's alt talks, their main goes in front of the line,
+-- "(Mainname) hi", in the main's class colour. Only on your screen; nothing
+-- sent changes. During a boss fight or a Mythic+ run the game keeps chat
+-- secret from addons, so lines then show as they came.
+local CHAT_EVENTS = {
+    "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID",
+    "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING", "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL",
+}
+
+-- "(Mainname) " for a guild alt whose main we know, else nil.
+function PGM:ChatMainTag(guid)
+    if PGM.opt("chatMains") == false then return nil end
+    local main = mainOf[guid]
+    local g = main and main ~= guid and PGM.GuildDB()
+    local rec = g and g.members[guid] and g.members[main]
+    if not rec then return nil end
+    return PGM.ClassHex(rec.class) .. "(" .. (rec.short or rec.name or "?") .. ")|r "
+end
+
+-- The sender's GUID is the event's 12th value, after the text and name.
+local function chatFilter(_, _, msg, author, ...)
+    local text, guid = PGM.Plain(msg), PGM.Plain((select(10, ...)))
+    if type(text) ~= "string" or type(guid) ~= "string" then return false end
+    local tag = PGM:ChatMainTag(guid)
+    if not tag then return false end
+    return false, tag .. text, author, ...
+end
+
+local addFilter = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+if addFilter then
+    for _, e in ipairs(CHAT_EVENTS) do addFilter(e, chatFilter) end
+end

@@ -121,7 +121,7 @@ that member's play time.
 - Each member has a role (Tank, Healer or DPS) and a status (Core, Trial or Bench). Click either one to change it.
 - Shows the team's makeup and which raid buffs it's missing (Arcane Intellect, Fortitude, Battle Shout and so on).
 - Shows each member's attendance at that team's raids only.
-- Add people by name, or use "Add my group" during a raid.
+- Add people by name (guildies' names pop up as you type), or use "Add my group" during a raid.
 - **Paste list:** copy the cells from a spreadsheet (a wowaudit sheet, for
   example), or paste CSV or flat JSON, one character per line. Any column can
   be the name (`Name` or `Name-Realm`); other columns can give the role
@@ -135,7 +135,7 @@ that member's play time.
 - Race and class, status, join date, M+ score and raid progress
 - Professions, and raid teams (with role and attendance)
 - Guild and officer notes, plus a private note only you can see
-- Their characters (main and alts), with Link, Unlink and Make main buttons
+- Their characters (main and alts), with Link, Unlink and Make main buttons (the main's name fills in from the guild as you type)
 - Their last 10 raids, as a strip of boxes
 - Their history
 - Buttons to add them to a raid team, and, if your rank allows it, a rank picker with Set rank (any rank below yours, one rank per click) and Remove
@@ -229,8 +229,8 @@ game lets your rank do:
 
 **Settings.** Choose which changes get announced in chat (only to you, never
 to guild chat), how many guildies a raid needs to count, window scale, accent
-colour and your main. Guild sync status and the officer cut-off live here, as
-does the GRM import.
+colour, your main, and Mains in chat. Guild sync status and the officer
+cut-off live here, as does the GRM import.
 
 ![Settings](screenshots/10-settings.png)
 
@@ -291,8 +291,16 @@ raid nights or alts.
    always wins, and "Not an alt" overrides the rank and the player's own
    link.
 
+**Mains in chat.** When a guildie's alt talks (guild, officer, party, raid,
+whispers, say, yell and channels), their main goes in front of the line in
+the main's class colour: "(Natty) on my way". Only on your screen; nothing
+sent changes. Turn it off with Mains in chat in Settings.
+
 ## Midnight notes
 
+- **Chat is hidden during boss fights and Mythic+ runs.** The game keeps
+  chat lines secret from addons then, so Mains in chat leaves them as they
+  came. Everywhere else, raid trash and between pulls included, it works.
 - **No combat log.** Raid attendance samples the raid group once a minute and at every boss kill.
 - **Promote, demote and remove use secure buttons.** You click them and they
   run Blizzard's own `/gpromote`, `/gdemote` and `/gremove`. They're hidden in

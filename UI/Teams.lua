@@ -345,6 +345,10 @@ local function build(p)
         p.addBox:SetText("")
     end
     p.addBox.onEnter = add
+    W.NameSuggest(p.addBox, { skip = function(guid)
+        local t = selectedTeam()
+        return t and t.members[guid] ~= nil
+    end })
     p.addBtn = W.Button(d, "Add", 50, 24)
     p.addBtn:SetPoint("LEFT", p.addBox, "RIGHT", 6, 0)
     p.addBtn:SetScript("OnClick", add)

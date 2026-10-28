@@ -135,6 +135,13 @@ local function build(p)
 
     y = y - 40
     heading(p, "Your characters", y)
+    p.chatMainsCheck = W.Check(p, "Mains in chat",
+        function() return PGM.opt("chatMains") ~= false end,
+        function(v) PGM.setOpt("chatMains", v) end)
+    p.chatMainsCheck:SetPoint("TOPLEFT", 260, y + 2)
+    p.chatMainsCheck:SetWidth(150)
+    p.chatMainsCheck.tip = "When a guildie's alt talks, their main shows in front of the line: (Mainname) hi. "
+        .. "Only on your screen. Not during boss fights or Mythic+ runs, when the game hides chat from addons."
     y = y - 26
     p.mainText = W.FS(p, 12, C.text2)
     p.mainText:SetPoint("TOPLEFT", 4, y)

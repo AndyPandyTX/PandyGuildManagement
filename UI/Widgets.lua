@@ -165,6 +165,127 @@ function W.EditBox(parent, w, h, placeholder)
     return e
 end
 
+-- Guildies to pick from as you type a name into a box: names starting with
+-- what's typed first, then online, then A-Z, in class colour, alts marked
+-- with their main. Click or Tab fills the box (Up and Down move); Enter
+-- takes the highlighted one before the box's own onEnter runs, so set that
+-- first. opts.up opens the list above the box; opts.skip(guid) leaves
+-- someone out.
+local SUGGEST_MAX = 8
+
+function W.NameSuggest(box, opts)
+    opts = opts or {}
+    local list = CreateFrame("Frame", nil, box, "BackdropTemplate")
+    list:SetFrameStrata("DIALOG")
+    list:SetWidth(math.max(box:GetWidth(), 200))
+    if opts.up then
+        list:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 0, 2)
+    else
+        list:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 0, -2)
+    end
+    W.Backdrop(list, C.bg, C.accent, 1)
+    list:Hide()
+    list.found, list.sel, list.rows = {}, 1, {}
+
+    -- What to type for them: the bare name, or Name-Realm from another realm.
+    local function typed(rec)
+        local myRealm = GetNormalizedRealmName and GetNormalizedRealmName()
+        if rec.name and rec.realm and myRealm and rec.realm ~= myRealm then return rec.name end
+        return rec.short or rec.name
+    end
+
+    local function paint()
+        for i, b in ipairs(list.rows) do b.sel:SetShown(i == list.sel) end
+    end
+
+    local function pick(it)
+        box:SetText(typed(it.rec) or "")
+        box:SetCursorPosition(#box:GetText())
+        list:Hide()
+    end
+
+    for i = 1, SUGGEST_MAX do
+        local b = CreateFrame("Button", nil, list)
+        b:SetHeight(20)
+        b:SetPoint("TOPLEFT", 3, -3 - (i - 1) * 20)
+        b:SetPoint("RIGHT", -3, 0)
+        local hl = b:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.08)
+        b.sel = W.Solid(b, "BACKGROUND", C.accent, 0.18)
+        b.sel:SetAllPoints()
+        b.fs = W.FS(b, 11, C.text)
+        b.fs:SetPoint("LEFT", 6, 0)
+        b.alt = W.FS(b, 11, C.text3, "RIGHT")
+        b.alt:SetPoint("RIGHT", -6, 0)
+        b:SetScript("OnClick", function(s)
+            pick(s.it)
+            box:SetFocus()
+        end)
+        list.rows[i] = b
+    end
+
+    local function update()
+        local g = PGM.GuildDB()
+        local want = strtrim(box:GetText() or ""):lower()
+        local found = {}
+        if g and want ~= "" and box:HasFocus() then
+            for guid, rec in pairs(g.members) do
+                local short = rec.short and rec.short:lower()
+                local at = short and short:find(want, 1, true)
+                if not at and rec.name and rec.name:lower():find(want, 1, true) == 1 then at = 1 end
+                if at and not (opts.skip and opts.skip(guid)) then
+                    found[#found + 1] = { guid = guid, rec = rec, exact = short == want, starts = at == 1 }
+                end
+            end
+        end
+        table.sort(found, function(a, b)
+            if a.exact ~= b.exact then return a.exact end
+            if a.starts ~= b.starts then return a.starts end
+            if (a.rec.online and true) ~= (b.rec.online and true) then return a.rec.online and true or false end
+            return (a.rec.short or "") < (b.rec.short or "")
+        end)
+        list.found, list.sel = found, 1
+        if #found == 0 then list:Hide() return end
+        for i, b in ipairs(list.rows) do
+            local it = found[i]
+            b:SetShown(it ~= nil)
+            if it then
+                b.it = it
+                b.fs:SetText(PGM.ColorName(it.rec))
+                b.fs:SetAlpha(it.rec.online and 1 or 0.6)
+                local main = PGM.KnownMain and PGM:KnownMain(it.guid)
+                local mrec = main and g.members[main]
+                b.alt:SetText(mrec and ("alt of " .. (mrec.short or mrec.name or "?")) or "")
+            end
+        end
+        list:SetHeight(math.min(#found, SUGGEST_MAX) * 20 + 6)
+        paint()
+        list:Show()
+    end
+
+    box:HookScript("OnTextChanged", function(_, user) if user then update() end end)
+    box:HookScript("OnEditFocusLost", function() C_Timer.After(0.2, function() list:Hide() end) end)
+    box:SetScript("OnTabPressed", function()
+        local it = list:IsShown() and list.found[list.sel]
+        if it then pick(it) end
+    end)
+    box:HookScript("OnArrowPressed", function(_, key)
+        if not list:IsShown() then return end
+        local n = math.min(#list.found, SUGGEST_MAX)
+        if key == "DOWN" then list.sel = list.sel % n + 1 elseif key == "UP" then list.sel = (list.sel - 2) % n + 1 end
+        paint()
+    end)
+    local enter = box.onEnter
+    box.onEnter = function(s)
+        local it = list:IsShown() and list.found[list.sel]
+        if it then pick(it) end
+        list:Hide()
+        if enter then enter(s) end
+    end
+    return list
+end
+
 -- A labelled horizontal bar: label | framed bar | count.
 function W.Bar(parent, labelW)
     local f = CreateFrame("Frame", nil, parent)
@@ -442,8 +563,18 @@ function W.Check(parent, label, get, set)
     b.fs = W.FS(b, 12, C.text)
     b.fs:SetPoint("LEFT", b.box, "RIGHT", 8, 0)
     b.fs:SetText(label)
-    b:SetScript("OnEnter", function(s) s.box:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
-    b:SetScript("OnLeave", function(s) s.box:SetBackdropBorderColor(C.frame[1], C.frame[2], C.frame[3], 1) end)
+    b:SetScript("OnEnter", function(s)
+        s.box:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        if s.tip then
+            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+            GameTooltip:SetText(s.tip, 1, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    b:SetScript("OnLeave", function(s)
+        s.box:SetBackdropBorderColor(C.frame[1], C.frame[2], C.frame[3], 1)
+        if s.tip then GameTooltip:Hide() end
+    end)
     function b:Sync() self.tick:SetShown(get() and true or false) end
     b:SetScript("OnClick", function(s) set(not get()) s:Sync() end)
     b:Sync()

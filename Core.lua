@@ -104,6 +104,7 @@ local DEFAULTS = {
     scale = 1,
     accent = "ice",
     syncEnabled = true,
+    chatMains = true,       -- an alt's main in front of what they say in chat
     overviewScope = "all",
     overviewMainsOnly = false,
     logCap = 3000,

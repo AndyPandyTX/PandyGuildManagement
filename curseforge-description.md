@@ -26,6 +26,7 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click the panda but
 **Raid teams**
 - As many teams as you like, each with a schedule, roles and Core / Trial / Bench status
 - Built from the tags in your guild notes, and can be kept in sync with them. Members you remove by hand stay removed.
+- Add by name, with guildies' names suggested as you type
 - Paste a roster from a spreadsheet (like wowaudit) or CSV, with roles and Core / Trial / Bench
 - Shows which Midnight raid buffs and utility each team is missing
 - Attendance per team, counted only at that team's raids
@@ -49,6 +50,7 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click the panda but
 - Found from alt ranks and common guild-note formats ("alt of Natty", "VA/Alt/.../Natty")
 - Players link their own characters just by logging into each one, and the whole guild sees it
 - Officers can link, unlink or pick a main by hand, and that always wins
+- An alt's main shows in front of what they say in chat
 
 **Professions**
 - Pick a profession and see everyone who has it, counted by player with alts folded in

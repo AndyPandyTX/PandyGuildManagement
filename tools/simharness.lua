@@ -191,6 +191,8 @@ local function newClient(guid, name)
         GetRecipeOutputItemData = function(id) return { itemID = TRADE.item[id] } end,
     }
     env.Enum = { SendAddonMessageResult = { AddonMessageThrottle = 3 } }
+    c.chatFilters = {}
+    env.ChatFrameUtil = { AddMessageEventFilter = function(e, fn) c.chatFilters[e] = fn end }
     env.C_ChatInfo = {
         RegisterAddonMessagePrefix = function() end,
         InChatMessagingLockdown = function() return false end,
@@ -319,6 +321,28 @@ run(5)
 check(C.g.links[gid(26)] == gid(25), "member got hand-made alt link")
 check(C.PGM:KnownMain(gid(26)) == gid(25), "member's alt view updated")
 check(not C.PGM:LinkAlt(gid(24), gid(25)), "member can't link alts")
+
+print("-- mains in chat")
+do
+    local f = C.chatFilters.CHAT_MSG_GUILD
+    local function say(msg, guid)
+        return f(nil, "CHAT_MSG_GUILD", msg, "Yinsane-" .. REALM, "", "", "", "", 0, 0, "", 0, 1, guid)
+    end
+    check(f and C.chatFilters.CHAT_MSG_WHISPER and C.chatFilters.CHAT_MSG_PARTY, "filters guild, whisper and party chat")
+    local stop, msg, author, _, _, _, _, _, _, _, _, _, guid = say("hi all", gid(26))
+    check(stop == false and msg and msg:find("(Tiferis)", 1, true) and msg:sub(-6) == "hi all", "an alt's line starts with their main")
+    check(author == "Yinsane-" .. REALM and guid == gid(26), "...and the rest of the line is passed on")
+    local _, plain = say("hi all", gid(25))
+    check(plain == nil, "a main's own line is left alone")
+    C.env.issecretvalue = function(v) return v == "secret" end
+    local _, hidden = say("secret", gid(26))
+    check(hidden == nil, "a line the game keeps secret is left alone")
+    C.env.issecretvalue = nil
+    C.PGM.setOpt("chatMains", false)
+    local _, off = say("hi all", gid(26))
+    check(off == nil, "...and every line, with Mains in chat off")
+    C.PGM.setOpt("chatMains", true)
+end
 
 print("-- late joiner catches up")
 local D = newClient(gid(14), "Anvar")
