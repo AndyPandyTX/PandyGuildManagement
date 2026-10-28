@@ -238,6 +238,7 @@ local function readApplicants()
             firstSeen[id] = firstSeen[id] or GetTime()
             local members = num(info.numMembers) or 1
             local comment = G.Clean(str(info.comment) or "", 60)
+            local pos, lastRow = 0, nil   -- this application's rows: 1 is the one it's listed under
             for i = 1, members do
                 local ok, name, class, _, _, ilvl, _, tank, healer, damage, assigned, _, score, _, _, _, spec =
                     pcall(LFG.GetApplicantMemberInfo, id, i)
@@ -260,7 +261,9 @@ local function readApplicants()
                         score = num(score) or 0, at = firstSeen[id], members = members,
                         state = status == "invited" and "invited" or "new",
                     }
-                    apps[#apps + 1] = { key = "lfg:" .. id .. ":" .. i, app = true, applicantID = id, rec = rec, ask = a }
+                    pos = pos + 1
+                    lastRow = { key = "lfg:" .. id .. ":" .. i, app = true, applicantID = id, member = pos, rec = rec, ask = a }
+                    apps[#apps + 1] = lastRow
                     if rec and status == "applied" and not told[name] then
                         told[name] = true
                         PGM.Print(("%s applied through the Group Finder as %s. %s"):format(G.WhoText(rec),
@@ -268,6 +271,7 @@ local function readApplicants()
                     end
                 end
             end
+            if lastRow then lastRow.last = true end
         end
     end
     G:Fire("POSTS")

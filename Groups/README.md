@@ -95,8 +95,10 @@ character's score comes from the game; main, warband and roles need RaiderIO.
 Listing a group in the Group Finder opens the window on My group.
 Browsing groups in Blizzard's window, or applying to one (here, in the
 Group Finder or in OAK), opens it on Browse.
-Delisting goes back to Browse. Turn the opening off with "Open Groups when
-I list or apply" on Post a group. It never opens in combat. `/pgg mine` and `/pgg post` open those views.
+Delisting goes back to Browse. Pick which of these pop the window up under
+**Pop up on** (Listing, Applying, Browsing), in Settings or on Post a group;
+untick all three and it only opens when you open it. It never opens in
+combat. `/pgg mine` and `/pgg post` open those views.
 
 The form and the rest of this section describe Post a group and how guild
 posts behave:

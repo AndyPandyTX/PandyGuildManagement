@@ -47,13 +47,22 @@ G.KIND_SIZE = { M = 5, R = 20, D = 5, O = 5 }
 G.KIND_NEED = { M = { T = 1, H = 1, D = 3 }, R = { T = 2, H = 4, D = 14 }, D = { T = 1, H = 1, D = 3 },
                 O = { T = 1, H = 1, D = 3 } }
 
+-- When the window opens on Groups by itself, each one a choice: listing a
+-- group (on My group), applying to one, and opening Blizzard's Group Finder
+-- to browse (both on Browse).
+G.OPEN_ON = {
+    { "list", "Listing", "Listing a group in the Group Finder opens Groups on My group, to watch who applies." },
+    { "apply", "Applying", "Applying to a group (here, in the Group Finder or in OAK) opens Groups on Browse." },
+    { "browse", "Browsing", "Opening Blizzard's Group Finder opens Groups on Browse beside it." },
+}
+
 local DEFAULTS = {
     ping = true,
     pingKinds = { M = true, R = true, D = true, O = true },
     roles = {},             -- roles I'll play; empty means "my spec's"
     guildFirst = 5,         -- minutes before Find PuGs lights up
     shareListing = true,    -- post my Group Finder listing to the guild
-    autoOpen = true,        -- open Groups when I list or apply
+    openOn = { list = true, apply = true, browse = true },   -- see G.OPEN_ON
     looking = false,        -- "I'm up for a group"
     lookingKinds = { M = true, R = false, D = true, O = false },
     freeMaxOnly = true,
@@ -509,6 +518,11 @@ G:RegisterEvent("ADDON_LOADED", function(_, name)
     db.chars = db.chars or {}
     db.settings = db.settings or {}
     db.settings.keysMineFirst = nil   -- replaced by keysPinMine, which starts off
+    -- "Open Groups when I list or apply" became a choice per reason.
+    if db.settings.autoOpen == false and db.settings.openOn == nil then
+        db.settings.openOn = { list = false, apply = false, browse = false }
+    end
+    db.settings.autoOpen = nil
     -- Group Finder titles can't be read, so the key range filter and key
     -- level sort are gone.
     if type(db.settings.board) == "table" then

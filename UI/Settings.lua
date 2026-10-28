@@ -248,6 +248,14 @@ local function build(p)
     p.groupsNote:SetWidth(310)
     p.groupsNote:SetWordWrap(true)
     p.groupsNote:SetText("Groups, Who's Free and Keystones. Off hides them and stops all group finder messages. Also /pgg on | off.")
+    -- What makes the window open on Groups by itself (also on Post a group).
+    if PandyGuildGroups and PandyGuildGroups.UI then
+        p.openLabel = W.FS(p, 12, C.text)
+        p.openLabel:SetPoint("TOPLEFT", X, -534)
+        p.openLabel:SetText("Pop up on")
+        p.openChips = PandyGuildGroups.UI.OpenOnChips(p)
+        p.openChips[1]:SetPoint("TOPLEFT", X + 76, -530)
+    end
 
     p.grmButton:SetScript("OnClick", function()
         local res, err = PGM:ImportGRM()
@@ -316,6 +324,12 @@ local function refresh(p)
     p.grmButton:SetShown(grmReady)
     p.groupsCheck:SetShown(PandyGuildGroups ~= nil)
     p.groupsCheck:Sync()
+    if p.openChips then
+        local on = PandyGuildGroups:IsEnabled()
+        p.openLabel:SetShown(on)
+        p.openChips:SetShown(on)
+        if on then p.openChips:Sync() end
+    end
     p.minimapCheck:SetShown(PGM.HasMinimapButton ~= nil and PGM:HasMinimapButton())
     p.minimapCheck:Sync()
 

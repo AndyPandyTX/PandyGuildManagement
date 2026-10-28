@@ -651,6 +651,27 @@ check(n == 1, "asked both ways, listed once")
 A.G:InviteAsk(A.G:Asks()[2].key)
 check(A.st.lfg.invited[1] == 7, "Invite goes through the Group Finder")
 drawPages(A)
+-- Three applying together, a guildie among them.
+A.st.lfg.apps[9] = { status = "applied", members = {
+    { name = "Lead-Other", class = "WARRIOR", ilvl = 650, tank = true, score = 2000, spec = 73 },
+    { name = "Codiex", class = "DEMONHUNTER", ilvl = 650, dps = true, score = 2000, spec = 577 },
+    { name = "Third-Other", class = "MAGE", ilvl = 650, dps = true, score = 2000, spec = 63 } } }
+A.fire("LFG_LIST_APPLICANT_LIST_UPDATED")
+run(1)
+local seq, at = {}, {}
+for i, it in ipairs(A.G:Asks()) do
+    if it.applicantID == 9 then
+        seq[#seq + 1] = it.member .. it.ask.short .. (it.last and "!" or "")
+        at[#at + 1] = i
+    end
+end
+check(table.concat(seq, ",") == "1Lead,2Codiex,3Third!", "a group's members in order, the last marked (got " .. table.concat(seq, ",") .. ")")
+check(#at == 3 and at[3] - at[1] == 2, "...kept together")
+check(at[1] == 2, "...sorted with the guildies, as one of them is in it")
+drawPages(A)
+A.st.lfg.apps[9] = nil
+A.fire("LFG_LIST_APPLICANT_LIST_UPDATED")
+run(1)
 
 print("-- listing closes")
 A.G:CloseMine("c")
@@ -773,6 +794,22 @@ _, rows = board(C)
 check(rowOf(rows, 101) and not rowOf(rows, 101).noRoom, "a spot opening up clears it")
 C.fire("LFG_LIST_APPLICATION_STATUS_UPDATED", 101, "applied", "none")
 check(C.st.opened[#C.st.opened] == "groups", "applying anywhere opens the Groups page")
+local opens = #C.st.opened
+C.G.opt("openOn").apply = false
+C.fire("LFG_LIST_APPLICATION_STATUS_UPDATED", 102, "applied", "none")
+check(#C.st.opened == opens, "...not with Applying unticked under Pop up on")
+C.G:Fire("FINDER_OPENED")
+check(#C.st.opened == opens + 1, "...while opening the Group Finder still does")
+C.G.opt("openOn").apply = true
+-- The old all-or-nothing setting, turned off, carries over as all off.
+local saved = C.G.opt("openOn")
+C.G.setOpt("openOn", nil)
+C.G.setOpt("autoOpen", false)
+C.fire("ADDON_LOADED", "PandyGuildGroups")
+local o = C.G.opt("openOn")
+check(o and o.list == false and o.apply == false and o.browse == false and C.G.opt("autoOpen") == nil,
+    "an old Open Groups off becomes every Pop up on choice off")
+C.G.setOpt("openOn", saved)
 
 print("-- Blizzard's search box")
 C.G.UI.ShowView("board")

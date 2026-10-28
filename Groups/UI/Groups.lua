@@ -206,10 +206,9 @@ local function buildSettings(card)
         function() return G.opt("ping") end, function(v) G.setOpt("ping", v) end)
     form.ping:SetPoint("TOPLEFT", x, -98)
     form.ping:SetPoint("RIGHT", -12, 0)
-    form.autoOpen = W.Check(card, "Open Groups when I list or apply",
-        function() return G.opt("autoOpen") end, function(v) G.setOpt("autoOpen", v) end)
-    form.autoOpen:SetPoint("TOPLEFT", x, -72)
-    form.autoOpen:SetPoint("RIGHT", -12, 0)
+    label(card, "Pop up on", x, -76)
+    form.openChips = G.UI.OpenOnChips(card)
+    form.openChips[1]:SetPoint("TOPLEFT", x + 58, -72)
     label(card, "I play", x, -132)
     form.roleChips = {}
     local prev
@@ -356,6 +355,10 @@ local function scoreCell(p)
     return PGM.Hex(PGM:ScoreColor(p.score)) .. p.score .. "|r" .. (p.roles ~= "" and (" " .. p.roles) or "")
 end
 
+-- A group's line runs down the left of the name column, clear of the
+-- names and realms; its members' names sit this far in.
+local LINK_X, GROUP_INDENT = 5, 18
+
 local function askRow(list)
     local r = W.Row(list)
     local function cell(i, size, col)
@@ -368,12 +371,14 @@ local function askRow(list)
     r.edge:SetPoint("TOPLEFT")
     r.edge:SetPoint("BOTTOMLEFT")
     r.edge:SetWidth(3)
+    -- The line that joins a group's members to the one it's listed under.
+    r.link = W.Solid(r, "ARTWORK", C.text3)
+    r.link:SetWidth(1)
+    r.tick = W.Solid(r, "ARTWORK", C.text3)
+    r.tick:SetSize(COLS[1][2] + GROUP_INDENT - 2 - LINK_X, 1)
+    r.tick:SetPoint("LEFT", LINK_X, 0)
     r.name = W.FS(r, 12, C.text)
-    r.name:SetPoint("TOPLEFT", COLS[1][2], -4)
-    r.name:SetWidth(COLS[1][3])
     r.tag = W.FS(r, 10, C.text3)
-    r.tag:SetPoint("BOTTOMLEFT", COLS[1][2], 4)
-    r.tag:SetWidth(COLS[1][3])
     r.roles = cell(2)
     r.spec = cell(3, 12, C.text2)
     r.ilvl = cell(4, 12, C.text2)
@@ -411,6 +416,23 @@ end
 local function askUpdate(r, it)
     r.it = it
     local a, rec = it.ask, it.rec
+    -- A group that applied together: the rest sit indented under the first,
+    -- joined by a line, and only the first has Invite and Decline (they
+    -- answer the whole application).
+    local follower = it.app and (it.member or 1) > 1
+    local lead = it.app and (it.member or 1) == 1 and not it.last
+    local x = COLS[1][2] + (follower and GROUP_INDENT or 0)
+    r.name:ClearAllPoints()
+    r.name:SetPoint("TOPLEFT", x, -4)
+    r.name:SetWidth(COLS[1][3] - (follower and GROUP_INDENT or 0))
+    r.tag:ClearAllPoints()
+    r.tag:SetPoint("BOTTOMLEFT", x, 4)
+    r.tag:SetWidth(COLS[1][3] - (follower and GROUP_INDENT or 0))
+    r.link:ClearAllPoints()
+    r.link:SetPoint("TOP", r, "TOPLEFT", LINK_X, lead and -18 or 0)
+    r.link:SetPoint("BOTTOM", r, "BOTTOMLEFT", LINK_X, (follower and it.last) and 18 or 0)
+    r.link:SetShown(follower or lead)
+    r.tick:SetShown(follower)
     local _, specIcon = G.SpecInfo(a.spec)
     local icon = specIcon and ("|T" .. specIcon .. ":14:14:0:0:64:64:5:59:5:59|t ") or ""
     if rec then
@@ -422,7 +444,7 @@ local function askUpdate(r, it)
             .. (it.app and "  -  Group Finder" or "  -  asked here"))
     else
         r.name:SetText(icon .. PGM.ClassHex(a.class) .. (a.short or a.name or "?") .. "|r")
-        r.tag:SetText((a.realm or "") .. ((a.members or 1) > 1 and ("  -  group of " .. a.members) or ""))
+        r.tag:SetText((a.realm or "") .. (((a.members or 1) > 1 and not follower) and ("  -  group of " .. a.members) or ""))
     end
     r.edge:SetShown(rec ~= nil)
 
@@ -447,9 +469,9 @@ local function askUpdate(r, it)
     r.warband:SetText(scoreCell(it.scores.warband))
 
     local open = a.state == "new"
-    r.invite:SetShown(open)
-    r.decline:SetShown(open)
-    r.done:SetShown(not open)
+    r.invite:SetShown(open and not follower)
+    r.decline:SetShown(open and not follower)
+    r.done:SetShown(not open and not follower)
     r.done:SetText(a.state == "joined" and "Joined" or "Invited")
 end
 
@@ -1328,12 +1350,12 @@ end
 local VIEWS = { { "board", "Browse" }, { "mine", "My group" }, { "post", "Post a group" } }
 
 -- Listing a group opens My group, to watch who applies; delisting goes
--- back to Browse, to find one. With "Open Groups when I list or apply",
--- listing (or applying anywhere, the Group Finder's own window included)
--- also opens the window on that view. Never in combat.
-local function open(view)
+-- back to Browse, to find one. Listing, applying anywhere and opening the
+-- Group Finder also open the window on that view, each if ticked under
+-- "Pop up on" (G.OPEN_ON). Never in combat.
+local function open(view, why)
     if not state.editing then state.view = view end
-    if G.opt("autoOpen") and not InCombatLockdown() then
+    if (G.opt("openOn") or {})[why] and not InCombatLockdown() then
         UI:Show("groups")
         UI:Refresh()
     end
@@ -1341,7 +1363,7 @@ end
 
 G:On("LISTED", function(on)
     if on then
-        open("mine")
+        open("mine", "list")
     elseif not state.editing then
         state.view = "board"
     end
@@ -1349,11 +1371,11 @@ end)
 
 -- Browse groups in Blizzard's window: Browse opens beside it.
 G:On("FINDER_OPENED", function()
-    if not G:IsListed() then open("board") end
+    if not G:IsListed() then open("board", "browse") end
 end)
 
 G:RegisterEvent("LFG_LIST_APPLICATION_STATUS_UPDATED", function(_, _, newStatus)
-    if PGM.Plain(newStatus) == "applied" then open("board") end
+    if PGM.Plain(newStatus) == "applied" then open("board", "apply") end
 end)
 
 -- Open the Groups page on one view: "board", "mine" or "post".
@@ -1453,7 +1475,7 @@ local function refresh(p)
         for k, chip in pairs(form.pingChips) do chip:SetActive(G.opt("pingKinds")[k] and true or false) end
         form.ping:Sync()
         form.share:Sync()
-        form.autoOpen:Sync()
+        form.openChips:Sync()
         if not form.announce:HasFocus() then form.announce:SetText(G.opt("announce") or "") end
         local sample = G:AnnounceText(G.mine or { kind = "M", what = "The Blinding Vale", level = "14",
             need = { T = 1, H = 0, D = 2 } })

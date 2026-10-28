@@ -272,8 +272,10 @@ end
 
 -- Everyone asking to join, oldest first with guildies ahead of the rest:
 -- asks on my post through the guild ({ key, ask, rec }), and applicants to
--- my Group Finder listing ({ key, ask, rec, app = true }, from
--- GroupFinder.lua). Someone who did both is listed once, as an applicant.
+-- my Group Finder listing ({ key, ask, rec, app = true, applicantID,
+-- member, last }, from GroupFinder.lua). Someone who did both is listed
+-- once, as an applicant. A group that applied together stays together, in
+-- its order, and counts as guild if anyone in it is.
 function G:Asks()
     local out, seen = {}, {}
     for _, it in ipairs(G.Applicants and G:Applicants() or {}) do
@@ -286,9 +288,21 @@ function G:Asks()
             out[#out + 1] = { key = key, ask = a, rec = G.RecByName(a.name) }
         end
     end
+    local guildApp = {}
+    for _, it in ipairs(out) do
+        if it.app and it.rec then guildApp[it.applicantID] = true end
+    end
+    local function guild(it)
+        if it.app then return guildApp[it.applicantID] or false end
+        return it.rec ~= nil
+    end
     table.sort(out, function(a, b)
-        if (a.rec ~= nil) ~= (b.rec ~= nil) then return a.rec ~= nil end
-        return (a.ask.at or 0) < (b.ask.at or 0)
+        local ga, gb = guild(a), guild(b)
+        if ga ~= gb then return ga end
+        if (a.ask.at or 0) ~= (b.ask.at or 0) then return (a.ask.at or 0) < (b.ask.at or 0) end
+        if (a.applicantID or 0) ~= (b.applicantID or 0) then return (a.applicantID or 0) < (b.applicantID or 0) end
+        if (a.member or 0) ~= (b.member or 0) then return (a.member or 0) < (b.member or 0) end
+        return a.key < b.key
     end)
     return out
 end

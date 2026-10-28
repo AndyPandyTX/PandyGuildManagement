@@ -21,6 +21,31 @@ function GU.Title(p, y)
     p.sub:SetWordWrap(true)
 end
 
+-- A chip per reason Groups may open by itself (G.OPEN_ON), side by side.
+-- Anchor the first; :Sync() shows the saved choices. Used on Post a group
+-- and in PGM's Settings.
+function GU.OpenOnChips(parent)
+    local chips = {}
+    for i, o in ipairs(G.OPEN_ON) do
+        local chip = W.Chip(parent, o[2], function(s)
+            local t = G.opt("openOn")
+            t[o[1]] = not t[o[1]]
+            s:SetActive(t[o[1]])
+        end)
+        chip.tip = o[3] .. " Never in combat."
+        if i > 1 then chip:SetPoint("LEFT", chips[i - 1], "RIGHT", 4, 0) end
+        chips[i] = chip
+    end
+    function chips:Sync()
+        local t = G.opt("openOn") or {}
+        for i, o in ipairs(G.OPEN_ON) do self[i]:SetActive(t[o[1]] and true or false) end
+    end
+    function chips:SetShown(on)
+        for _, chip in ipairs(self) do chip:SetShown(on) end
+    end
+    return chips
+end
+
 -- A column header strip: { { label, x }, ... }.
 function GU.Header(p, y, cols)
     local header = CreateFrame("Frame", nil, p)
