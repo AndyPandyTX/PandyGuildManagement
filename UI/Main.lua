@@ -16,7 +16,7 @@ local WIDTH, HEIGHT, SIDE_W = 1020, 660, 210
 local NAV = {
     { heading = "Guild",   ids = { "overview", "roster", "activity", "professions" } },
     { heading = "Raiding", ids = { "teams", "raids", "loot" } },
-    { heading = "Groups",  ids = { "groups", "free", "keys" } },   -- the group finder (Groups\)
+    { heading = "Groups",  ids = { "groups", "free", "chat", "keys" } },   -- the group finder (Groups\)
     { heading = "Records", ids = { "log", "users", "bulk", "settings" } },
 }
 
@@ -245,7 +245,7 @@ function UI:Create()
 
     local title = W.FS(header, 17, C.text)
     title:SetPoint("TOPLEFT", portrait, "TOPRIGHT", 10, -3)
-    title:SetText(PGM.Hex(C.jade) .. "Pandy|r Guild Management")
+    title:SetText(PGM.Hex(C.jade) .. "Pandy|r Guild & Groups")
     f.guildName = W.FS(header, 12, C.text2)
     f.guildName:SetPoint("BOTTOMLEFT", portrait, "BOTTOMRIGHT", 10, 4)
     f.guildName:SetWidth(420)
@@ -359,8 +359,8 @@ function UI:Show(id)
         UI:HideSecure()
     end
     self.current = id
-    f:Show()
-    self:Refresh()
+    -- Showing the window refreshes it (OnShow); only an open one needs it here.
+    if f:IsShown() then self:Refresh() else f:Show() end
 end
 
 -- Back to the middle of the screen at normal size (/pgm reset), for a
@@ -376,14 +376,6 @@ function UI:ResetWindow()
         UI:Fire("MOVED")
     end
 end
-
--- Resolution or UI scale changed: refit an open window.
-PGM:RegisterEvent("UI_SCALE_CHANGED", function()
-    if UI.frame then UI.frame:SetScale(UI:FitScale(PGM.opt("scale"))) end
-end)
-PGM:RegisterEvent("DISPLAY_SIZE_CHANGED", function()
-    if UI.frame then UI.frame:SetScale(UI:FitScale(PGM.opt("scale"))) end
-end)
 
 function UI:Toggle()
     local f = self:Create()
@@ -465,11 +457,12 @@ function UI:SecureHolder()
     return h
 end
 
-function UI:PlaceSecure(anchor)
+-- holder: another secure holder to place (Bulk's), or the shared one.
+function UI:PlaceSecure(anchor, holder)
     if InCombatLockdown() then return false end
     local left, bottom = anchor:GetLeft(), anchor:GetBottom()
     if not left or not bottom then return false end
-    local h = self:SecureHolder()
+    local h = holder or self:SecureHolder()
     local f = self.frame
     h:SetScale(f:GetEffectiveScale() / UIParent:GetEffectiveScale())
     h:ClearAllPoints()
@@ -495,7 +488,10 @@ end)
 
 -- The holder is placed by screen position, so a UI scale or resolution
 -- change leaves it in the wrong spot. Put it back where it belongs.
+-- Resolution or UI scale changed: refit an open window, and put the secure
+-- buttons back where their anchors now are.
 local function replaceSecure()
+    if UI.frame then UI.frame:SetScale(UI:FitScale(PGM.opt("scale"))) end
     if InCombatLockdown() then return end
     UI:HideSecure()
     if UI.profile and UI.profile:IsVisible() and UI.RefreshProfile then UI:RefreshProfile() end

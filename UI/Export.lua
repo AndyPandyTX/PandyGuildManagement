@@ -25,7 +25,7 @@ local function create()
     f.title:SetPoint("TOPLEFT", 14, -12)
     f.hint = W.FS(f, 11, C.text3)
     f.hint:SetPoint("TOPLEFT", 14, -32)
-    f.hint:SetText("Press Ctrl+C to copy, then paste into a spreadsheet.")
+    f.hint:SetText("Press Ctrl+C to copy.")
 
     local close = W.Button(f, "Close", 70, 22, C.text2)
     close:SetPoint("TOPRIGHT", -12, -12)
@@ -53,10 +53,17 @@ local function create()
     return f
 end
 
-function UI:ShowExport(title, text)
+-- hint: what to do with it, after "Press Ctrl+C to copy"; by default, CSV's.
+-- The Discord invite, to copy (the game can't open links).
+function UI:ShowDiscord()
+    self:ShowExport("Discord: bugs, ideas and help", PGM.DISCORD, "paste it into your browser or Discord")
+end
+
+function UI:ShowExport(title, text, hint)
     self.export = self.export or create()
     local f = self.export
     f.title:SetText(title)
+    f.hint:SetText("Press Ctrl+C to copy, then " .. (hint or "paste into a spreadsheet") .. ".")
     f.text = text
     f.edit:SetText(text)
     f:Show()

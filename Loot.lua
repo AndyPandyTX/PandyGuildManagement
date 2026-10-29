@@ -48,7 +48,49 @@ local RECENT_BOSS = 15 * 60      -- a bonus roll this soon after a kill is for t
 local KEEP_CLASS = { [2] = true, [4] = true, [15] = true }
 local QUALITY_HEX = { a335ee = 4, ff8000 = 5, e6cc80 = 6, ["00ccff"] = 7, ["0070dd"] = 3, ["1eff00"] = 2,
     ffffff = 1, ["9d9d9d"] = 0 }
-local RAID_DIFF = { [14] = true, [15] = true, [16] = true, [17] = true }
+-- Raid difficulties by id: { label, short label, rank (for sorting) }. Retail
+-- has four. WoW Forever's raids have one difficulty each, so there it's the
+-- size; its ids aren't known yet, so Classic's are listed, and any other the
+-- game calls a raid's is added the first time it's seen (PGM.LootDiff).
+local RAID_DIFFS = {
+    [17] = { "LFR", "LFR", 1 }, [14] = { "Normal", "N", 2 }, [15] = { "Heroic", "H", 3 }, [16] = { "Mythic", "M", 4 },
+}
+if PGM.IS_FOREVER then
+    RAID_DIFFS = {}
+    for size, ids in pairs({ [10] = { 3, 5, 175 }, [20] = { 148, 185 }, [25] = { 4, 6, 176 }, [40] = { 9, 186 } }) do
+        for _, id in ipairs(ids) do RAID_DIFFS[id] = { tostring(size), tostring(size), size } end
+    end
+end
+
+-- A raid difficulty's { label, short, rank }, or nil for anything else.
+function PGM.LootDiff(id)
+    id = tonumber(id)
+    if not id or id == 0 then return nil end
+    if RAID_DIFFS[id] ~= nil then return RAID_DIFFS[id] or nil end
+    local d = false
+    if PGM.IS_FOREVER and GetDifficultyInfo then
+        local ok, _, groupType, _, _, _, _, _, _, _, maxPlayers = pcall(GetDifficultyInfo, id)
+        if ok and P(groupType) == "raid" then
+            local size = tonumber(P(maxPlayers))
+            local label = (size and size > 0) and tostring(size) or "Raid"
+            d = { label, label, size or 0 }
+        end
+    end
+    RAID_DIFFS[id] = d
+    return d or nil
+end
+
+-- Every raid difficulty label, lowest rank first, once each.
+function PGM.LootDiffLabels()
+    local seen, out = {}, {}
+    for _, d in pairs(RAID_DIFFS) do
+        if d and not seen[d[1]] then seen[d[1]], out[#out + 1] = true, d end
+    end
+    table.sort(out, function(a, b) return a[3] < b[3] end)
+    for i, d in ipairs(out) do out[i] = d[1] end
+    return out
+end
+
 local ROLL_STATE = { [0] = "need", [1] = "offspec", [2] = "tmog", [3] = "greed" }
 local SPECIFIC = { need = true, offspec = true, greed = true, tmog = true }
 
@@ -249,7 +291,6 @@ local function isToken(id)
     tokenCache[id] = found
     return found
 end
-PGM.LootIsToken = isToken
 
 -- Miscellaneous items worth keeping: companion pets (2) and mounts (5), and
 -- "junk" (0) only when it's a tier token.
@@ -377,8 +418,17 @@ function PGM:AddLoot(rec)
     index[k] = index[k] or {}
     table.insert(index[k], rec)
     if #l.items > MAX_ITEMS then
-        table.remove(l.items, 1)
-        index = nil
+        -- The oldest goes: MRT history and imports come in out of time
+        -- order, so that isn't always the first one added.
+        local oldest = 1
+        for i, it in ipairs(l.items) do
+            if (it.t or 0) < (l.items[oldest].t or 0) then oldest = i end
+        end
+        local gone = table.remove(l.items, oldest)
+        local bucket = gone.who and gone.id and index[indexKey(gone)]
+        for i, it in ipairs(bucket or {}) do
+            if it == gone then table.remove(bucket, i) break end
+        end
     end
     return true
 end
@@ -391,10 +441,6 @@ function PGM:LootWouldAdd(rec)
     for k, v in pairs(rec) do copy[k] = v end
     if not (l and prepare(copy)) or wasDeleted(l, copy) then return "skip" end
     return findSame(copy) and "known" or "new"
-end
-
-function PGM:LootKnown(rec)
-    return PGM:LootWouldAdd(rec) == "known"
 end
 
 -- Deleted by hand: gone, and remembered, so pulling from MRT again or an
@@ -652,12 +698,17 @@ local function readDrops(enc)
                 roll = tonumber(roll), enc = enc, boss = PGM:LootBossName(enc), inst = w.inst, diff = w.diff,
                 kind = "raid", where = w.where, src = "pgm" }
             local key = enc .. ":" .. (P(d.lootListID) or link)
+            -- false: read before and not kept (not worth it, or deleted
+            -- by hand), so it isn't looked at again.
             local seen = seenDrops[key]
             if seen then
-                if SPECIFIC[rec.how] and not SPECIFIC[seen.how] then seen.how, seen.roll = rec.how, rec.roll end
-            else
+                if SPECIFIC[rec.how] and not SPECIFIC[seen.how] then
+                    seen.how, seen.roll = rec.how, rec.roll
+                    changed()
+                end
+            elseif seen == nil then
                 record(rec)
-                seenDrops[key] = rec.who and findSame(rec) or nil
+                seenDrops[key] = (rec.who and rec.id and findSame(rec)) or false
             end
         end
     end
@@ -740,7 +791,7 @@ function PGM:LootFromMRT(since)
         if type(line) == "string" then
             local t, enc, inst, diff, name, classID, qty, item, roll = strsplit("#", line)
             t, enc, inst, diff = tonumber(t), tonumber(enc), tonumber(inst), tonumber(diff)
-            local kind = diff and (RAID_DIFF[diff] and "raid" or (diff == 8 and "mplus")) or nil
+            local kind = diff and (PGM.LootDiff(diff) and "raid" or (diff == 8 and "mplus")) or nil
             if t and t > (since or 0) and kind and name and name ~= "" and item then
                 local class
                 if GetClassInfo and tonumber(classID) then
@@ -784,9 +835,6 @@ local function newest(list)
     return n
 end
 
--- New records from MRT and VoidcoreAdvisor since last time. `all` reads
--- their whole history again (repeats are still dropped). Returns how many
--- were added from each, or nil for an addon that isn't loaded.
 -- MRT saves how the person playing rolled on each drop, not how the winner
 -- did. So its roll type is the winner's only where the winner is one of
 -- this account's characters (only one of them can be in the raid). 1 is
@@ -809,6 +857,9 @@ function PGM:TypeOwnMRTRolls()
     return n
 end
 
+-- New records from MRT and VoidcoreAdvisor since last time. `all` reads
+-- their whole history again (repeats are still dropped). Returns how many
+-- were added from each, or nil for an addon that isn't loaded.
 local PULL_VERSION = 4   -- 2: M+ loot and place names from MRT; 3: MRT's roll types; 4: realms, junk
 function PGM:PullLoot(all)
     local l = store()
@@ -905,7 +956,7 @@ function PGM:ParseLootExport(text)
     elseif text:sub(1, 8) == "PGMLOOT1" then
         body = text:sub(9)
     else
-        return nil, "That isn't a Pandy Guild Management loot export."
+        return nil, "That isn't a " .. PGM.NAME .. " loot export."
     end
     local out = {}
     for line in body:gmatch("[^\r\n]+") do
@@ -925,8 +976,12 @@ end
 local HOW_LABEL = { need = "Need", offspec = "Need (OS)", greed = "Greed", tmog = "Transmog", roll = "Won roll",
     personal = "Personal", drop = "Drop", bonus = "Bonus roll" }
 PGM.LOOT_HOW_LABEL = HOW_LABEL
-local DIFF_LABEL = { [17] = "LFR", [14] = "Normal", [15] = "Heroic", [16] = "Mythic", [8] = "Mythic+", [23] = "Mythic" }
-PGM.LOOT_DIFF_LABEL = DIFF_LABEL
+-- What isn't a raid's: Mythic Keystone, and a Mythic dungeon.
+local OTHER_DIFF = { [8] = "Mythic+", [23] = "Mythic" }
+local function diffLabel(id)
+    local d = PGM.LootDiff(id)
+    return d and d[1] or OTHER_DIFF[id]
+end
 
 local function csvField(s)
     s = tostring(s or "")
@@ -939,7 +994,7 @@ function PGM:LootCSV(list)
     for _, r in ipairs(list) do
         local name = C_Item and C_Item.GetItemInfo and C_Item.GetItemInfo(r.link)
         rows[#rows + 1] = table.concat({ csvField(date("%Y-%m-%d %H:%M", r.t)), csvField(r.who), csvField(name or ""),
-            r.id or "", csvField(HOW_LABEL[r.how] or r.how), csvField(r.boss or ""), csvField(DIFF_LABEL[r.diff] or ""),
+            r.id or "", csvField(HOW_LABEL[r.how] or r.how), csvField(r.boss or ""), csvField(diffLabel(r.diff) or ""),
             r.kind == "mplus" and "M+" or (r.kind == "raid" and "Raid" or "") }, ",")
     end
     return table.concat(rows, "\n")

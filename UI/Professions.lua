@@ -26,6 +26,15 @@ local function byPlayer()
     return PGM.opt("profByPlayer") ~= false
 end
 
+-- A character's skill in the profession on the right (Forever only).
+local function skillOf(rec)
+    local id = currentProf()
+    for _, pr in ipairs(rec and rec.prof or {}) do
+        if pr.id == id then return PGM.ProfSkill(pr) end
+    end
+    return nil
+end
+
 -- Blizzard's own recipe view for a guild member, the same one the guild
 -- window's "View Recipes" opens: everything they know, and don't.
 -- (No CanViewGuildRecipes check first: in Midnight it can say no for a
@@ -98,6 +107,10 @@ local function profRow(list)
         GameTooltip:AddLine(("%d players (%d characters, alts included)"):format(e.players, e.chars), 0.85, 0.85, 0.85)
         GameTooltip:AddLine(("%d active in the last %d days"):format(e.activePlayers, PGM.PROF_ACTIVE_DAYS), 0.85, 0.85, 0.85)
         GameTooltip:AddLine(("%d characters at level %d"):format(e.atMax, PGM.MaxLevel()), 0.85, 0.85, 0.85)
+        if e.skillKnown then
+            GameTooltip:AddLine(("%d players at Artisan skill (%d+), %d of them active"):format(e.artisans,
+                PGM.SKILL_ARTISAN, e.activeArtisans), 0.85, 0.85, 0.85)
+        end
         GameTooltip:AddLine(("%d players online now (%d on the crafting character)"):format(e.onlinePlayers, e.onlineChars),
             0.33, 0.82, 0.58)
         if e.thin then
@@ -112,8 +125,14 @@ local function profUpdate(r, e)
     r.e = e
     r.icon:SetTexture(PGM.ProfIcon(e.id))
     r.name:SetText(e.name)
-    r.sub:SetText(e.thin and (PGM.Hex(C.amber) .. "Only " .. e.activePlayers .. " active|r")
-        or (e.activePlayers .. " active this week"))
+    if e.skillKnown then
+        -- Forever: what counts is who can make the good stuff.
+        r.sub:SetText(e.thin and (PGM.Hex(C.amber) .. "Only " .. e.activeArtisans .. " active artisans|r")
+            or (e.activePlayers .. " active, " .. e.artisans .. " artisans"))
+    else
+        r.sub:SetText(e.thin and (PGM.Hex(C.amber) .. "Only " .. e.activePlayers .. " active|r")
+            or (e.activePlayers .. " active this week"))
+    end
     r.n:SetText(tostring(e.players))
     r.on:SetText(e.onlinePlayers > 0 and (e.onlinePlayers .. " on") or "")
     r.mark:SetShown(not state.recipe and state.selected == e.id)
@@ -124,24 +143,39 @@ local function memberRow(list)
     r.name = W.FS(r, 12, C.text)
     r.name:SetPoint("LEFT", 6, 0)
     r.name:SetWidth(240)
-    -- No skill column: the guild roster's profession "rank" isn't Midnight
-    -- skill (most members read 1, the rest 600-800), so it isn't shown.
+    -- No skill column on retail: the guild roster's profession "rank" isn't
+    -- Midnight skill (most members read 1, the rest 600-800). On Forever it
+    -- is Classic skill, 1-300, so it gets one.
     r.level = W.FS(r, 12, C.text2)
     r.level:SetPoint("LEFT", 252, 0)
     r.level:SetWidth(70)
+    local seenAt = 330
+    if PGM.IS_FOREVER then
+        r.skill = W.FS(r, 12, C.text2, "RIGHT")
+        r.skill:SetPoint("LEFT", 326, 0)
+        r.skill:SetWidth(34)
+        seenAt = 374
+    end
     r.seen = W.FS(r, 12, C.text2)
-    r.seen:SetPoint("LEFT", 330, 0)
+    r.seen:SetPoint("LEFT", seenAt, 0)
     r.seen:SetPoint("RIGHT", -6, 0)
     r.onEnter = function(s)
         local it = s.it
         GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
         GameTooltip:SetText(PGM.ColorName(it.rec))
+        local skill = skillOf(it.rec)
+        if skill then
+            GameTooltip:AddLine(("%s %d (%s)"):format(PGM.ProfName(currentProf()), skill, PGM.SkillTier(skill)), 1, 1, 1)
+        end
         if not it.rec.online and it.onlineAs then
             GameTooltip:AddLine("Online now as " .. it.onlineAs.short .. ": whisper them there.", 0.33, 0.82, 0.58, true)
         end
         if #it.others > 0 then
             local names = {}
-            for _, o in ipairs(it.others) do names[#names + 1] = (o.short or "?") .. " (" .. (o.level or "?") .. ")" end
+            for _, o in ipairs(it.others) do
+                local os = skillOf(o)
+                names[#names + 1] = (o.short or "?") .. " (" .. (os and ("skill " .. os) or (o.level or "?")) .. ")"
+            end
             GameTooltip:AddLine("Also on: " .. table.concat(names, ", "), 0.8, 0.8, 0.8, true)
         end
         GameTooltip:AddLine("Click to see " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf())
@@ -181,6 +215,10 @@ local function memberUpdate(r, it)
     r.name:SetText(PGM.ColorName(rec) .. tag .. more)
     local max = PGM.MaxLevel()
     r.level:SetText(((rec.level or 0) >= max and PGM.Hex(C.text) or PGM.Hex(C.text2)) .. "Level " .. (rec.level or "?") .. "|r")
+    if r.skill then
+        local skill = skillOf(rec)
+        r.skill:SetText(skill and (((skill >= PGM.SKILL_ARTISAN) and PGM.Hex(C.text) or PGM.Hex(C.text2)) .. skill .. "|r") or "")
+    end
     if rec.online then
         r.seen:SetText(PGM.Hex(C.jade) .. (rec.mobile and "Mobile" or ((rec.zone and rec.zone ~= "") and rec.zone or "Online")) .. "|r")
     elseif it.onlineAs then
@@ -190,7 +228,7 @@ local function memberUpdate(r, it)
     end
     -- Nobody to ask right now: same colours, half as bright (as on the Roster).
     local alpha = (rec.online or it.onlineAs) and 1 or 0.5
-    for _, fs in ipairs({ r.name, r.level, r.seen }) do fs:SetAlpha(alpha) end
+    for _, fs in ipairs({ r.name, r.level, r.seen, r.skill }) do fs:SetAlpha(alpha) end
 end
 
 local function build(p)
@@ -327,8 +365,10 @@ local function refresh(p)
     p.back:SetShown(state.recipe ~= nil)
     -- Leave room for the Back button beside the summary.
     p.summary:SetPoint("TOPRIGHT", state.recipe and -150 or 0, -36)
+    -- Who knows the picked recipe, or nil while the guild is still asked.
+    local known = state.recipe and PGM:KnownCrafters(state.recipe.line, state.recipe.recipe)
     if state.recipe then
-        local list = PGM:KnownCrafters(state.recipe.line, state.recipe.recipe)
+        local list = known
         local on = 0
         for _, it in ipairs(list or {}) do if it.rec.online or it.onlineAs then on = on + 1 end end
         p.summary:SetText(("%s%s|r (%s): %s"):format(PGM.Hex(C.text), state.recipe.name or "?",
@@ -336,9 +376,11 @@ local function refresh(p)
             not list and (PGM.Hex(C.text3) .. "asking the guild...|r")
             or (#list .. (#list == 1 and " guildie knows it" or " guildies know it") .. "  ·  " .. PGM.Hex(C.jade) .. on .. " online|r")))
     elseif sel then
-        p.summary:SetText(("%s%s|r: %d players (%d chars)  ·  %s%d active this week|r  ·  %s%d online|r"):format(
+        p.summary:SetText(("%s%s|r: %d players (%d chars)  ·  %s%d active this week|r%s  ·  %s%d online|r"):format(
             PGM.Hex(C.text), sel.name, sel.players, sel.chars,
-            sel.thin and PGM.Hex(C.amber) or PGM.Hex(C.text2), sel.activePlayers,
+            sel.thin and not sel.skillKnown and PGM.Hex(C.amber) or PGM.Hex(C.text2), sel.activePlayers,
+            sel.skillKnown and (("  ·  %s%d artisans|r"):format(sel.thin and PGM.Hex(C.amber) or PGM.Hex(C.text2),
+                sel.artisans)) or "",
             PGM.Hex(C.jade), sel.onlinePlayers))
     else
         p.summary:SetText("")
@@ -348,7 +390,7 @@ local function refresh(p)
     if state.recipe then
         members = {}
         local q = state.search:lower()
-        for _, it in ipairs(PGM:KnownCrafters(state.recipe.line, state.recipe.recipe) or {}) do
+        for _, it in ipairs(known or {}) do
             if (not state.onlineOnly or it.rec.online or it.onlineAs) and matches(it, q) then members[#members + 1] = it end
         end
     else
@@ -358,7 +400,7 @@ local function refresh(p)
     if state.recipe and #members == 0 then
         local r = state.recipe
         local asking = PGM:CraftersAsking(r.line, r.recipe)
-        p.empty:SetText(not PGM:KnownCrafters(r.line, r.recipe)
+        p.empty:SetText(not known
             and (asking and "Asking the guild..." or "No answer from the server. Pick the recipe again to ask again.")
             or (state.onlineOnly and "Nobody who knows it is online." or "Nobody in the guild knows this recipe."))
     elseif #profs == 0 then
@@ -385,9 +427,15 @@ end
 
 -- Shift-clicking an item while Who can craft... has focus puts its link
 -- there, as it would in chat.
+-- Both hooks are kept, as either name may be the one called; a link already
+-- put in this same moment (one calling the other) isn't put in twice.
+local lastLink, lastAt
 local function insertLink(link)
     local p = UI.tabs.professions and UI.tabs.professions.panel
-    if p and p.find and p.find:HasFocus() and type(link) == "string" then p.find:Insert(link) end
+    if not (p and p.find and p.find:HasFocus() and type(link) == "string") then return end
+    if link == lastLink and GetTime() == lastAt then return end
+    lastLink, lastAt = link, GetTime()
+    p.find:Insert(link)
 end
 if ChatFrameUtil and ChatFrameUtil.InsertLink then hooksecurefunc(ChatFrameUtil, "InsertLink", insertLink) end
 if ChatEdit_InsertLink then hooksecurefunc("ChatEdit_InsertLink", insertLink) end

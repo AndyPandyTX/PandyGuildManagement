@@ -1,11 +1,11 @@
 {
   "name": "pandy-guild-management-tools",
   "private": true,
-  "description": "Lint and multi-client sync simulation for Pandy Guild Management",
+  "description": "Lint and multi-client sync simulation for Pandy Guild & Groups",
   "scripts": {
     "lint": "node lint.js ..",
-    "test": "node simrun.js .. && node simrun.js .. forever && node simrun.js .. groups",
-    "test:groups": "node simrun.js .. groups"
+    "test": "node simrun.js .. && node simrun.js .. forever && node simrun.js .. groups && node simrun.js .. groups-forever",
+    "test:groups": "node simrun.js .. groups && node simrun.js .. groups-forever"
   },
   "dependencies": {
     "fengari": "^0.1.4",

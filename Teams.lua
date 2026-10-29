@@ -104,7 +104,8 @@ function PGM:TeamById(id)
     end
 end
 
-function PGM:CreateTeam(name)
+-- extra: more fields for the new team (tags, autoSync), shared with it.
+function PGM:CreateTeam(name, extra)
     local list = teams()
     if not list or not canEdit() then return nil end
     name = strtrim(name or "")
@@ -113,6 +114,7 @@ function PGM:CreateTeam(name)
     local ok, me = pcall(UnitName, "player")
     local t = { id = ("%d-%d"):format(PGM.Now(), math.random(1000, 9999)), name = name, schedule = "",
                 members = {}, removed = {}, created = PGM.Now(), by = ok and PGM.Plain(me) or nil }
+    for k, v in pairs(extra or {}) do t[k] = v end
     table.insert(list, t)
     share("SyncTeam", t)
     PGM:Fire("TEAMS")
@@ -498,10 +500,7 @@ function PGM:FindTeamsInNotes()
             if t.name:lower() == name:lower() then team = t end
         end
         if not team then
-            team = PGM:CreateTeam(name)
-            team.tags = f.tags
-            team.autoSync = true
-            share("SyncTeam", team)
+            team = PGM:CreateTeam(name, { tags = f.tags, autoSync = true })
             created[#created + 1] = name
         end
         joined = joined + (PGM:ImportTeamFromNotes(team.id, true) or 0)

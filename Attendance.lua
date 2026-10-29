@@ -29,9 +29,12 @@ local function store()
     if not g then return nil end
     g.raids = g.raids or { sessions = {} }
     g.raids.sessions = g.raids.sessions or {}
-    -- Every night needs an id to be shared; older ones get one now.
-    for _, s in ipairs(g.raids.sessions) do
-        if not s.id then s.id = newId(s.start) end
+    -- Every night needs an id to be shared; older ones get one, once.
+    if not g.raids.idsDone then
+        for _, s in ipairs(g.raids.sessions) do
+            if not s.id then s.id = newId(s.start) end
+        end
+        g.raids.idsDone = true
     end
     return g.raids
 end
@@ -271,7 +274,6 @@ local function check()
         if not r.open then open() else sample() end
     else
         r.suppress = nil
-        if r.open and PGM.Now() - (r.open.last or r.open.start) > GRACE then PGM:CloseRaid() end
     end
 end
 

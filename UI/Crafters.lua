@@ -120,13 +120,29 @@ local function choose(recipeInfo)
     paint()
 end
 
+-- Beside the window. Forever's has profession tabs down its right edge, so
+-- there it goes past the furthest one that's showing.
+local function place()
+    local x = 4
+    local tabs = PGM.IS_FOREVER and ProfessionsFrame.rightProfessionTabs
+    local right = ProfessionsFrame:GetRight()
+    if type(tabs) == "table" and right then
+        for _, t in pairs(tabs) do
+            local r = type(t) == "table" and t.IsShown and t:IsShown() and t:GetRight()
+            if r and r - right + 4 > x then x = r - right + 4 end
+        end
+    end
+    panel:ClearAllPoints()
+    panel:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", x, -24)
+end
+
 local function build()
     if panel or not ProfessionsFrame then return end
     -- On the recipe page only; the window's other tabs don't have a recipe.
     local parent = ProfessionsFrame.CraftingPage or ProfessionsFrame
     panel = CreateFrame("Frame", "PandyGuildManagementCrafters", parent, "BackdropTemplate")
     panel:SetSize(WIDTH, HEIGHT)
-    panel:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", 4, -24)
+    place()
     W.Backdrop(panel, C.bg, C.frame, 0.96)
     panel:SetFrameStrata(ProfessionsFrame:GetFrameStrata())
 
@@ -145,7 +161,7 @@ local function build()
     end)
     head:SetScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_TOP")
-        GameTooltip:SetText("Pandy Guild Management", 1, 1, 1)
+        GameTooltip:SetText(PGM.NAME, 1, 1, 1)
         GameTooltip:AddLine("Guildies who know the selected recipe, from the game's guild data. Click to fold.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
@@ -175,7 +191,10 @@ local function build()
             choose(recipeInfo)
         end, panel)
     end
-    panel:SetScript("OnShow", paint)
+    panel:SetScript("OnShow", function()
+        place()
+        paint()
+    end)
     paint()
 end
 

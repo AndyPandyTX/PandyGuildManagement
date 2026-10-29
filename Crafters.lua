@@ -147,6 +147,17 @@ local function index()
     return PandyGuildDB.recipes
 end
 
+-- The profession of the window that's open, on Forever, for a recipe the
+-- game won't place. Only asked while a window is open and ready, so it's
+-- the recipe's own profession.
+local function openProfession()
+    if not (PGM.IS_FOREVER and C_TradeSkillUI and C_TradeSkillUI.GetBaseProfessionInfo) then return nil end
+    if C_TradeSkillUI.IsTradeSkillReady and not C_TradeSkillUI.IsTradeSkillReady() then return nil end
+    local ok, info = pcall(C_TradeSkillUI.GetBaseProfessionInfo)
+    local id = ok and type(info) == "table" and P(info.professionID) or nil
+    return (type(id) == "number" and id > 0) and id or nil
+end
+
 -- Which profession and expansion a recipe belongs to: base id (171 is
 -- Alchemy) and the expansion's skill line, or the base twice when the game
 -- doesn't say (WoW Forever).
@@ -156,8 +167,11 @@ local function lineOf(recipe)
         local ok, res = pcall(C_TradeSkillUI.GetProfessionInfoByRecipeID, recipe)
         info = ok and res or nil
     end
-    if type(info) ~= "table" then return nil end
-    local line = P(info.professionID)
+    local line = type(info) == "table" and P(info.professionID) or nil
+    if not line or line == 0 then
+        line = openProfession()
+        return line, line
+    end
     local base = P(info.parentProfessionID)
     if not base or base == 0 then base = line end
     return base, line
@@ -166,8 +180,7 @@ end
 -- The profession id to ask the guild about for a recipe (the base one,
 -- like 171 for Alchemy), or nil.
 function PGM:RecipeProfession(recipe)
-    local base = lineOf(recipe)
-    return base
+    return (lineOf(recipe))
 end
 
 -- Learn the recipes of the profession window that's open now. Returns how

@@ -77,11 +77,6 @@ local function rankIndexByName()
     return out
 end
 
--- The main of a group with none chosen: the same order as alts use.
-local function pickMain(members, guids)
-    return PGM.PickMain(members, guids)
-end
-
 -- Runs the import. Returns a summary table, or nil and a reason.
 function PGM:ImportGRM()
     local history = forGuild(_G.GRM_GuildMemberHistory_Save)
@@ -159,14 +154,7 @@ function PGM:ImportGRM()
     end
 
     table.sort(g.log, function(a, b) return (a.t or 0) < (b.t or 0) end)
-    local cap = PGM.opt("logCap") or 3000
-    -- The newest `cap`, in one pass (removing from the front one at a time
-    -- is slow enough to freeze the game on a big import).
-    if #g.log > cap then
-        local keep = {}
-        for i = #g.log - cap + 1, #g.log do keep[#keep + 1] = g.log[i] end
-        g.log = keep
-    end
+    PGM.TrimLog(g)
 
     -- Alt groups: { {name=...}, {name=...}, main = "Name-Realm" }.
     local groups = forGuild(_G.GRM_Alts)
@@ -196,7 +184,7 @@ function PGM:ImportGRM()
                                 if not best or votes[m] > votes[best] then best = m end
                             end
                         end
-                        main = best or pickMain(members, guids)
+                        main = best or PGM.PickMain(members, guids)
                     end
                     for _, guid in ipairs(guids) do
                         -- Never over a link someone made (or refused) by hand.

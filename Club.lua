@@ -12,12 +12,43 @@ local P = PGM.Plain
 
 -- English names for when the client can't localize one yet.
 local PROF_EN = {
-    [164] = "Blacksmithing", [165] = "Leatherworking", [171] = "Alchemy", [182] = "Herbalism",
-    [185] = "Cooking", [186] = "Mining", [197] = "Tailoring", [202] = "Engineering",
-    [333] = "Enchanting", [356] = "Fishing", [393] = "Skinning", [755] = "Jewelcrafting",
-    [773] = "Inscription",
+    [129] = "First Aid", [164] = "Blacksmithing", [165] = "Leatherworking", [171] = "Alchemy",
+    [182] = "Herbalism", [185] = "Cooking", [186] = "Mining", [197] = "Tailoring",
+    [202] = "Engineering", [333] = "Enchanting", [356] = "Fishing", [393] = "Skinning",
+    [755] = "Jewelcrafting", [773] = "Inscription",
+}
+-- And icons, for when the client has no texture for one.
+local PROF_ICON = {
+    [129] = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", [164] = "Interface\\Icons\\Trade_BlackSmithing",
+    [165] = "Interface\\Icons\\Trade_LeatherWorking", [171] = "Interface\\Icons\\Trade_Alchemy",
+    [182] = "Interface\\Icons\\Trade_Herbalism", [185] = "Interface\\Icons\\INV_Misc_Food_15",
+    [186] = "Interface\\Icons\\Trade_Mining", [197] = "Interface\\Icons\\Trade_Tailoring",
+    [202] = "Interface\\Icons\\Trade_Engineering", [333] = "Interface\\Icons\\Trade_Engraving",
+    [356] = "Interface\\Icons\\Trade_Fishing", [393] = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
 }
 PGM.PROF_GATHERING = { [182] = true, [186] = true, [393] = true }
+
+-- Forever's professions are Classic ones, 1-300, and the roster's rank looks
+-- like real skill there. Retail's isn't (see ProfText), so this is nil on
+-- retail, and for anything that doesn't look like Classic skill.
+function PGM.ProfSkill(p)
+    if not PGM.IS_FOREVER then return nil end
+    local r = p and p.rank
+    if type(r) == "number" and r >= 1 and r <= 300 then return r end
+    return nil
+end
+
+-- Artisan: what the best recipes (and most raid consumables) need. 225 is
+-- where Artisan training opens, so it counts.
+PGM.SKILL_ARTISAN = 225
+
+-- The training tier a Classic skill has reached.
+function PGM.SkillTier(r)
+    if not r then return nil end
+    if r >= PGM.SKILL_ARTISAN then return "Artisan" elseif r > 150 then return "Expert"
+    elseif r > 75 then return "Journeyman" end
+    return "Apprentice"
+end
 
 -- Reading 500 members is slow, and race and professions
 -- barely change, so a read is reused for a couple of minutes.
@@ -97,17 +128,19 @@ function PGM.ProfIcon(id)
         local ok, tex = pcall(C_TradeSkillUI.GetTradeSkillTexture, id)
         if ok and tex then return tex end
     end
-    return 134400 -- question mark
+    return PROF_ICON[id] or 134400 -- question mark
 end
 
--- "Alchemy, Herbalism", or nil. Names only: the roster's profession "rank"
--- isn't Midnight skill (most members read 1, others 600-800).
+-- "Alchemy, Herbalism", or nil. Names only on retail: the roster's profession
+-- "rank" isn't Midnight skill (most members read 1, others 600-800). On
+-- Forever it is, so it follows the name: "Alchemy 245".
 function PGM.ProfText(rec, withIcons)
     if not (rec and rec.prof and #rec.prof > 0) then return nil end
     local parts = {}
     for _, p in ipairs(rec.prof) do
         local icon = withIcons and ("|T" .. PGM.ProfIcon(p.id) .. ":14:14|t ") or ""
-        parts[#parts + 1] = icon .. PGM.ProfName(p.id)
+        local skill = PGM.ProfSkill(p)
+        parts[#parts + 1] = icon .. PGM.ProfName(p.id) .. (skill and (" " .. skill) or "")
     end
     return table.concat(parts, ", ")
 end

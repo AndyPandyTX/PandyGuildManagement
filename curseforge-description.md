@@ -1,8 +1,12 @@
-# Pandy Guild Management
+# Pandy Guild & Groups
 
-A guild manager for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, find a group with guildies first, run as many raid teams as you like, track attendance with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
+A guild manager and group finder for Midnight and WoW Forever, built for big raiding guilds. See your whole guild at a glance, find a group with guildies first, run as many raid teams as you like, track attendance and loot with no setup, and find out when your guild actually plays. Officers' work is shared automatically with everyone running the addon.
+
+Formerly Pandy Guild Management: same addon, and updating keeps all your data.
 
 Type **/pgm** to open it (or **/pgg** for the group finder), click the panda button on the minimap, or use the buttons under the Guild & Communities window.
+
+Bugs, ideas or questions? Join the [Discord](https://discord.gg/tDtNKncGRT).
 
 ## Features
 
@@ -17,9 +21,10 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click the panda but
 - Right-click anyone to whisper or invite, or click to open their profile
 
 **Group finder**
-- Post a Mythic+ key, raid or delve; guildies ask to join in one click
+- Post a Mythic+ key, raid, delve or anything else; guildies ask to join in one click
 - See each asker's role, item level, M+ score and whose alt they are, then invite
 - Your Group Finder listing goes on the guild board too, and guild groups stand out in Blizzard's windows
+- Schedule a group for later, and tell guild chat about it in one click
 - Who's Free and everyone's Keystones, at a glance
 - /pgg, and it can be switched off in Settings
 
@@ -95,8 +100,20 @@ Open **Addon Users** to see who's running it and who needs to update.
 The same download runs on WoW Forever. Everything above works there too, with a few differences:
 
 - The level cap is 60, so "max level" and the level bands follow that
-- There's no Mythic+, so M+ scores and RaiderIO raid progress are hidden
+- There's no Mythic+, so M+ scores, keystones and RaiderIO raid progress are hidden
 - The raid-buff checklist is hidden, since it lists Midnight's buffs
+- Professions show each character's skill, and the best crafter is the one with the most
+- Thin professions are the ones with few active Artisans
+- The group finder posts dungeons and raids of 10, 20 or 40, with roles to match
+- Raid loot is labelled by raid size
+
+**LFG Chat** (Forever only)
+- Reads LookingForGroup, Trade, World, General and guild chat for LFM, LFG, WTS and WTB
+- Sorted under every Forever dungeon and raid, lowest level first, then quests and trade
+- Knows the short names people type: "strat ud", "dm e", "sm cath", "krol'dok", "ony"
+- Each person's newest line, for 15 minutes; filter by type or your level, or search
+- Click a line to whisper, shift-click for /who, ctrl-click to invite
+- Keep your own LFM or LFG line and send it to the channel you pick in one click
 
 ## Coming from Guild Roster Manager?
 
@@ -104,4 +121,4 @@ With GRM still enabled, click **Import from GRM** in Settings. It brings over al
 
 ## Feedback
 
-Bug reports and ideas are welcome on [GitHub](https://github.com/AndyPandyTX/PandyGuildManagement/issues).
+Bugs, ideas and questions are welcome on the [Discord](https://discord.gg/tDtNKncGRT) (or type **/pgm discord** in game), or on [GitHub](https://github.com/AndyPandyTX/PandyGuildManagement/issues).

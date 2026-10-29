@@ -46,6 +46,15 @@ local function str(v)
     return type(v) == "string" and v or nil
 end
 
+-- Another player's comment to show: a protected one ("|Ks1969|k0000|k", see
+-- levelIn) is kept as it came, for the game to draw, never read; anything
+-- else is cleaned and cut.
+local function noteOf(v, max)
+    local text = str(v) or ""
+    if text:find("|K", 1, true) then return text end
+    return G.Clean(text, max)
+end
+
 local function num(v)
     v = P(v)
     return type(v) == "number" and v or nil
@@ -85,7 +94,15 @@ local function activityParts(a)
     local what, paren = full:match("^(.-)%s*%((.-)%)%s*$")
     what = what or full
     local kind = "O"
-    if P(a.isMythicPlusActivity) then
+    if PGM.IS_FOREVER then
+        -- No keys or delves: a dungeon is anything in the dungeon category.
+        local cat = num(a.categoryID)
+        if cat and cat == G.FinderCat("R") or P(a.isCurrentRaidActivity) then
+            kind = "R"
+        elseif cat and cat == G.FinderCat("M") then
+            kind = "M"
+        end
+    elseif P(a.isMythicPlusActivity) then
         kind = "M"
     elseif P(a.isCurrentRaidActivity) or num(a.categoryID) == 3 then
         kind = "R"
@@ -93,6 +110,14 @@ local function activityParts(a)
         kind = "D"
     end
     return kind, what, paren, full
+end
+
+-- A raid's difficulty letter from its bracket: "Heroic" gives "H". On
+-- Forever the bracket may be a size ("Onyxia's Lair (40)"), which isn't one.
+local DIFF_WORD = { Normal = true, Heroic = true, Mythic = true }
+local function diffLetter(paren)
+    if not paren or (PGM.IS_FOREVER and not DIFF_WORD[paren]) then return "" end
+    return paren:sub(1, 1)
 end
 
 -- A key level in some text: "14", "+14", "14+", "+ 14 Learning"...: the
@@ -126,7 +151,7 @@ local function postFor(id, entry)
             level = lv and tostring(lv) or ""
         end
     elseif kind == "R" and paren then
-        level = paren:sub(1, 1)          -- Normal, Heroic, Mythic
+        level = diffLetter(paren)        -- Normal, Heroic, Mythic
     elseif kind == "D" and paren then
         level = paren:match("%d+") or ""  -- the tier
     end
@@ -135,7 +160,7 @@ local function postFor(id, entry)
 
     -- Still needed: the kind's usual roles, less who's already here.
     local need = {}
-    for r, n in pairs(G.KIND_NEED[kind]) do need[r] = n end
+    for r, n in pairs(G.KindNeed(kind, size)) do need[r] = n end
     local function take(r)
         r = r or "D"
         if need[r] > 0 then need[r] = need[r] - 1 end
@@ -143,7 +168,10 @@ local function postFor(id, entry)
     take(G.ROLE_OF[str(UnitGroupRolesAssigned("player")) or ""] or G.SpecRole())
     for _, m in ipairs(G.GroupNames()) do take(m.role) end
 
-    local ok, note = pcall(G.Clean, str(entry and entry.comment) or "", 70)
+    -- A protected comment can't go to the guild as text.
+    local comment = str(entry and entry.comment) or ""
+    if comment:find("|K", 1, true) then comment = "" end
+    local ok, note = pcall(G.Clean, comment, 70)
     return { kind = kind, what = what, level = level, size = size, need = need,
              note = ok and note or "", guildFirst = 0, lfg = true, fromLFG = true }
 end
@@ -230,6 +258,11 @@ local firstSeen, told = {}, {}
 
 local function readApplicants()
     wipe(apps)
+    -- Not listed: a later listing's applicants are new again.
+    if not listed() then
+        wipe(firstSeen)
+        wipe(told)
+    end
     for _, raw in ipairs(readable(call(LFG.GetApplicants)) or {}) do
         local id = num(raw)
         local info = id and readable(call(LFG.GetApplicantInfo, id))
@@ -237,7 +270,7 @@ local function readApplicants()
         if status == "applied" or status == "invited" then
             firstSeen[id] = firstSeen[id] or GetTime()
             local members = num(info.numMembers) or 1
-            local comment = G.Clean(str(info.comment) or "", 60)
+            local comment = noteOf(info.comment, 60)
             local pos, lastRow = 0, nil   -- this application's rows: 1 is the one it's listed under
             for i = 1, members do
                 local ok, name, class, _, _, ilvl, _, tank, healer, damage, assigned, _, score, _, _, _, spec =
@@ -330,9 +363,53 @@ G.FINDER_CATS = {
     { id = "O", label = "Custom", cat = 6 },
 }
 
+-- Forever's Group Finder is the vanilla-style one, with no Mythic+ or delves
+-- and its own category ids, so they're found by name. Until they are, the
+-- Classic tool's ids stand in (a guess until /pgm check confirms them:
+-- 2 dungeons, 114 raids, 120 custom).
+if PGM.IS_FOREVER then
+    G.FINDER_CATS = {
+        { id = "M", label = "Dungeons", cat = 2, find = "dungeon", filters = function() return mask("PvE") end },
+        { id = "R", label = "Raids", cat = 114, find = "raid" },
+        { id = "O", label = "Custom", cat = 120, find = "custom" },
+    }
+end
+-- Looked up once when first needed, and again at each search while any
+-- name is still missing.
+local catsFound, catsTried = false, false
+local function findCats(again)
+    if catsFound or (catsTried and not again) then return end
+    if not (PGM.IS_FOREVER and LFG.GetAvailableCategories and LFG.GetLfgCategoryInfo) then return end
+    catsTried = true
+    local ok, ids = pcall(LFG.GetAvailableCategories)
+    if not ok or not readable(ids) or #ids == 0 then return end
+    for _, id in ipairs(ids) do
+        local info = readable(call(LFG.GetLfgCategoryInfo, id))
+        local name = info and (str(info.name) or ""):lower() or ""
+        for _, c in ipairs(G.FINDER_CATS) do
+            if c.find and not c.found and name:find(c.find, 1, true) then
+                c.cat, c.found = num(id) or c.cat, true
+            end
+        end
+    end
+    catsFound = true
+    for _, c in ipairs(G.FINDER_CATS) do
+        if c.find and not c.found then catsFound = false end
+    end
+end
+
+-- The Group Finder category id for a kind, or nil.
+function G.FinderCat(kind)
+    findCats()
+    for _, c in ipairs(G.FINDER_CATS) do
+        if c.id == kind then return c.cat end
+    end
+end
+
 -- From a click. True, or false and why not.
 function G:SearchFinder(kind)
     local c
+    findCats(true)
     for _, x in ipairs(G.FINDER_CATS) do
         if x.id == kind then c = x end
     end
@@ -345,12 +422,17 @@ function G:SearchFinder(kind)
     local adv = kind == "M" and readable(call(LFG.GetAdvancedFilter)) or nil
     local ok, err = pcall(LFG.Search, c.cat, c.filters and c.filters() or 0, mask("PvE"), lang, cross, adv)
     if not ok then return false, tostring(err) end
-    G.searchKind, G.searchedAt = kind, GetTime()
+    G.searchedAt = GetTime()
     return true
 end
 
 local BREZ = { DRUID = true, DEATHKNIGHT = true, WARLOCK = true, PALADIN = true }
 local LUST = { MAGE = true, SHAMAN = true, EVOKER = true, HUNTER = true }
+-- Classic: Rebirth and Soulstone only, and no Bloodlust.
+if PGM.IS_FOREVER then
+    BREZ = { DRUID = true, WARLOCK = true }
+    LUST = {}
+end
 
 local results = {}
 local declinedAt = {}   -- [resultID] = when I saw it turn declined
@@ -384,8 +466,9 @@ local function rolesOf(id, kind, size)
     local has = { T = num(counts.TANK) or 0, H = num(counts.HEALER) or 0, D = num(counts.DAMAGER) or 0 }
     local need = { T = num(counts.TANK_REMAINING), H = num(counts.HEALER_REMAINING), D = num(counts.DAMAGER_REMAINING) }
     if not (need.T and need.H and need.D) then
-        -- No "remaining" counts: a five-player group wants 1 / 1 / 3.
-        local base = size <= 5 and { T = 1, H = 1, D = 3 } or G.KIND_NEED[kind]
+        -- No "remaining" counts: a five-player group wants 1 / 1 / 3, a
+        -- bigger one the kind's roles for its size (G.KindNeed).
+        local base = size <= 5 and { T = 1, H = 1, D = 3 } or G.KindNeed(kind, size)
         for _, r in ipairs(G.ROLES) do need[r] = math.max(0, base[r] - has[r]) end
     end
     return need, has
@@ -402,13 +485,15 @@ local function readResults()
             local a = act and readable(call(LFG.GetActivityInfoTable, act))
             if a then
                 local kind, what, paren = activityParts(a)
-                local size = num(a.maxNumPlayers) or G.KIND_SIZE[kind]
+                -- No cap (0, Custom groups mostly) means the kind's usual size.
+                local size = num(a.maxNumPlayers)
+                size = (size and size > 1) and size or G.KIND_SIZE[kind]
                 local level = ""
                 if kind == "M" then
                     local lv = keyLevelOf(info)
                     level = lv > 0 and tostring(lv) or ""
                 elseif kind == "R" and paren then
-                    level = paren:sub(1, 1)
+                    level = diffLetter(paren)
                 elseif kind == "D" and paren then
                     level = paren:match("%d+") or ""
                 end
@@ -450,7 +535,7 @@ local function readResults()
                     playstyle = playstyleOf(info, a), age = num(info.age) or 0,
                     -- The title as the game gave it: only ever drawn, never read.
                     title = str(info.name),
-                    note = G.Clean(str(info.comment) or "", 60),
+                    note = noteOf(info.comment, 60),
                     status = appStatus(id),
                 }
             end
@@ -613,7 +698,7 @@ function G:Board(f)
     for _, row in ipairs(rows) do
         local keep = (not f.kind or row.kind == f.kind)
             and (not f.guildOnly or row.guild)
-            and ((tonumber(f.minRating) or 0) <= 0 or row.score >= tonumber(f.minRating))
+            and (PGM.IS_FOREVER or (tonumber(f.minRating) or 0) <= 0 or row.score >= tonumber(f.minRating))
             and (not f.playstyle or row.playstyle == f.playstyle)
             and not (f.skip and f.skip[row.what])
             and (not f.needTank or (row.need.T or 0) > 0)
@@ -622,7 +707,7 @@ function G:Board(f)
             and (not f.hasTank or (row.has and row.has.T > 0) or (not row.has and row.need.T == 0))
             and (not f.hasHealer or (row.has and row.has.H > 0) or (not row.has and row.need.H == 0))
             and (not f.brez or row.brez ~= false)
-            and (not f.lust or row.lust ~= false)
+            and (not f.lust or PGM.IS_FOREVER or row.lust ~= false)
         if keep and f.fitsMe then
             keep = false
             for r in pairs(roles) do
@@ -829,6 +914,25 @@ function G:Announce()
     return true
 end
 
+-- Open Blizzard's Group Finder. Forever's is the vanilla-style
+-- LFGParentFrame, loaded on demand.
+function G.OpenFinder()
+    if PGM.IS_FOREVER then
+        local load = C_AddOns and C_AddOns.LoadAddOn or LoadAddOn
+        if load and not LFGParentFrame then pcall(load, "Blizzard_GroupFinder_VanillaStyle") end
+        if LFGParentFrame and LFGParentFrame:IsShown() then return true end
+        if ToggleLFGParentFrame then return (pcall(ToggleLFGParentFrame)) end
+        if LFGParentFrame and ShowUIPanel then return (pcall(ShowUIPanel, LFGParentFrame)) end
+        return false
+    end
+    if PVEFrame_ShowFrame then
+        return (pcall(PVEFrame_ShowFrame, "GroupFinderFrame", "LFGListPVEStub"))
+    elseif PVEFrame_ToggleFrame then
+        return (pcall(PVEFrame_ToggleFrame))
+    end
+    return false
+end
+
 -- Open the Group Finder's premade groups, from a click, to list my key.
 -- That's as far as an addon may go: Start a Group's form is protected (it
 -- sets the listing's title), and filling it in from addon code gets the
@@ -839,7 +943,7 @@ function G:ListMyKey()
         PGM.Print("You're already listed in the Group Finder.")
         return
     end
-    if PVEFrame_ShowFrame then pcall(PVEFrame_ShowFrame, "GroupFinderFrame", "LFGListPVEStub") end
+    G.OpenFinder()
     local map, level = G.ReadMyKey()
     local key = map and (" (+" .. level .. " " .. (G.DungeonName(map) or "your key") .. ")") or ""
     PGM.Print("Group Finder is open: click Dungeons, then Start a Group. It fills in your keystone" .. key
@@ -903,7 +1007,7 @@ local function onApplicantEnter(member)
     if not d or GameTooltip:GetOwner() ~= member then return end
     GameTooltip:AddLine(" ")
     if d.rec then GameTooltip:AddLine(PGM.Hex(C.jade) .. "Guild:|r " .. G.WhoText(d.rec)) end
-    GameTooltip:AddLine(G.ScoreLine(G.Scores(d.short, d.realm, d.score)), 1, 1, 1)
+    if not PGM.IS_FOREVER then GameTooltip:AddLine(G.ScoreLine(G.Scores(d.short, d.realm, d.score)), 1, 1, 1) end
     GameTooltip:Show()
 end
 

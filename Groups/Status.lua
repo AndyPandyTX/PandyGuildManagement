@@ -137,12 +137,6 @@ function G:WhoList()
     return out
 end
 
--- Is this member free to ask (looking or free, and heard from lately)?
-function G:IsFree(guid)
-    local st = G.status[guid]
-    return st ~= nil and GetTime() - st.at < STALE and st.state ~= "g"
-end
-
 -- ============================================================
 -- WHEN
 -- ============================================================

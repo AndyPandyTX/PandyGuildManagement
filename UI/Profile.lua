@@ -67,6 +67,7 @@ local function buildSecure()
     -- it does, the button does nothing: a second click would move them again.
     h.setRank:HookScript("PostClick", function(s, _, down)
         if (down and true or false) ~= GetCVarBool("ActionButtonUseKeyDown") then return end
+        if not s:GetAttribute("macrotext") then return end   -- idle or not allowed: nothing went out
         h.sent = { name = h.target, from = h.fromRank, at = GetTime() }
         if not InCombatLockdown() then
             s:SetAttribute("macrotext", nil)
@@ -260,12 +261,11 @@ local function build()
     p.rankPick:Hide()
     p.rankPick:SetScript("OnClick", function(s)
         local rec = p.rec
-        local my = PGM.MyRankIndex and PGM:MyRankIndex()
+        local my = PGM:MyRankIndex()
         if not (rec and my) or InCombatLockdown() then return end
-        local num = GuildControlGetNumRanks and PGM.Plain(GuildControlGetNumRanks()) or 0
         local can = perms()
         local entries = {}
-        for i = my + 1, (num or 0) - 1 do
+        for _, i in ipairs(PGM:RanksBelowMe()) do
             local allowed = (i < rec.rankIndex and can.promote) or (i > rec.rankIndex and can.demote) or i == rec.rankIndex
             entries[#entries + 1] = { rankName(i) .. (i == rec.rankIndex and " (now)" or ""),
                 function() p.targetRank = i UI:RefreshProfile() end, disabled = not allowed }
@@ -294,7 +294,6 @@ function UI:OpenProfile(guid)
     self:HideSecure()
     if self.profile.guid ~= guid then self.profile.targetRank = nil end
     self.profile.guid = guid
-    self.profile.mine:SetText("")
     local g = PGM.GuildDB()
     self.profile.mine:SetText((g and g.notes[guid]) or "")
     self.profile:Show()
@@ -455,7 +454,7 @@ function UI:RefreshProfile()
     h.target = rec.name
     -- Only someone below your own rank can be moved, and only to a rank
     -- below yours (the game refuses anything else).
-    local my = PGM.MyRankIndex and PGM:MyRankIndex()
+    local my = PGM:MyRankIndex()
     local movable = my and rec.rankIndex and rec.rankIndex > my and (can.promote or can.demote)
     local target = p.targetRank
     if not movable or not target or target <= my then target = rec.rankIndex end

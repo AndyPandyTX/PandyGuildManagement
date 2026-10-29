@@ -16,10 +16,6 @@ local function lookup()
     if type(rio) == "table" and type(rio.GetProfile) == "function" then return rio.GetProfile end
 end
 
-function PGM:HasRaiderIO()
-    return lookup() ~= nil
-end
-
 -- One lookup per character per session. RaiderIO knows nobody for the first
 -- few seconds after login (it's still working out the region), so "no
 -- profile" answers from that window aren't kept.

@@ -145,6 +145,7 @@ end
 -- Read my key; if it changed, save it, note it, and tell the guild.
 local lastSent
 function G:CheckMyKey(force)
+    if PGM.IS_FOREVER then return end   -- no keystones there
     local me = PGM:MyGuid()
     local d = G.DB()
     if not (me and d) then return end
@@ -265,6 +266,7 @@ end)
 -- ============================================================
 
 G:On("READY", function()
+    if PGM.IS_FOREVER then return end
     C_Timer.After(10, function()
         if C_MythicPlus and C_MythicPlus.RequestMapInfo then pcall(C_MythicPlus.RequestMapInfo) end
     end)

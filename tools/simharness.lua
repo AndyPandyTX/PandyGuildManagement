@@ -169,6 +169,12 @@ local function newClient(guid, name)
         -- still says 90 while the player's cap is 60.
         env.GetBuildInfo = function() return "1.60.1", "70000", "", 16001 end
         env.GetMaxLevelForPlayerExpansion = function() return 60 end
+        -- The loot records below use retail's raid ids; here the game calls
+        -- them 30-player raids, so they're found the way Forever's own are.
+        env.GetDifficultyInfo = function(id)
+            if id >= 14 and id <= 17 then return "Raid", "raid", false, false, false, false, nil, false, 10, 30 end
+            return "Dungeon", "party", false, false, false, false, nil, false, 1, 5
+        end
     end
     env.C_GuildInfo = {
         GuildRoster = function() end,
@@ -189,6 +195,7 @@ local function newClient(guid, name)
         GetRecipeInfo = function(id) return TRADE.info[id] end,
         GetProfessionInfoByRecipeID = function(id) return TRADE.prof[id] end,
         GetRecipeOutputItemData = function(id) return { itemID = TRADE.item[id] } end,
+        GetBaseProfessionInfo = function() return TRADE and TRADE.base and { professionID = TRADE.base } or {} end,
     }
     env.Enum = { SendAddonMessageResult = { AddonMessageThrottle = 3 } }
     c.chatFilters = {}
@@ -207,7 +214,7 @@ local function newClient(guid, name)
         end,
     }
     local NS = {}
-    for _, f in ipairs({ "Core.lua", "Club.lua", "Roster.lua", "GuildEvents.lua", "Alts.lua", "Attendance.lua", "Teams.lua", "Sync.lua", "Grm.lua", "Activity.lua", "Bulk.lua", "Crafters.lua" }) do
+    for _, f in ipairs({ "Core.lua", "Club.lua", "Roster.lua", "GuildEvents.lua", "Alts.lua", "Attendance.lua", "Teams.lua", "Sync.lua", "Grm.lua", "Activity.lua", "Bulk.lua", "Crafters.lua", "Check.lua" }) do
         local fn, err = load(FILES[f], "@" .. f, "t", env)
         if not fn then error(err) end
         fn("PandyGuildManagement", NS)
@@ -346,6 +353,27 @@ end
 
 print("-- late joiner catches up")
 local D = newClient(gid(14), "Anvar")
+-- While an officer is still sending Anvar's catch-up, they log out: what's
+-- left of it is Anvar's, not something to send the whole guild next time.
+local dumper
+for _ = 1, 60 do
+    run(1)
+    for _, o in ipairs({ A, B, RL, GM }) do
+        if next(o.PGM.Sync.catchUp or {}) and (#o.PGM.Sync.bulk > 0) then dumper = o end
+    end
+    if dumper then break end
+end
+check(dumper ~= nil, "(setup: an officer is sending the catch-up)")
+if dumper then
+    local before = dumper.g.sync.pending
+    dumper.fire("PLAYER_LOGOUT")
+    local kept = 0
+    for _, m in ipairs(dumper.g.sync.pending or {}) do
+        if dumper.PGM.Sync.catchUp[m] then kept = kept + 1 end
+    end
+    check(kept == 0, "a catch-up still going out isn't kept at logout (" .. kept .. ")")
+    dumper.g.sync.pending = before
+end
 run(90)
 local td = teamNamed(D, "Team Valor")
 check(td ~= nil, "late joiner got the team")
@@ -401,6 +429,23 @@ A.PGM:DeleteTeam(t.id)
 run(5)
 check(teamNamed(C, "Team Valor") == nil, "member's team deleted")
 check(teamNamed(D, "Team Valor") == nil, "late joiner's team deleted")
+
+print("-- a delete beats an edit made at the same moment")
+do
+    local race = A.PGM:CreateTeam("Race Team")
+    run(5)
+    -- One officer deletes it while another renames it twice, so the rename
+    -- is newer than the delete. Every copy must still agree.
+    A.PGM:DeleteTeam(race.id)
+    B.PGM:UpdateTeam(race.id, { name = "Race Team 2" })
+    B.PGM:UpdateTeam(race.id, { name = "Race Team 3" })
+    run(10)
+    local left = {}
+    for _, c in ipairs({ A, B, C, D }) do
+        if c.PGM:TeamById(race.id) then left[#left + 1] = c.name or "?" end
+    end
+    check(#left == 0, "every copy agrees the team is gone (" .. table.concat(left, ",") .. ")")
+end
 
 print("-- play-time activity")
 -- Everyone's roster: four people in game, one on the mobile app.
@@ -545,6 +590,7 @@ check(C.PGM:TeamById(ot.id).name ~= "Team Zenith", "(setup: member has the place
 local A3 = newClient(gid(10), "Nattypandy")          -- the officer updates and logs in
 A3.g.teams = A.g.teams
 A3.g.sync = A3.g.sync or {}
+A3.g.sync.resent071 = nil                            -- a store from before 0.7.1
 run(60)
 check(C.PGM:TeamById(ot.id).name == "Team Zenith", "a real name is re-shared once")
 check(C.PGM:TeamById(ph.id).name == A.PGM:TeamById(ph.id).name, "a placeholder name isn't pushed over anyone")
@@ -611,7 +657,7 @@ local yin = g.members[gid(26)]
 yin.rankIndex, yin.rank, yin.online = 6, "Trial", true
 local pr = P:BulkNewRule("promote")
 pr.ranks, pr.toRank, pr.skipTeams = { [6] = true }, 4, nil
-check(P:BulkRuleCount("promote", pr) == 1, "promote rule picks the trial")
+check((select(2, P:BulkMatches("promote"))[pr.id] or 0) == 1, "promote rule picks the trial")
 P:BulkStart("promote")
 local pt, pi = P:BulkBatch()
 check(pt == "/gpromote Yinsane-MalGanis", "two ranks up is one command per press")
@@ -627,7 +673,7 @@ P:Fire("ROSTER")
 check(P:BulkState(gid(26)) == "done", "reaching the target rank is done")
 P:BulkStop()
 pr.toRank = 1
-check(P:BulkRuleCount("promote", pr) == 0, "nobody can be moved to your own rank")
+check((select(2, P:BulkMatches("promote"))[pr.id] or 0) == 0, "nobody can be moved to your own rank")
 
 print("-- bulk actions are officers only")
 check(C.PGM:BulkNewRule("kick") == nil, "a member can't make a bulk rule")
@@ -1146,6 +1192,19 @@ do
     A.fire("LOOT_HISTORY_UPDATE_ENCOUNTER", 3445)
     check(find(A, "Speedyjosh-Hyjal", 272000, "greed") ~= nil, "a winner from another realm gets their own realm, from the raid group")
     check(count(A) == 8, "...and reading the drop again doesn't add it twice")
+    -- A drop first read before the game says how it was won, then again
+    -- once it does: the record learns it, and the page hears so.
+    LOOT_DROPS = { { itemHyperlink = link(271900), lootListID = 11, winner = { playerName = "Nattypandy", playerClass = "DRUID" } } }
+    A.fire("LOOT_HISTORY_UPDATE_ENCOUNTER", 3445)
+    local late = find(A, "Nattypandy-MalGanis", 271900)
+    local heard = 0
+    A.PGM:On("LOOT", function() heard = heard + 1 end)
+    run(2)
+    heard = 0
+    LOOT_DROPS[1].winner.state = 0
+    A.fire("LOOT_HISTORY_UPDATE_DROP", 3445, 11)
+    run(2)
+    check(late and late.how == "need" and heard > 0, "how a drop was won, learned later, shows on the page")
     A.env.GetNumGroupMembers = function() return 0 end
     A.env.GetInstanceInfo = town
 
@@ -1203,7 +1262,7 @@ do
     check(text:sub(1, 8) == "PGMLOOT1", "export without the game's packer is plain text")
     local parsed = B.PGM:ParseLootExport(text)
     check(parsed and #parsed == #all, "the export reads back whole (" .. tostring(parsed and #parsed) .. " of " .. #all .. ")")
-    check(not B.PGM:LootKnown(parsed[1]), "before importing, B doesn't have it")
+    check(B.PGM:LootWouldAdd(parsed[1]) ~= "known", "before importing, B doesn't have it")
     local added = B.PGM:ImportLoot(parsed)
     check(added == #all and count(B) == #all, "B imports every record")
     local fb = find(B, "Funkyshade-MalGanis", 268256)
@@ -1720,5 +1779,100 @@ else
     check(rio[1] == 0.9 and rio[3] == 0.6, "with RaiderIO, its colour (pink at the top)")
     A.env.RaiderIO, A.env.C_ChallengeMode = nil, nil
 end
+
+-- Forever's professions are Classic ones: one skill line each, skill 1-300.
+local ok, why = pcall(function()
+    local g = A.g
+    local now = BASE + math.floor(T)
+    check(P.ProfName(129) == "First Aid", "First Aid has a name")
+    check(P.ProfIcon(129) ~= 134400, "...and an icon")
+    local function member(n, name, note, online, level, profs)
+        local guid = gid(n)
+        g.members[guid] = { guid = guid, name = name .. "-" .. REALM, short = name, realm = REALM, rank = "Member",
+            rankIndex = 5, level = level, class = "MAGE", note = note, onote = "", online = online,
+            lastOnline = now - 86400, prof = profs }
+        return guid
+    end
+    -- One player: an online alt at Alchemy 40 and an offline main at 285.
+    -- Another player at 120, and a third whose rank isn't skill (800).
+    local main = member(210, "Brewmain", "", false, 60, { { id = 171, rank = 285 } })
+    local alt = member(211, "Brewalt", "alt of Brewmain", true, 20, { { id = 171, rank = 40 } })
+    local mid = member(212, "Brewmid", "", false, 50, { { id = 171, rank = 120 } })
+    local odd = member(213, "Brewodd", "", false, 60, { { id = 171, rank = 800 } })
+    P:RebuildAlts()
+    local function rowOf(main)
+        for _, it in ipairs(P:ProfessionCrafters(171, true)) do if it.main == main then return it end end
+    end
+    if FOREVER then
+        local mainRow = rowOf(main)
+        check(mainRow and mainRow.guid == main, "Forever: the higher skill stands for its player, not the online alt")
+        check(mainRow and mainRow.onlineAs and mainRow.onlineAs.short == "Brewalt", "...and still says who to ask now")
+        local st = P:ProfessionStats()[171]
+        check(st and st.skillKnown and st.artisans == 1 and st.activeArtisans == 1, "one artisan (225+), active")
+        check(st and st.thin, "...so Alchemy is thin")
+        check(P.ProfText(g.members[main]) == "Alchemy 285", "skill follows the name")
+        check(P.ProfText(g.members[odd]) == "Alchemy", "...but not a rank that isn't skill")
+        check(P.SkillTier(285) == "Artisan" and P.SkillTier(150) == "Journeyman" and P.SkillTier(75) == "Apprentice",
+            "skill tiers")
+
+        -- The recipe index: no parent line, so the profession is the line.
+        A.env.PandyGuildDB.recipes = nil
+        TRADE = {
+            ids = { 2330, 2332, 3170 },
+            info = { [2330] = { name = "Minor Healing Potion" }, [2332] = { name = "Minor Rejuvenation Potion" },
+                     [3170] = { name = "Elixir of Lion's Strength" } },
+            prof = { [2330] = { professionID = 171 }, [2332] = { professionID = 171, parentProfessionID = 0 } },
+            item = { [2330] = 118, [2332] = 2458, [3170] = 2454 },
+            base = 171,
+        }
+        check(P:LearnOpenRecipes() == 3 and P:RecipeCount() == 3, "an open Classic window teaches all its recipes")
+        local found = P:FindRecipes("lion")
+        check(found[1] and found[1].recipe == 3170 and found[1].line == 171,
+            "...even one the game won't place, from the open window")
+        local byItem = P:FindRecipes("|cffffffff|Hitem:118::::::::60:::::|h[Minor Healing Potion]|h|r")
+        check(#byItem == 1 and byItem[1].recipe == 2330 and byItem[1].line == 171, "...found by item link too")
+        LAST_RECIPE_QUERY = nil
+        P:RecipeCrafters(171, 2330, function() end)
+        check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[1] == 171 and LAST_RECIPE_QUERY[2] == 2330,
+            "the guild is asked about the Classic recipe")
+        run(4)
+        TRADE = nil
+        A.env.PandyGuildDB.recipes = nil
+    else
+        check(P.ProfText(g.members[main]) == "Alchemy", "retail: names only, no skill")
+        local mainRow = rowOf(main)
+        check(mainRow and mainRow.guid == alt, "retail: the online character still stands for its player")
+        check(not P:ProfessionStats()[171].skillKnown, "retail: no skill counts")
+    end
+    for _, guid in ipairs({ main, alt, mid, odd }) do g.members[guid] = nil end
+    P:RebuildAlts()
+end)
+check(ok, "Classic professions (" .. tostring(why) .. ")")
+
+print("-- raid difficulties")
+do
+    local P = A.PGM
+    local function label(id) local d = P.LootDiff(id) return d and d[1] or "-" end
+    if FOREVER then
+        check(label(9) == "40" and label(3) == "10" and label(148) == "20", "Forever: Classic raid ids are named by size")
+        check(label(15) == "30", "...and a raid id the game reports is found and named by its size")
+        check(label(8) == "-", "...and a dungeon's isn't a raid's")
+    else
+        check(table.concat(P.LootDiffLabels(), ",") == "LFR,Normal,Heroic,Mythic", "retail: the four, in order")
+        check(label(9) == "-" and label(8) == "-", "retail: nothing else is a raid difficulty")
+    end
+end
+
+print("-- /pgm check")
+ok, why = pcall(function()
+    A.PGM:ForeverCheck()
+    run(4)
+    local c = A.env.PandyGuildDB.check
+    check(c and c.groupFinder and not c.groupFinder.error and c.professions and not c.professions.error,
+        "it records the group finder and professions, with no errors")
+    check(c and c.forever == (FOREVER and true or false), "...and which game it is")
+    A.env.PandyGuildDB.check = nil
+end)
+check(ok, "/pgm check (" .. tostring(why) .. ")")
 
 print(("\n%d passed, %d failed"):format(passes, failures))

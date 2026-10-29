@@ -17,7 +17,6 @@ local UI = PGM.UI
 local W = UI.W
 
 local LABEL = { kick = "Kick", promote = "Promote", demote = "Demote" }
-local VERB_ING = { kick = "kick", promote = "promote", demote = "demote" }
 local DEFAULT_HOTKEY = "CTRL-SHIFT-K"
 local LEFT_W = 290
 
@@ -38,16 +37,6 @@ local function hotkey()
 end
 
 local rankName = PGM.RankName
-
--- The ranks below yours: the only ones you can act on or move people to.
-local function ranksBelowMe()
-    local out = {}
-    local my = PGM:MyRankIndex()
-    local num = GuildControlGetNumRanks and PGM.Plain(GuildControlGetNumRanks()) or 0
-    if not my then return out end
-    for i = my + 1, (num or 0) - 1 do out[#out + 1] = i end
-    return out
-end
 
 local function selectedRule()
     for _, r in ipairs(PGM:BulkRules(state.action)) do
@@ -115,14 +104,8 @@ function UI:BulkLoad()
 end
 
 local function place()
-    if not (holder and page and page:IsVisible() and page.spot) or InCombatLockdown() then return false end
-    local left, bottom = page.spot:GetLeft(), page.spot:GetBottom()
-    if not left or not bottom then return false end
-    holder:SetScale(UI.frame:GetEffectiveScale() / UIParent:GetEffectiveScale())
-    holder:ClearAllPoints()
-    holder:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
-    holder:Show()
-    return true
+    if not (holder and page and page:IsVisible() and page.spot) then return false end
+    return UI:PlaceSecure(page.spot, holder)
 end
 
 -- Arm: commands on the button, the hotkey bound to it. `fresh` starts a new
@@ -248,7 +231,7 @@ local function buildEditor(p, ed)
         local r = selectedRule()
         if not r then return end
         local entries = {}
-        for _, i in ipairs(ranksBelowMe()) do
+        for _, i in ipairs(PGM:RanksBelowMe()) do
             entries[#entries + 1] = { rankName(i),
                 checked = function() return r.ranks and r.ranks[i] end,
                 toggle = function()
@@ -286,7 +269,7 @@ local function buildEditor(p, ed)
         local r = selectedRule()
         if not r then return end
         local entries = {}
-        for _, i in ipairs(ranksBelowMe()) do
+        for _, i in ipairs(PGM:RanksBelowMe()) do
             entries[#entries + 1] = { rankName(i), function() r.toRank = i changed() end }
         end
         W.Menu(s, "Move them to", entries)
@@ -321,12 +304,7 @@ local function buildEditor(p, ed)
         function(v) local r = selectedRule() if r then r.keepIfGroupActive = v or nil changed() end end)
     ed.keepGroup:SetPoint("TOPLEFT", 0, y)
     ed.keepGroup:SetWidth(LEFT_W)
-    ed.keepGroup:HookScript("OnEnter", function(s)
-        GameTooltip:SetOwner(s, "ANCHOR_TOP")
-        GameTooltip:SetText("Leave them alone if any character in their group was online within the days above.", 1, 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    ed.keepGroup:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    ed.keepGroup.tip = "Leave them alone if any character in their group was online within the days above."
 
     y = y - 32
     ed.delete = W.Button(ed, "Delete rule", 100, 22, C.red)
@@ -648,7 +626,7 @@ local function refresh(p)
         return
     end
     local can = {}
-    for _, a in ipairs(PGM.BULK_ACTIONS) do if allowed[a] then can[#can + 1] = VERB_ING[a] end end
+    for _, a in ipairs(PGM.BULK_ACTIONS) do if allowed[a] then can[#can + 1] = a end end
     p.perms:SetText(#can > 0 and ("Your rank can " .. table.concat(can, ", ") .. ". Only ranks below yours are listed.")
         or "Your rank can't kick, promote or demote.")
 
@@ -660,7 +638,7 @@ local function refresh(p)
     local rules = PGM:BulkRules(action)
     if not selectedRule() then state.rule = rules[1] and rules[1].id or nil end
     p.rules:SetData(rules, true)
-    p.noRules:SetText(#rules == 0 and ("No %s rules yet. Click + New rule to make one."):format(VERB_ING[action]) or "")
+    p.noRules:SetText(#rules == 0 and ("No %s rules yet. Click + New rule to make one."):format(action) or "")
 
     local r = selectedRule()
     local ed = p.editor
@@ -693,7 +671,7 @@ local function refresh(p)
     for _, it in ipairs(items) do if not it.ignored then included = included + 1 end end
     p.queue:SetData(items, true)
     p.qHead:SetText(running == action and ("This run: %d"):format(#items)
-        or ("%d to %s"):format(included, VERB_ING[action]))
+        or ("%d to %s"):format(included, action))
     local ignoredN = PGM:BulkIgnoredCount(action)
     p.ignored:SetText(ignoredN > 0 and (ignoredN .. " left alone") or "")
     p.clearIgnored:SetShown(ignoredN > 0 and not running)
@@ -723,10 +701,10 @@ local function refresh(p)
     else
         p.status:SetText(allowed[action]
             and (included > 0 and "Each press of the button or hotkey does the next batch." or "")
-            or ("Your rank can't %s."):format(VERB_ING[action]))
+            or ("Your rank can't %s."):format(action))
         p.stop:Hide()
         p.start:Show()
-        p.start:SetLabel(("Start: %s %d"):format(VERB_ING[action], included))
+        p.start:SetLabel(("Start: %s %d"):format(action, included))
         p.start:SetEnabled(allowed[action] and included > 0)
         p.start:SetAlpha((allowed[action] and included > 0) and 1 or 0.5)
     end

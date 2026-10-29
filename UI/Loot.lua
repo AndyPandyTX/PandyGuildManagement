@@ -21,11 +21,19 @@ local state = {
 
 local WHEN = { { "all", "All time" }, { "week", "This week" }, { "month", "Last 4 weeks" }, { "3m", "Last 3 months" } }
 local KIND = { { "raid", "Raids" }, { "mplus", "Mythic+" }, { "all", "Raids + M+" } }
-local DIFF = { { nil, "Any difficulty" }, { 17, "LFR" }, { 14, "Normal" }, { 15, "Heroic" }, { 16, "Mythic" } }
+-- Raid difficulties, by label (Loot.lua's PGM.LootDiff): Normal, Heroic...
+-- on retail, sizes on WoW Forever.
+local function diffList()
+    local out = { { nil, "Any difficulty" } }
+    for _, label in ipairs(PGM.LootDiffLabels()) do out[#out + 1] = { label, label } end
+    return out
+end
+local function diffOf(rec)
+    return PGM.LootDiff(rec.diff)
+end
 local ITYPE = { { nil, "Any item" }, { "token", "Tier tokens" }, { "weapon", "Weapons" }, { "trinket", "Trinkets" },
     { "jewelry", "Rings and necks" }, { "armor", "Armor" }, { "other", "Other" } }
 local HOW = { { nil, "Drops + bonus" }, { "drop", "Drops only" }, { "bonus", "Bonus only" } }
-local SHORT_DIFF = { [17] = "LFR", [14] = "N", [15] = "H", [16] = "M" }
 
 local function labelOf(list, value)
     for _, o in ipairs(list) do
@@ -202,7 +210,11 @@ end
 
 -- Every boss with loot here: key -> { name, tier, raid, kind }. A boss's
 -- raid is its tier's raid, or the place its loot was recorded most.
+-- Kept until the loot changes: the Boss button's label asks on every refresh.
+local bossCache
+PGM:On("LOOT", function() bossCache = nil end)
 local function bossesWithLoot()
+    if bossCache then return bossCache end
     local out, places = {}, {}
     for _, rec in ipairs(PGM:LootItems()) do
         local key = bossKey(rec)
@@ -225,6 +237,7 @@ local function bossesWithLoot()
             b.raid = best or "Other"
         end
     end
+    bossCache = out
     return out
 end
 
@@ -319,8 +332,6 @@ end
 -- ---- sorting ----
 -- Each column's sort key, and the way it sorts first (the rest A to Z).
 
-local DIFF_RANK = { [17] = 1, [14] = 2, [15] = 3, [16] = 4 }
-
 local function bossText(rec)
     if rec.kind == "mplus" then return rec.where or rec.boss or "Mythic+" end
     return rec.boss or "?"
@@ -329,7 +340,10 @@ end
 local ITEM_KEY = {
     date = function(r) return r.t or 0 end,
     boss = function(r) return PGM.SortKey(bossText(r)) end,
-    diff = function(r) return r.kind == "mplus" and 5 or (DIFF_RANK[r.diff] or 0) end,
+    diff = function(r)
+        local d = diffOf(r)
+        return r.kind == "mplus" and 5 or (d and d[3] or 0)
+    end,
     who = function(r) return PGM.SortKey(r.who) end,
     -- Names not loaded yet go last; they move up when the game sends them.
     item = function(r) return PGM.SortKey(itemName(r) or "\255") end,
@@ -389,7 +403,7 @@ local function filtered()
     for _, rec in ipairs(PGM:LootItems()) do
         local ok = inWindow(rec.t)
             and (state.kind == "all" or rec.kind == state.kind)
-            and (not state.diff or rec.diff == state.diff)
+            and (not state.diff or (diffOf(rec) or {})[1] == state.diff)
             and (not state.how or (state.how == "bonus") == (rec.how == "bonus"))
             and bossMatches(rec, state.boss)
             and (not state.itype or PGM.LootType(rec.id) == state.itype)
@@ -432,7 +446,8 @@ local function byPlayer(items)
     local inWindow = windowTest()
     for _, it in ipairs(order) do
         if it.guid and g then
-            local group = PGM:GroupOf(it.guid)
+            -- The whole player with alts as their main; else just this character.
+            local group = state.altsAsMain and PGM:GroupOf(it.guid) or { it.guid }
             local n = 0
             for _, s in ipairs(g.raids and g.raids.sessions or {}) do
                 if inWindow(s.start) and (not state.team or s.team == state.team) then
@@ -534,7 +549,8 @@ local function itemUpdate(r, rec)
     r.date:SetText(date("%b %d", rec.t))
     -- M+ shows the dungeon; a raid, the boss.
     r.boss:SetText(bossText(rec))
-    r.diff:SetText(rec.kind == "mplus" and "M+" or (SHORT_DIFF[rec.diff] or ""))
+    local d = diffOf(rec)
+    r.diff:SetText(rec.kind == "mplus" and "M+" or (d and d[2] or ""))
     r.who:SetText(whoText(rec.who, rec.class))
     r.item:SetText(itemText(rec))
     local how = PGM.LOOT_HOW_LABEL[rec.how] or rec.how or ""
@@ -661,7 +677,8 @@ end
 local function exportMenu(owner, p)
     W.Menu(owner, "Export what's showing", {
         { "PGM text (for another player's PGM)", function()
-            UI:ShowExport("Loot export: paste into Import on another PGM", PGM:LootExportText(p.items or {}))
+            UI:ShowExport("Loot export: paste into Import on another PGM", PGM:LootExportText(p.items or {}),
+                "paste it into Import on the Loot page of another copy")
         end },
         { "CSV (for a spreadsheet)", function()
             UI:ShowExport("Loot CSV", PGM:LootCSV(p.items or {}))
@@ -751,7 +768,7 @@ local function build(p)
         menuButton(p, 92, "Raids or M+", KIND, "kind", function() state.boss = nil end),
         menuButton(p, 104, "Team", teamList, "team"),
         menuButton(p, 120, "Boss", nil, "boss", nil, { menu = bossMenu, label = bossLabel }),
-        menuButton(p, 100, "Difficulty", DIFF, "diff"),
+        menuButton(p, 100, "Difficulty", diffList, "diff"),
         menuButton(p, 100, "Item type", ITYPE, "itype"),
         menuButton(p, 104, "Drops or bonus rolls", HOW, "how"),
     }

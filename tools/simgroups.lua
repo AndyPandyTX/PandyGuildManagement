@@ -149,8 +149,8 @@ local RIO = {
 -- ---------- a client ----------
 local PGM_FILES = { "Core.lua", "Club.lua", "Roster.lua", "GuildEvents.lua", "Alts.lua", "Attendance.lua", "Teams.lua",
                     "Sync.lua", "Grm.lua", "Activity.lua", "Stats.lua", "Progress.lua", "Bulk.lua" }
-local GROUP_FILES = { "Core.lua", "Keystone.lua", "Status.lua", "Posts.lua", "GroupFinder.lua",
-                      "UI/Common.lua", "UI/Groups.lua", "UI/Free.lua", "UI/Keys.lua" }
+local GROUP_FILES = { "Core.lua", "Keystone.lua", "Status.lua", "Posts.lua", "GroupFinder.lua", "Chat.lua",
+                      "UI/Common.lua", "UI/Groups.lua", "UI/Free.lua", "UI/Chat.lua", "UI/Keys.lua" }
 
 local function newClient(guid, name, class, specRole)
     local frames = {}
@@ -391,6 +391,25 @@ local function newClient(guid, name, class, specRole)
         Hide = function() end,
     }
 
+    if FOREVER then
+        -- WoW Forever: no Mythic+, keys or RaiderIO, the vanilla-style Group
+        -- Finder (no LFGListFrame or PVEFrame), and its own category ids.
+        env.GetBuildInfo = function() return "1.60.1", "70000", "", 16001 end
+        env.GetMaxLevelForPlayerExpansion = function() return 60 end
+        env.UnitLevel = function() return 60 end
+        env.C_MythicPlus, env.C_ChallengeMode, env.RaiderIO = nil, nil, nil
+        env.LFGListFrame, env.PVEFrame_ShowFrame = nil, nil
+        env.LFGListSearchEntry_Update = nil
+        env.ToggleLFGParentFrame = function() st.finder[#st.finder + 1] = "LFGParentFrame" end
+        local CATS = { [2] = "Dungeons", [114] = "Raids", [116] = "Quests & Zones", [120] = "Custom" }
+        env.C_LFGList.GetAvailableCategories = function() return { 2, 114, 116, 120 } end
+        env.C_LFGList.GetLfgCategoryInfo = function(id) return CATS[id] and { name = CATS[id] } end
+        env.C_LFGList.GetActivityInfoTable = function(id)
+            if id == 1 then return { fullName = "Stratholme", maxNumPlayers = 5, categoryID = 2 } end
+            if id == 2 then return { fullName = "Onyxia's Lair (40)", maxNumPlayers = 40, categoryID = 114 } end
+        end
+    end
+
     -- PGM itself (the non-UI files), its window stood in for, then Groups.
     local NS = {}
     for _, f in ipairs(PGM_FILES) do
@@ -450,6 +469,151 @@ local B = newClient(gid(22), "Funkyshade", "PRIEST", "HEALER")    -- healer
 local C = newClient(gid(13), "Codiex", "DEMONHUNTER", "DAMAGER")  -- dps
 A.st.key = { map = 501, level = 12 }
 run(90)
+
+if FOREVER then
+    print("-- WoW Forever")
+    local G = A.G
+    check(A.PGM.IS_FOREVER, "detects WoW Forever")
+    check(table.concat(G.KINDS, "") == "MRO" and G.KIND_LABEL.M == "Dungeon", "dungeons, raids and other; no delves")
+    local n40 = G.KindNeed("R", 40)
+    check(n40.T .. "/" .. n40.H .. "/" .. n40.D == "4/8/28", "a 40-player raid wants 4 tanks and 8 healers")
+    check(#B.G:KeyList() == 0, "no keystones go out")
+    check(A.PGM.UI.tabs.keys.hidden() == true, "no Keystones tab")
+    check(G.ScoreText(B.G.RecByName("Funkyshade")) == nil and G.ScoreLine({}) == "", "no M+ scores")
+
+    print("-- a dungeon post")
+    local p = A.G:Post({ kind = "M", what = "Stratholme", level = "", size = 5, need = { T = 0, H = 1, D = 3 } })
+    run(10)
+    local seen = firstPost(B, "M")
+    check(p and seen and B.G.PostTitle(seen) == "Stratholme", "titled by the dungeon, no key level")
+    check(said(B, "needs a") and not said(B, "M+ score"), "pings with no score")
+    B.G:Ask(seen.id, "H", "hi")
+    run(10)
+    check(said(A, "asks to join") and not said(A, "No M+ score"), "the ask comes in without a score")
+    A.G:CloseMine("c")
+    run(10)
+
+    print("-- an Onyxia listing")
+    A.st.lfg.activity, A.st.lfg.listed = 2, true
+    A.fire("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+    run(10)
+    local m = A.G.mine
+    check(m and m.kind == "R" and m.size == 40 and A.G.PostTitle(m) == "Onyxia's Lair", "a raid, 40, no difficulty from the (40)")
+    check(m and (m.need.T + m.need.H + m.need.D) == 39, "needs the other 39")
+    A.st.lfg.listed = false
+    A.fire("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+    run(10)
+
+    print("-- searching Looking for Group")
+    local L = C.st.lfg
+    L.order = { 201, 202 }
+    L.results[201] = { activityIDs = { 1 }, name = "strat live", leaderName = "Stranger-Other", numMembers = 2, age = 60 }
+    L.counts[201] = { TANK = 1, HEALER = 0, DAMAGER = 1 }
+    L.players[201] = { { classFilename = "WARRIOR", assignedRole = "TANK", isLeader = true }, { classFilename = "MAGE", assignedRole = "DAMAGER" } }
+    L.results[202] = { activityIDs = { 2 }, name = "ony", leaderName = "Raidlead-Other", numMembers = 12, age = 60 }
+    L.counts[202] = { TANK = 2, HEALER = 3, DAMAGER = 7 }
+    check(C.G:SearchFinder("R") and L.searches[#L.searches]:match("^114:"), "searches Forever's raid category")
+    C.fire("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+    run(1)
+    local r = {}
+    for _, x in ipairs(C.G:FinderResults()) do r[x.id] = x end
+    check(r[201] and r[201].kind == "M" and r[201].level == "", "a dungeon listing counts as a dungeon")
+    check(r[202] and r[202].kind == "R" and r[202].level == "" and r[202].need.T == 2 and r[202].need.H == 5, "a raid's needs follow its size")
+    check(board(C, "M"):find("Stratholme", 1, true), "dungeons show on the board")
+    check(not r[201].lust, "no Bloodlust in Classic")
+
+    C.G:FindPugs()
+    check(C.st.finder[#C.st.finder] == "LFGParentFrame", "Find PuGs opens Looking for Group")
+
+    print("-- LFG chat: reading a line")
+    local read = C.G.ReadChatLine
+    local function places(t) local x = read(t) return x and (x.kind .. ":" .. table.concat(x.places, ",") .. ":" .. x.roles) or "nil" end
+    check(places("LFM Strat UD need heals") == "M:strat:H", "LFM, the dungeon and the role")
+    check(places("LFG DM east, rogue 56") == "G:diremaul:", "DM east is Dire Maul, not the Deadmines")
+    check(places("lf1m tank DM then SFK") == "M:dm,sfk:T", "DM alone is the Deadmines; two dungeons, lowest first")
+    check(places("LFM SM cath 2 dps") == "M:sm:D", "a Scarlet Monastery wing")
+    check(places("LF2M elite quests in STV") == "M::", "a group for no dungeon")
+    check(places("Krol'dok run, need tank") == "M:kroldok:T", "a new dungeon, and a role without LFM")
+    check(places("LFM Hyjal 20 man, all welcome") == "M:hyjal:", "a raid")
+    check(places("WTS |cff1eff00|Hitem:12360::::::::60:::::|h[Arcanite Bar]|h|r cheap") == "T::", "trade, through an item link")
+    check(places("LF enchanter for crusader") == "T::", "looking for a crafter is trade")
+    check(read("anyone know where hogger is?") == nil and read("going to strat later lol") == nil, "just talk is skipped")
+    local talk = { "I need a summon to org", "anyone need help with quests?", "need someone to open a lockbox",
+                   "need a heal at the graveyard", "what is the best spec to tank sm" }
+    local quiet = true
+    for _, t in ipairs(talk) do
+        if read(t) ~= nil then quiet = false print("  read as a group: " .. t) end
+    end
+    check(quiet, "a bare need, or a place and a role in passing, is just talk")
+    check(places("LF tank for strat, dm me") == "M:strat:T", "dm me is a message, not the Deadmines")
+    check(places("LFG, need SM gy") == "G:sm:", "the first word that says what it is wins")
+    check(places("LF 2 dps for ZF") == "M:zf:D", "lf, a count, a role")
+    check(places("LF priest for SM") == "M:sm:", "lf a class")
+    check(places("looking for tank") == "M::T" and places("LF 1M BRD") == "M:brd:", "looking for, and LF 1M")
+    check(places("need a tank for BFD") == "M:bfd:T" and places("strat need anyone?") == "M:strat:", "need a player, or need in a line naming a place")
+    check(places("LF strat") == "G:strat:" and places("looking for group") == "G::", "LF a place, and looking for group")
+
+    print("-- LFG chat: the board")
+    local function say(text, who, guid, channel, base)
+        C.fire("CHAT_MSG_CHANNEL", text, who, "", channel or "4. LookingForGroup", "", "", 0, 4, base or "LookingForGroup", 0, 1, guid)
+    end
+    say("LFM strat live need tank", "Bob-Other", "Player-1-0001")
+    say("LFG wc", "Ann-Other", "Player-1-0002")
+    say("WTS mooncloth", "Sal-Other", "Player-1-0003", "2. Trade - City", "Trade - City")
+    say("LFM DM", "Bob-Other", "Player-1-0001")                 -- Bob's newer line replaces his first
+    say("LFM ony", "Me-" .. REALM, gid(13))                       -- my own line
+    C.fire("CHAT_MSG_GUILD", "lfm scholo, need heals", "Funkyshade-" .. REALM, "", "", "", "", 0, 0, "", 0, 1, gid(22))
+    local function heads(rows)
+        local t = {}
+        for _, r in ipairs(rows) do t[#t + 1] = r.head or r.short end
+        return table.concat(t, ",")
+    end
+    local rows = C.G:ChatList(C.G.opt("chat"))
+    check(heads(rows) == "The Deadmines,Bob,Wailing Caverns,Ann,Scholomance,Funkyshade,Trade,Sal",
+        "by dungeon, lowest first, newest line per person, mine left out, trade last")
+    local sal
+    for _, r in ipairs(rows) do if r.short == "Sal" then sal = r end end
+    check(sal and sal.channel == "Trade", "the channel's short name")
+    local fs
+    for _, r in ipairs(rows) do if r.short == "Funkyshade" then fs = r end end
+    check(fs and fs.rec and fs.channel == "Guild", "guild chat counts, and knows the guildie")
+    check(not heads(C.G:ChatList({ lfg = false })):find("Ann", 1, true), "players looking can be hidden")
+    check(heads(C.G:ChatList({ trade = false, dungeons = false })) == "", "dungeons and trade can be hidden")
+    check(heads(C.G:ChatList({ search = "mooncloth" })) == "Trade,Sal", "search")
+    check(heads(C.G:ChatList({ fits = true, trade = false })) == "Scholomance,Funkyshade", "my level: 60 fits Scholomance, not the Deadmines")
+    run(16 * 60)
+    check(#C.G:ChatList({}) == 0, "lines go after 15 minutes")
+    check(A.PGM.UI.tabs.chat ~= nil, "an LFG Chat page")
+
+    print("-- LFG chat: posting your own line")
+    local sent = {}
+    C.env.GetChannelList = function() return 1, "General", false, 2, "Trade", false, 4, "LookingForGroup", false, 5, "World", false end
+    C.env.SendChatMessage = function(text, kind, _, target) sent[#sent + 1] = kind .. ":" .. tostring(target) .. ":" .. text end
+    local cf = C.G.opt("chat")
+    local ok, why = C.G:SendChatPost()
+    check(not ok and why:find("Type", 1, true), "nothing typed, nothing sent")
+    cf.post = "LFM Strat UD, need heals, /w me"
+    check(C.G:ChatPostChannel().name == "LookingForGroup", "LookingForGroup until you pick")
+    cf.channel = "World"
+    check(C.G:SendChatPost() and sent[1] == "CHANNEL:5:LFM Strat UD, need heals, /w me", "sends the saved line to the picked channel")
+    check(not C.G:SendChatPost() and #sent == 1, "a second click straight after doesn't send it twice")
+    run(6)
+    check(C.G:SendChatPost() and #sent == 2 and cf.post ~= "", "and again later; the line stays for next time")
+    C.env.GetChannelList = function() return 1, "General", false end
+    check(C.G:ChatPostChannel() == nil and not C.G:SendChatPost(), "no LookingForGroup or World: pick a channel")
+    C.env.GetChannelList = nil
+
+    print("-- every page and view draws")
+    for _, cl in ipairs({ A, B, C }) do
+        for _, view in ipairs({ "board", "mine", "post" }) do
+            cl.G.UI.ShowView(view)
+            drawPages(cl)
+        end
+    end
+    check(true, "pages build and refresh")
+    print(("\n%d passed, %d failed"):format(passes, failures))
+    return
+end
 
 print("-- login: keys and status")
 local bobKeys = B.G:KeyList()
@@ -909,5 +1073,6 @@ for _, cl in ipairs({ A, B, C }) do
     end
 end
 check(true, "pages build and refresh")
+check(A.PGM.UI.tabs.chat == nil and A.G.ReadChatLine == nil, "no LFG chat on retail")
 
 print(("\n%d passed, %d failed"):format(passes, failures))

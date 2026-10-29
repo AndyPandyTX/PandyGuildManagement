@@ -135,13 +135,7 @@ local function memberUpdate(r, it)
     else
         r.seen:SetText(PGM.AgoText(rec.lastOnline))
     end
-    if it.possible > 0 then
-        local pct = it.present / it.possible
-        local col = pct >= 0.8 and C.jade or (pct >= 0.5 and C.gold or C.red)
-        r.att:SetText(PGM.Hex(col) .. it.present .. "/" .. it.possible .. "|r")
-    else
-        r.att:SetText(PGM.Hex(C.text3) .. "-|r")
-    end
+    r.att:SetText(W.AttendanceText(it.present, it.possible))
     local score = PGM:MPlusScore(rec)
     if PGM.IS_FOREVER then r.mplus:SetText("")
     else r.mplus:SetText(score and (PGM.Hex(PGM:ScoreColor(score)) .. score .. "|r") or (PGM.Hex(C.text3) .. "-|r")) end
@@ -316,13 +310,7 @@ local function build(p)
     end)
     p.sync:SetWidth(120)
     p.sync:SetPoint("LEFT", p.import, "RIGHT", 10, 0)
-    p.sync:HookScript("OnEnter", function(s)
-        GameTooltip:SetOwner(s, "ANCHOR_TOP")
-        GameTooltip:SetText("Keep in sync with notes")
-        GameTooltip:AddLine("Newly tagged members join this team after each roster read. Anyone you remove stays removed.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    p.sync:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    p.sync.tip = "Keep in sync with notes: newly tagged members join this team after each roster read. Anyone you remove stays removed."
 
     -- Shown instead of the edit controls to anyone who isn't an officer.
     p.readOnly = W.FS(d, 11, C.text3)
@@ -416,7 +404,7 @@ local function refresh(p)
         local canEdit = PGM:CanEdit()
         -- A copy still catching up shows no teams only because it hasn't
         -- heard them yet: making some now would duplicate the guild's.
-        local settled = not PGM.SyncSettled or PGM:SyncSettled()
+        local settled = PGM:SyncSettled()
         p.new:SetShown(canEdit and settled)
         p.find:SetShown(canEdit and settled)
         if canEdit and not settled then

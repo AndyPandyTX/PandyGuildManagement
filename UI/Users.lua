@@ -123,7 +123,7 @@ local function refresh(p)
     end
     for _, pl in ipairs(players) do if pl.outdated then outdated = outdated + 1 end end
     p.every:SetActive(state.every)
-    p.title:SetText(("%d %s run Pandy Guild Management (%d %s)"):format(#players,
+    p.title:SetText(("%d %s run " .. PGM.NAME .. " (%d %s)"):format(#players,
         #players == 1 and "player" or "players", chars, chars == 1 and "character" or "characters"))
     p.sub:SetText(("Newest version in the guild: v%s%s. Click a player to see their characters. Copies say hello when their player logs in, so this fills in as people log on.")
         :format(latest, outdated > 0 and (", " .. outdated .. " " .. (outdated == 1 and "player" or "players") .. " on an older one") or ""))

@@ -1,7 +1,7 @@
 -- Core.lua: namespace, saved data, the "G" sync record, and the small
 -- helpers every other file uses.
 --
--- The group finder, part of Pandy Guild Management (PGM) since 0.9.0 and
+-- The group finder, part of Pandy Guild & Groups (PGM) since 0.9.0 and
 -- loaded after all of PGM's files. It was written as a module and still uses
 -- only the functions PGM's README lists as stable: roster, alts, teams,
 -- scores, window and guild sync. All guild traffic is one PGM record letter, "G",
@@ -21,7 +21,7 @@ G.NAME = "Guild group finder"
 G.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 G.PGM = PGM
 
--- Built into Pandy Guild Management (loaded after all of its files), so the
+-- Built into Pandy Guild & Groups (loaded after all of its files), so the
 -- module hooks are always there and the API always matches. Registering only
 -- lists /pgg under /pgm help.
 PGM.RegisterModule({ name = G.NAME, version = G.VERSION, api = 1, slash = "/pgg" })
@@ -47,6 +47,28 @@ G.KIND_SIZE = { M = 5, R = 20, D = 5, O = 5 }
 G.KIND_NEED = { M = { T = 1, H = 1, D = 3 }, R = { T = 2, H = 4, D = 14 }, D = { T = 1, H = 1, D = 3 },
                 O = { T = 1, H = 1, D = 3 } }
 
+-- WoW Forever has no Mythic+ or delves: "M" posts are plain dungeons there
+-- (the wire letter stays, as Forever never talks to retail), and raids go up
+-- to 40.
+if PGM.IS_FOREVER then
+    G.KINDS = { "M", "R", "O" }
+    G.KIND_LABEL.M = "Dungeon"
+    G.KIND_ICON.M = "Interface\\Icons\\INV_Misc_Key_14"
+    G.KIND_SIZE.R = 40
+end
+
+-- The roles a group of this kind and size starts from. On Forever a raid's
+-- scale with its size (a 40 wants 4 tanks and 8 healers); retail keeps the
+-- table above.
+function G.KindNeed(kind, size)
+    local base = G.KIND_NEED[kind] or G.KIND_NEED.O
+    size = tonumber(size)
+    if kind ~= "R" or not PGM.IS_FOREVER or not size or size <= 5 then return base end
+    local t = math.max(1, math.floor(size / 10 + 0.5))
+    local h = math.max(1, math.floor(size / 5 + 0.5))
+    return { T = t, H = h, D = math.max(0, size - t - h) }
+end
+
 -- When the window opens on Groups by itself, each one a choice: listing a
 -- group (on My group), applying to one, and opening Blizzard's Group Finder
 -- to browse (both on Browse).
@@ -55,6 +77,8 @@ G.OPEN_ON = {
     { "apply", "Applying", "Applying to a group (here, in the Group Finder or in OAK) opens Groups on Browse." },
     { "browse", "Browsing", "Opening Blizzard's Group Finder opens Groups on Browse beside it." },
 }
+-- Forever's vanilla-style window has no browse list to open beside.
+if PGM.IS_FOREVER then table.remove(G.OPEN_ON, 3) end
 
 local DEFAULTS = {
     ping = true,
@@ -64,7 +88,7 @@ local DEFAULTS = {
     shareListing = true,    -- post my Group Finder listing to the guild
     openOn = { list = true, apply = true, browse = true },   -- see G.OPEN_ON
     looking = false,        -- "I'm up for a group"
-    lookingKinds = { M = true, R = false, D = true, O = false },
+    lookingKinds = { M = true, R = false, D = not PGM.IS_FOREVER, O = false },
     freeMaxOnly = true,
     freeAddonOnly = false,
     keysSort = "level",
@@ -74,6 +98,10 @@ local DEFAULTS = {
     -- Tell the guild: {key} is the keystone link (or what the group is),
     -- {needs} the roles still open, {name} your character.
     announce = "{key} - needs {needs}. Whisper me to join!",
+    -- LFG chat's filters (WoW Forever only).
+    -- post and channel: the saved line to send, and the channel's name.
+    chat = { dungeons = true, raids = true, other = true, trade = true, lfg = true, fits = false,
+             post = "", channel = "" },
     -- The Groups page's Browse filters (playstyle unset means any).
     board = {
         guildFirst = true, guildOnly = false, scheduled = true, sort = "newest",
@@ -160,27 +188,10 @@ function G.MyName()
     return name .. "-" .. (realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or "")
 end
 
-function G.MyRec()
-    local g = PGM.GuildDB()
-    return g and g.members[PGM:MyGuid() or ""]
-end
-
--- The roster record for "Name-Realm" (or a bare name on our realm).
-local byName
-PGM:On("ROSTER", function() byName = nil end)
+-- The roster record for "Name-Realm" (or a bare name on our realm): PGM's
+-- own lookup, the one sync uses for senders.
 function G.RecByName(name)
-    local g = PGM.GuildDB()
-    if not (g and name) then return nil end
-    if not byName then
-        byName = {}
-        for _, rec in pairs(g.members) do
-            if rec.name then byName[PGM.SyncNorm(rec.name)] = rec end
-        end
-    end
-    if not name:find("-", 1, true) then
-        name = name .. "-" .. ((GetNormalizedRealmName and GetNormalizedRealmName()) or "")
-    end
-    return byName[PGM.SyncNorm(name)]
+    return PGM.RecByName(name)
 end
 
 -- A member's name, and "alt of Main" when we know it.
@@ -253,7 +264,9 @@ end
 
 -- "2650 [D][h]   Main 2900 [T]   Warband 3146 [D]". Main and warband show
 -- only when they're higher than the character's own.
+-- Empty on Forever, which has no scores.
 function G.ScoreLine(s)
+    if PGM.IS_FOREVER then return "" end
     local own = s.char and s.char.score or 0
     local function piece(label, p)
         return (label and (PGM.Hex(PGM.C.text3) .. label .. "|r ") or "")
@@ -268,7 +281,7 @@ end
 
 -- The score line for a guild member.
 function G.ScoreText(rec)
-    if not rec then return nil end
+    if not rec or PGM.IS_FOREVER then return nil end
     return G.ScoreLine(G.Scores(rec.short, rec.realm, PGM:MPlusScore(rec)))
 end
 
@@ -420,7 +433,7 @@ end
 
 function G.WhyNot()
     if not IsInGuild() then return "You're not in a guild." end
-    if PGM.opt("syncEnabled") == false then return "Guild sync is off (Pandy Guild Management > Settings)." end
+    if PGM.opt("syncEnabled") == false then return "Guild sync is off (" .. PGM.NAME .. " > Settings)." end
     return "Addons can't talk to the guild from inside an instance. Try again once you're out."
 end
 
@@ -495,7 +508,10 @@ end
 
 local frame = CreateFrame("Frame")
 local events = {}
+-- An event this client doesn't have (Forever lacks some retail ones) is
+-- skipped, not an error that would stop the file loading.
 function G:RegisterEvent(event, fn)
+    if C_EventUtils and C_EventUtils.IsEventValid and not C_EventUtils.IsEventValid(event) then return end
     if not events[event] then
         events[event] = {}
         frame:RegisterEvent(event)
@@ -594,11 +610,11 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
     local cmd = strtrim((input or ""):lower())
     if cmd == "on" or cmd == "off" then
         G:SetEnabled(cmd == "on")
-        PGM.Print("Guild Groups is " .. (G.IsOn() and "on." or "off. /pgg on turns it back on."))
+        PGM.Print("The group finder is " .. (G.IsOn() and "on." or "off. /pgg on turns it back on."))
         return
     end
     if not G.IsOn() then
-        PGM.Print("Guild Groups is off. /pgg on turns it back on.")
+        PGM.Print("The group finder is off. /pgg on turns it back on.")
         return
     end
     if cmd == "" or cmd == "groups" then
@@ -607,6 +623,8 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
         G.UI.ShowView(cmd == "post" and "post" or "mine")
     elseif cmd == "free" or cmd == "who" then
         PGM.UI:Show("free")
+    elseif (cmd == "keys" or cmd == "key" or cmd == "list") and PGM.IS_FOREVER then
+        PGM.Print("WoW Forever has no Mythic+ keystones.")
     elseif cmd == "keys" or cmd == "key" then
         PGM.UI:Show("keys")
     elseif cmd == "close" and G.CloseMine then
@@ -616,14 +634,14 @@ SlashCmdList.PANDYGUILDGROUPS = function(input)
     elseif cmd == "list" then
         G:ListMyKey()
     else
-        PGM.Print("Guild Groups v" .. G.VERSION .. ":")
+        PGM.Print("Group finder (" .. PGM.NAME .. " v" .. G.VERSION .. "):")
         PGM.Print("  /pgg - guild groups")
         PGM.Print("  /pgg on | off - switch the group finder on or off")
         PGM.Print("  /pgg mine | post - your group, or the post form")
         PGM.Print("  /pgg free - who's free")
-        PGM.Print("  /pgg keys - everyone's keystone")
+        if not PGM.IS_FOREVER then PGM.Print("  /pgg keys - everyone's keystone") end
         PGM.Print("  /pgg close - close your post")
         PGM.Print("  /pgg tell - tell guild chat about your group")
-        PGM.Print("  /pgg list - list your keystone in the Group Finder")
+        if not PGM.IS_FOREVER then PGM.Print("  /pgg list - list your keystone in the Group Finder") end
     end
 end

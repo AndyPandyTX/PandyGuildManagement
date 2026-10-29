@@ -48,7 +48,7 @@
 --   W Y Z                                           play-time hours (Activity.lua)
 --
 -- MODULES: the letters above are the core's. Modules claim one of their own
--- with PGM.SyncRegister: G is Pandy Guild Groups', and F I L N Q U X are
+-- with PGM.SyncRegister: G is the group finder's (Groups\), and F I L N Q U X are
 -- kept free for others. A module's records aren't officer-only and aren't
 -- kept at logout, so each module checks its own senders.
 
@@ -66,8 +66,8 @@ local HELLO_EVERY = 20 * 60
 local MAX_DUMP_RAIDS = 30   -- a first-time catch-up brings this many recent raid nights
 local GONE_KEEP = 90 * 86400   -- how long a deleted night is remembered by raid and time
 
-local Sync = { queue = {}, sent = 0, recv = 0, applied = 0, officers = {}, helloAt = 0, tries = {},
-               offerTimers = {}, offered = {}, dumped = {}, overheard = {} }
+local Sync = { queue = {}, officers = {}, helloAt = 0, tries = {},
+               offerTimers = {}, offered = {}, dumped = {}, overheard = {}, catchUp = {} }
 PGM.Sync = Sync
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -81,7 +81,9 @@ end
 local function store()
     local g = PGM.GuildDB(true)
     if not g then return nil end
-    g.sync = g.sync or {}
+    -- A store made now has nothing from before 0.7.1 to re-share (see the
+    -- one-time resend at login).
+    g.sync = g.sync or { resent071 = true }
     local s = g.sync
     -- Two different "how current": `newest` is the newest record we hold
     -- (it decides whether we can offer someone a catch-up); `caught` is how
@@ -181,6 +183,8 @@ local function senderRec(sender)
     end
     return byName[norm(sender)]
 end
+-- For the rest of the addon (the group finder, LFG chat): a member by name.
+PGM.RecByName = senderRec
 
 -- ============================================================
 -- OFFICERS
@@ -252,8 +256,8 @@ local function pump()
     local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, "GUILD")
     local R = Enum and Enum.SendAddonMessageResult or {}
     if ok and (result == nil or result == true or result == 0 or result == R.Success) then
-        Sync.sent = Sync.sent + 1
         Sync.tries[msg] = nil
+        Sync.catchUp[msg] = nil
         return
     end
     -- A malformed record will never go; anything else (the allowance ran
@@ -270,6 +274,10 @@ local function pump()
     table.insert(q, 1, msg)
 end
 
+-- True while a catch-up for someone else is being queued (see dump): those
+-- records are noted in Sync.catchUp, so they aren't kept at logout.
+local dumping = false
+
 local function enqueue(msg, bulk)
     if not enabled() then return end
     if #msg > 255 then
@@ -278,6 +286,7 @@ local function enqueue(msg, bulk)
     end
     local q = bulk and Sync.bulk or Sync.queue
     q[#q + 1] = msg
+    if dumping then Sync.catchUp[msg] = true end
     if not ticker then
         ticker = C_Timer.NewTicker(SEND_GAP, pump)
         pump()
@@ -291,9 +300,7 @@ function PGM.SyncSend(bulk, ...)
     enqueue(table.concat({ ... }, SEP), bulk)
 end
 PGM.SyncNorm = norm
-function PGM.SyncIsMe(name)
-    return norm(name) == norm(myFullName())
-end
+PGM.SyncIsMe = isMe
 
 local function send(...)
     enqueue(table.concat({ ... }, SEP), bulkMode)
@@ -411,13 +418,6 @@ local function sendRaid(s)
     if #batch > 0 then send("1P", s.id, table.concat(batch, ",")) end
 end
 
-local function teamById(id)
-    local g = PGM.GuildDB()
-    for _, t in ipairs(g and g.teams or {}) do
-        if t.id == id then return t end
-    end
-end
-
 -- ---- what the rest of the addon calls when an officer changes something ----
 
 function PGM:SyncTeam(t)
@@ -444,9 +444,9 @@ end
 function PGM:SyncTeamDeleted(id, teamU)
     local _, s = store()
     if not s then return end
-    local t = teamById(id)
-    -- Past the team's last stamp (passed in: the team may be gone already),
-    -- or receivers that have it newer would ignore the delete.
+    local t = PGM:TeamById(id)
+    -- Past the team's last stamp (passed in: the team may be gone already).
+    -- A delete wins over any edit, older or newer, so every copy agrees.
     local now = PGM.Stamp(math.max(teamU or 0, t and t.u or 0))
     s.teamDel[id] = now
     mine(now)
@@ -596,7 +596,7 @@ PGM.SyncNow = sendHello
 local function dump(target, since)
     local g, s = store()
     if not g then return end
-    bulkMode = true
+    bulkMode, dumping = true, true
     local n = 0
     if (s.cfgU or 0) > since then send("1C", s.cfgU, s.officerRank or "") n = n + 1 end
     for _, t in ipairs(g.teams or {}) do
@@ -655,7 +655,7 @@ local function dump(target, since)
     end
     sendPacked("1B", claims, true)
     send("1E", target, n, s.newest)   -- bulk too, so it arrives after what it follows
-    bulkMode = false
+    bulkMode, dumping = false, false
 end
 
 -- ============================================================
@@ -676,7 +676,6 @@ local function changed(what)
 end
 
 local function applied(u)
-    Sync.applied = Sync.applied + 1
     Sync.lastApplied = PGM.Now()
     bump(u)
 end
@@ -685,7 +684,7 @@ end
 local function ensureTeam(id)
     local g, s = store()
     if not g or (s.teamDel[id]) then return nil end
-    local t = teamById(id)
+    local t = PGM:TeamById(id)
     if not t then
         g.teams = g.teams or {}
         t = { id = id, name = "Raid team", schedule = "", tags = "", members = {}, removed = {}, u = 0 }
@@ -757,7 +756,9 @@ end
 function handlers.T(f)
     local id, u = f[2], clampU(f[3])
     local _, s = store()
-    if not (id and u) or (s.teamDel[id] or 0) >= u then return end
+    -- A deleted team stays deleted: an edit made elsewhere at the same time
+    -- (even a newer one) doesn't bring it back.
+    if not (id and u) or s.teamDel[id] then return end
     local t = ensureTeam(id)
     if t and u > (t.u or 0) then
         t.u, t.name, t.schedule, t.tags = u, f[4] ~= "" and f[4] or t.name, f[5] or "", f[6] or ""
@@ -773,8 +774,8 @@ function handlers.K(f)
     local id, u = f[2], clampU(f[3])
     local g, s = store()
     if not (id and u) or (s.teamDel[id] or 0) >= u then return end
-    local t = teamById(id)
-    if t and (t.u or 0) > u then return end   -- recreated after that deletion
+    -- Gone whatever its own stamp: a newer local edit doesn't keep it, or
+    -- this copy would keep a team nobody else has (see handlers.T).
     s.teamDel[id] = u
     for i, tt in ipairs(g.teams or {}) do
         if tt.id == id then table.remove(g.teams, i) break end
@@ -931,7 +932,9 @@ function handlers.D(f)
                     leaders = leadersOf(f[8]) }
     local r = findRaid(id, night, true)
     PGM:RememberGoneNight(r or night, u)
-    if r and (r.u or 0) <= u then
+    -- Gone whatever its own stamp, as handlers.S drops a gone night whatever
+    -- its stamp: a delete wins, so every copy agrees.
+    if r then
         for i, x in ipairs(g.raids.sessions) do
             if x == r then table.remove(g.raids.sessions, i) break end
         end
@@ -968,7 +971,6 @@ function handlers.B(f, sender, rec)
             and g.members[guid] and g.members[main] and u > (g.claimU[guid] or 0) then
             g.claims[guid] = main
             g.claimU[guid] = u
-            Sync.applied = Sync.applied + 1
             Sync.lastApplied = PGM.Now()
             changed("ROSTER")
         end
@@ -1042,11 +1044,11 @@ function handlers.H(f, sender, rec)
     if PGM:CanEdit() and s.newest > theirs and key ~= "" then
         local pending = Sync.offerTimers[key]
         if pending then pending.timer:Cancel() end
-        local mine = s.newest
-        Sync.offerTimers[key] = { newest = mine, timer = C_Timer.NewTimer(1 + math.random() * 4, function()
+        local have = s.newest
+        Sync.offerTimers[key] = { newest = have, timer = C_Timer.NewTimer(1 + math.random() * 4, function()
             Sync.offerTimers[key] = nil
             Sync.offered[key] = GetTime()
-            send("1O", sender, mine)
+            send("1O", sender, have)
         end) }
     end
 end
@@ -1129,8 +1131,6 @@ function handlers.E(f, sender, rec)
             s.caught = math.max(s.caught or 0, theirs)
             bump(theirs)
         end
-        Sync.lastCatchUp = PGM.Now()
-        Sync.lastFrom = sender
         Sync.awaiting = nil
         Sync.settled = true
         changed("SYNC")
@@ -1151,7 +1151,6 @@ frame:SetScript("OnEvent", function(_, _, prefix, msg, channel, sender)
     if norm(sender) == norm(myFullName()) then return end
     local g = PGM.GuildDB()
     if not (g and g.seeded) then return end
-    Sync.recv = Sync.recv + 1
     local f = { strsplit(SEP, msg) }
     local head = f[1] or ""
     if head:sub(1, 1) ~= "1" then return end   -- a newer protocol than ours
@@ -1246,9 +1245,12 @@ end)
 
 -- Records still waiting to go out when the game closes or reloads (a big
 -- import takes a minute or more to send) are kept and sent next session.
--- Only data records: hellos and catch-up chatter would be stale by then.
--- Seeing a record twice changes nothing, so resending is always safe.
-local KEEP = { T = true, K = true, M = true, A = true, S = true, P = true, D = true, J = true, C = true, B = true }
+-- Only data records (what officers write, plus C and B): hellos would be
+-- stale by then, and a catch-up sent for someone else is theirs, not ours to
+-- send the whole guild again. Seeing a record twice changes nothing, so
+-- resending is always safe.
+local KEEP = { C = true, B = true }
+for kind in pairs(WRITES) do KEEP[kind] = true end
 local MAX_PENDING = 300
 local logout = CreateFrame("Frame")
 logout:RegisterEvent("PLAYER_LOGOUT")
@@ -1265,7 +1267,7 @@ logout:SetScript("OnEvent", function()
     end
     for _, q in ipairs({ Sync.queue, Sync.bulk }) do
         for _, msg in ipairs(q) do
-            if #keep < MAX_PENDING and KEEP[msg:sub(2, 2)] then keep[#keep + 1] = msg end
+            if #keep < MAX_PENDING and KEEP[msg:sub(2, 2)] and not Sync.catchUp[msg] then keep[#keep + 1] = msg end
         end
     end
     g.sync.pending = #keep > 0 and keep or nil
@@ -1337,7 +1339,7 @@ function PGM:NoteVersionSeen(v)
     Sync.newerSeen = v
     if not Sync.toldUpdate then
         Sync.toldUpdate = true
-        PGM.Print(("Pandy Guild Management v%s is out (you have v%s). Update from CurseForge or GitHub.")
+        PGM.Print((PGM.NAME .. " v%s is out (you have v%s). Update from CurseForge or GitHub.")
             :format(v, PGM.VERSION))
     end
     changed("SYNC")

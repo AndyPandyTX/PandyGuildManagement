@@ -1,5 +1,5 @@
--- GuildFrame.lua (UI): quick buttons above Blizzard's Guild & Communities
--- window: open Pandy Guild Management, jump to History, and (for officers)
+-- GuildFrame.lua (UI): quick buttons on Blizzard's Guild & Communities
+-- window: open Pandy Guild & Groups, jump to History, and (for officers)
 -- Bulk Actions. They sit just under the window's bottom-right corner, and
 -- show only while the guild itself is the community being viewed.
 --

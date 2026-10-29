@@ -7,7 +7,7 @@ local UI = PGM.UI
 local W = UI.W
 
 StaticPopupDialogs.PANDYGUILD_RESET = {
-    text = "Forget everything Pandy Guild Management has recorded for this guild (history, alts, notes, raids)?",
+    text = "Forget everything " .. PGM.NAME .. " has recorded for this guild (history, alts, notes, raids)?",
     button1 = YES, button2 = NO,
     OnAccept = function()
         local key = PGM.GuildKey()
@@ -141,7 +141,8 @@ local function build(p)
     p.chatMainsCheck:SetPoint("TOPLEFT", 260, y + 2)
     p.chatMainsCheck:SetWidth(150)
     p.chatMainsCheck.tip = "When a guildie's alt talks, their main shows in front of the line: (Mainname) hi. "
-        .. "Only on your screen. Not during boss fights or Mythic+ runs, when the game hides chat from addons."
+        .. "Only on your screen. Not during boss fights" .. (PGM.IS_FOREVER and "" or " or Mythic+ runs")
+        .. ", when the game hides chat from addons."
     y = y - 26
     p.mainText = W.FS(p, 12, C.text2)
     p.mainText:SetPoint("TOPLEFT", 4, y)
@@ -161,12 +162,16 @@ local function build(p)
     local reset = W.Button(p, "Reset this guild's data", 180, 22, C.red)
     reset:SetPoint("TOPLEFT", 4, y)
     reset:SetScript("OnClick", function() StaticPopup_Show("PANDYGUILD_RESET") end)
+    local discord = W.Button(p, "Discord", 90, 22)
+    discord:SetPoint("LEFT", reset, "RIGHT", 8, 0)
+    discord.tip = "Bugs, ideas and help: our Discord. Opens the invite link to copy."
+    discord:SetScript("OnClick", function() UI:ShowDiscord() end)
     local about = W.FS(p, 11, C.text3)
     about:SetPoint("TOPLEFT", 4, y - 34)
     about:SetWidth(380)
     about:SetWordWrap(true)
-    about:SetText("Pandy Guild Management v" .. PGM.VERSION .. ". Shared with the guild: raid teams, raid nights, alt links. "
-        .. "Never shared: private notes, settings.")
+    about:SetText(PGM.NAME .. " v" .. PGM.VERSION .. ". Shared with the guild: raid teams, raid nights, alt links. "
+        .. "Never shared: private notes, settings. Bugs or ideas? Join the Discord (/pgm discord).")
 
     -- Right column: guild sync.
     local X = 420
@@ -185,7 +190,7 @@ local function build(p)
     now:SetPoint("TOPLEFT", X + 210, -94)
     now.tip = "Ask officers who are online for anything you're missing."
     now:SetScript("OnClick", function()
-        if PGM.SyncNow then PGM.SyncNow() end
+        PGM.SyncNow()
         PGM.Print("Asked online officers for anything new.")
     end)
 
@@ -212,7 +217,7 @@ local function build(p)
         local v = (cur or -1) + delta
         if v < -1 then v = -1 end
         if v > numRanks - 1 then v = numRanks - 1 end
-        if PGM.SyncOfficerRank then PGM:SyncOfficerRank(v >= 0 and v or nil) end
+        PGM:SyncOfficerRank(v >= 0 and v or nil)
         PGM:Fire("ROSTER")
     end
     p.cutMinus:SetScript("OnClick", function() stepCut(-1) end)
@@ -242,9 +247,8 @@ local function build(p)
     -- sidebar and it stops sending and listening.
     heading(p, "Group finder", 0):SetPoint("TOPLEFT", X, -444)
     p.groupsCheck = W.Check(p, "Use the guild group finder",
-        function() return PandyGuildGroups and PandyGuildGroups:IsEnabled() end,
+        function() return PandyGuildGroups:IsEnabled() end,
         function(v)
-            if not PandyGuildGroups then return end
             PandyGuildGroups:SetEnabled(v)   -- rebuilds the sidebar
             UI:Refresh()
         end)
@@ -254,15 +258,14 @@ local function build(p)
     p.groupsNote:SetPoint("TOPLEFT", X, -492)
     p.groupsNote:SetWidth(310)
     p.groupsNote:SetWordWrap(true)
-    p.groupsNote:SetText("Groups, Who's Free and Keystones. Off hides them and stops all group finder messages. Also /pgg on | off.")
+    p.groupsNote:SetText((PGM.IS_FOREVER and "Groups, Who's Free and LFG Chat." or "Groups, Who's Free and Keystones.")
+        .. " Off hides them and stops all group finder messages. Also /pgg on | off.")
     -- What makes the window open on Groups by itself (also on Post a group).
-    if PandyGuildGroups and PandyGuildGroups.UI then
-        p.openLabel = W.FS(p, 12, C.text)
-        p.openLabel:SetPoint("TOPLEFT", X, -534)
-        p.openLabel:SetText("Pop up on")
-        p.openChips = PandyGuildGroups.UI.OpenOnChips(p)
-        p.openChips[1]:SetPoint("TOPLEFT", X + 76, -530)
-    end
+    p.openLabel = W.FS(p, 12, C.text)
+    p.openLabel:SetPoint("TOPLEFT", X, -534)
+    p.openLabel:SetText("Pop up on")
+    p.openChips = PandyGuildGroups.UI.OpenOnChips(p)
+    p.openChips[1]:SetPoint("TOPLEFT", X + 76, -530)
 
     p.grmButton:SetScript("OnClick", function()
         local res, err = PGM:ImportGRM()
@@ -287,19 +290,18 @@ local function refresh(p)
     -- Guild sync status.
     local g = PGM.GuildDB()
     local S = PGM.Sync or {}
-    local me = g and g.members[PGM:MyGuid() or ""]
     local lines = {}
     if PGM.opt("syncEnabled") == false then
         lines[#lines + 1] = PGM.Hex(C.amber) .. "Off.|r Nothing is sent or received."
     else
-        local peers = PGM.SyncPeers and PGM:SyncPeers() or 0
+        local peers = PGM:SyncPeers()
         lines[#lines + 1] = PGM.Hex(C.jade) .. "On.|r " .. (peers > 0
             and ("Heard from %d officer%s this hour."):format(peers, peers == 1 and "" or "s")
             or "No officers with the addon heard from yet.")
         if S.lastApplied then
             lines[#lines + 1] = "Last shared change: " .. PGM.AgoText(S.lastApplied) .. "."
         end
-        local waiting = PGM.SyncQueued and PGM:SyncQueued() or 0
+        local waiting = PGM:SyncQueued()
         if waiting > 0 then
             lines[#lines + 1] = ("%d message%s waiting to send%s."):format(waiting, waiting == 1 and "" or "s",
                 IsInInstance() and " (after you leave this instance)" or "")
@@ -329,15 +331,12 @@ local function refresh(p)
     end
     p.grmText:SetText(table.concat(grmLines, "\n"))
     p.grmButton:SetShown(grmReady)
-    p.groupsCheck:SetShown(PandyGuildGroups ~= nil)
     p.groupsCheck:Sync()
-    if p.openChips then
-        local on = PandyGuildGroups:IsEnabled()
-        p.openLabel:SetShown(on)
-        p.openChips:SetShown(on)
-        if on then p.openChips:Sync() end
-    end
-    p.minimapCheck:SetShown(PGM.HasMinimapButton ~= nil and PGM:HasMinimapButton())
+    local on = PandyGuildGroups:IsEnabled()
+    p.openLabel:SetShown(on)
+    p.openChips:SetShown(on)
+    if on then p.openChips:Sync() end
+    p.minimapCheck:SetShown(PGM:HasMinimapButton())
     p.minimapCheck:Sync()
 
     local cut = g and g.sync and g.sync.officerRank

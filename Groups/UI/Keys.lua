@@ -182,5 +182,6 @@ function G.UI.KeyRows()
     return list
 end
 
-UI:AddTab({ id = "keys", label = "Keystones", build = build, refresh = refresh, module = true, hidden = GU.Hidden,
+UI:AddTab({ id = "keys", label = "Keystones", build = build, refresh = refresh, module = true,
+            hidden = function() return PGM.IS_FOREVER or GU.Hidden() end,
             icon = "Interface\\Icons\\INV_Relics_Hourglass" })

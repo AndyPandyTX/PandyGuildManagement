@@ -19,6 +19,7 @@ local state = { editing = false }
 
 local WHAT_HINT = { M = "Dungeon", R = "Raid", D = "Delve", O = "What you're doing" }
 local LEVEL_HINT = { M = "Key", R = "N/H/M", D = "Tier", O = "" }
+if PGM.IS_FOREVER then LEVEL_HINT.M, LEVEL_HINT.R = "", "" end
 
 -- ============================================================
 -- THE FORM
@@ -39,7 +40,7 @@ local function defaults(kind)
     form.size:SetText(G.KIND_SIZE[kind])
     local mine = G.SpecRole()
     for _, r in ipairs(G.ROLES) do
-        local n = G.KIND_NEED[kind][r] - (r == mine and 1 or 0)
+        local n = G.KindNeed(kind, G.KIND_SIZE[kind])[r] - (r == mine and 1 or 0)
         form.need[r]:Set(n)
     end
     if kind == "M" then
@@ -343,6 +344,10 @@ local COLS = {
     { "Name", 8, 180 }, { "Roles", 192, 50 }, { "Spec", 246, 84 }, { "ilvl", 334, 36 },
     { "Character", 374, 78 }, { "Main", 456, 78 }, { "Warband", 538, 78 },
 }
+-- Forever has no M+ scores: those three columns stay empty, untitled.
+if PGM.IS_FOREVER then
+    for i = 5, 7 do COLS[i][1] = "" end
+end
 
 -- A spec's name by id, or nil (G.SpecInfo's first result).
 local function specName(id)
@@ -351,6 +356,7 @@ end
 
 -- "3084 [D][h]", in the score's colour, or a dash.
 local function scoreCell(p)
+    if PGM.IS_FOREVER then return "" end
     if not p then return PGM.Hex(C.text3) .. "-|r" end
     return PGM.Hex(PGM:ScoreColor(p.score)) .. p.score .. "|r" .. (p.roles ~= "" and (" " .. p.roles) or "")
 end
@@ -619,8 +625,11 @@ end
 
 local board = {}
 
+-- The saved filters plus the category showing, as a copy: the category
+-- isn't a saved setting.
 local function filters()
-    local f = G.opt("board")
+    local f = {}
+    for k, v in pairs(G.opt("board")) do f[k] = v end
     f.kind = state.cat
     return f
 end
@@ -842,7 +851,7 @@ local function boardUpdate(r, row)
     if title and title ~= "" then
         r.key:SetText(PGM.Hex(C.gold) .. title .. "|r")
     elseif level ~= "" then
-        r.key:SetText(PGM.Hex(C.gold) .. (row.kind == "M" and ("+" .. level) or level) .. "|r")
+        r.key:SetText(PGM.Hex(C.gold) .. ((row.kind == "M" and not PGM.IS_FOREVER) and ("+" .. level) or level) .. "|r")
     else
         r.key:SetText("")
     end
@@ -1030,6 +1039,7 @@ end
 -- The note in the box's place, for when the box can't be here.
 local function searchNoteText()
     local box, home = blizzardBox()
+    if PGM.IS_FOREVER then return "Search by name in the Looking for Group window." end
     if not box then return "Open the Group Finder once to search by key." end
     local parent = box:GetParent()
     if parent ~= home and parent ~= heldIn then return "The Group Finder's search box is in use (OAK?)." end
@@ -1195,6 +1205,10 @@ local function buildPanel(v)
         G.opt("board").minRating = tonumber(s:GetText()) or 0
         UI:Refresh()
     end
+    if PGM.IS_FOREVER then   -- no ratings there
+        ratingLabel:Hide()
+        board.rating:Hide()
+    end
     -- Blizzard's own search box sits here while Browse is open (see
     -- borrowSearchBox): the server searches titles with what's typed in it.
     board.searchHost = CreateFrame("Frame", nil, panel, "BackdropTemplate")
@@ -1224,7 +1238,7 @@ local function buildPanel(v)
         { { "Need tank", "needTank" }, { "Has tank", "hasTank" } },
         { { "Need healer", "needHealer" }, { "Has healer", "hasHealer" } },
         { { "Need DPS", "needDps" }, { "Battle res", "brez" } },
-        { { "Lust", "lust" } },
+        not PGM.IS_FOREVER and { { "Lust", "lust" } } or {},
     }) do
         for i, it in ipairs(pair) do flagCheck(panel, it[1], it[2], x + (i - 1) * 100, y) end
         y = y - 21
@@ -1280,6 +1294,7 @@ local function buildBoard(v)
             UI:Refresh()
         end)
     board.sort:SetPoint("TOPRIGHT", 0, 0)
+    if PGM.IS_FOREVER then board.sort:Hide() end   -- newest is the only sort without ratings
 
     heading("Group Finder", -28)
     board.cats = {}
@@ -1325,7 +1340,7 @@ local function refreshBoard()
     board.searched:SetText(G.searchedAt and ("Searched " .. age(GetTime() - G.searchedAt) .. " ago")
         or "Click a category to search")
 
-    board.searchHint:SetText(state.cat == "M" and "Keys or words, then Enter. 10 also finds 9 and 11; 10-12 is exact."
+    board.searchHint:SetText(PGM.IS_FOREVER and "" or state.cat == "M" and "Keys or words, then Enter. 10 also finds 9 and 11; 10-12 is exact."
         or "Words from the title (a boss, a difficulty...), then Enter.")
     board.dungeonHead:SetText((state.cat == "R" and "Raids" or (state.cat == "D" and "Delves" or "Dungeons")):upper())
     local acts = G:BoardActivities(state.cat)
@@ -1337,7 +1352,8 @@ local function refreshBoard()
     if #rows > 0 then
         board.empty:SetText("")
     elseif not G.resultsAt then
-        board.empty:SetText("No guild groups right now. Click Mythic+, Raids, Delves or Custom to search the Group Finder too.")
+        board.empty:SetText(PGM.IS_FOREVER and "No guild groups right now. Click Dungeons, Raids or Custom to search Looking for Group too."
+            or "No guild groups right now. Click Mythic+, Raids, Delves or Custom to search the Group Finder too.")
     else
         board.empty:SetText("Nothing matches. Turn a filter off, or Refresh.")
     end
@@ -1477,7 +1493,8 @@ local function refresh(p)
         form.share:Sync()
         form.openChips:Sync()
         if not form.announce:HasFocus() then form.announce:SetText(G.opt("announce") or "") end
-        local sample = G:AnnounceText(G.mine or { kind = "M", what = "The Blinding Vale", level = "14",
+        local sample = G:AnnounceText(G.mine or { kind = "M", what = PGM.IS_FOREVER and "Stratholme" or "The Blinding Vale",
+            level = PGM.IS_FOREVER and "" or "14",
             need = { T = 1, H = 0, D = 2 } })
         form.preview:SetText("{key}, {needs} and {name} are filled in. Right now it would say:\n"
             .. PGM.Hex(C.text) .. (sample or "") .. "|r")

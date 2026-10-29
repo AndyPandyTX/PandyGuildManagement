@@ -30,14 +30,18 @@ local function registerSelf()
     if not guid then return end
     local name, realm = UnitFullName("player")
     local _, class = UnitClass("player")
+    -- Right after login the guild may not be known yet: keep the one saved.
+    local old = PandyGuildDB.chars[guid]
+    local guild = PGM.GuildKey() or (IsInGuild() and old and old.guild) or nil
     PandyGuildDB.chars[guid] = {
         name = PGM.Plain(name),
         realm = PGM.Plain(realm) or (GetNormalizedRealmName and GetNormalizedRealmName()),
         class = class,
         level = PGM.Plain(UnitLevel("player")),
-        guild = PGM.GuildKey(),
+        guild = guild,
         t = PGM.Now(),
     }
+    return guild ~= (old and old.guild)
 end
 
 function PGM:MyGuid()
@@ -372,7 +376,9 @@ PGM:On("LOGIN", function()
     -- From saved data, in case the first roster read is a while coming.
     PGM:RebuildAlts()
     -- The guild may not be known for a few seconds after login.
-    C_Timer.After(8, registerSelf)
+    C_Timer.After(8, function()
+        if registerSelf() then PGM:RebuildAlts() end
+    end)
 end)
 
 PGM:RegisterEvent("PLAYER_LEVEL_UP", function() C_Timer.After(1, registerSelf) end)

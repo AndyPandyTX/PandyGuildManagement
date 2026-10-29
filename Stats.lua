@@ -167,14 +167,12 @@ function PGM:ComputeOverview(scope, mainsOnly)
         return a.class < b.class
     end)
 
-    local numRanks = GuildControlGetNumRanks and PGM.Plain(GuildControlGetNumRanks()) or 0
     for ri, n in pairs(rankCount) do
         local name = (ri < 99 and GuildControlGetRankName and PGM.Plain(GuildControlGetRankName(ri + 1))) or nil
         if name == "" then name = nil end
         o.ranks[#o.ranks + 1] = { index = ri, label = name or ("Rank " .. (ri + 1)), count = n, idle = rankIdle[ri] or 0 }
     end
     table.sort(o.ranks, function(a, b) return a.index < b.index end)
-    o.numRanks = numRanks
 
     for z, n in pairs(zoneCount) do o.zones[#o.zones + 1] = { label = z, count = n } end
     table.sort(o.zones, function(a, b)
@@ -223,10 +221,6 @@ function PGM:ComputeOverview(scope, mainsOnly)
 end
 
 -- ============================================================
--- CSV
--- ============================================================
-
--- ============================================================
 -- PROFESSIONS
 -- ============================================================
 -- Counted by player as well as by character: a player is a main and all
@@ -250,10 +244,20 @@ function PGM:PlayersOnline()
     return on
 end
 
+-- A character's skill in profession id (Forever only, see ProfSkill).
+local function skillIn(rec, id)
+    for _, pr in ipairs(rec.prof or {}) do
+        if pr.id == id then return PGM.ProfSkill(pr) end
+    end
+    return nil
+end
+
 -- Per profession id: chars, players, activePlayers (any of their crafting
 -- characters seen in the last PROF_ACTIVE_DAYS days), atMax (characters at
 -- the level cap), onlineChars (the crafting character is on), onlinePlayers
--- (the player is on, on any character), thin.
+-- (the player is on, on any character), thin. On Forever also artisans
+-- (players with Artisan skill on any character) and activeArtisans; thin
+-- then counts active artisans, once any skill is known for it.
 function PGM:ProfessionStats()
     local g = PGM.GuildDB()
     local out = {}
@@ -266,7 +270,7 @@ function PGM:ProfessionStats()
             local e = out[pr.id]
             if not e then
                 e = { id = pr.id, chars = 0, players = 0, activePlayers = 0, atMax = 0,
-                      onlineChars = 0, onlinePlayers = 0 }
+                      onlineChars = 0, onlinePlayers = 0, artisans = 0, activeArtisans = 0 }
                 out[pr.id] = e
                 seenPlayer[pr.id] = {}
             end
@@ -282,13 +286,30 @@ function PGM:ProfessionStats()
                 if online[main] then e.onlinePlayers = e.onlinePlayers + 1 end
             end
             local d = rec.online and 0 or PGM.DaysSince(rec.lastOnline)
-            if not p.active and d and d <= PGM.PROF_ACTIVE_DAYS then
+            local active = d and d <= PGM.PROF_ACTIVE_DAYS
+            if not p.active and active then
                 p.active = true
                 e.activePlayers = e.activePlayers + 1
             end
+            local skill = PGM.ProfSkill(pr)
+            if skill then
+                e.skillKnown = true
+                if skill >= PGM.SKILL_ARTISAN then
+                    if not p.artisan then
+                        p.artisan = true
+                        e.artisans = e.artisans + 1
+                    end
+                    if active and not p.activeArtisan then
+                        p.activeArtisan = true
+                        e.activeArtisans = e.activeArtisans + 1
+                    end
+                end
+            end
         end
     end
-    for _, e in pairs(out) do e.thin = e.activePlayers <= PGM.PROF_THIN end
+    for _, e in pairs(out) do
+        e.thin = (e.skillKnown and e.activeArtisans or e.activePlayers) <= PGM.PROF_THIN
+    end
     return out
 end
 
@@ -305,6 +326,9 @@ function PGM:ProfessionCrafters(id, byPlayer)
     local online = PGM:PlayersOnline()
     local max = PGM.MaxLevel()
     local function better(a, b)   -- is crafting character a a better pick than b?
+        -- On Forever the higher skill first: a low alt can't make the good stuff.
+        local as, bs = skillIn(a, id) or 0, skillIn(b, id) or 0
+        if as ~= bs then return as > bs end
         if (a.online and true or false) ~= (b.online and true or false) then return a.online and true or false end
         local am, bm = (a.level or 0) >= max, (b.level or 0) >= max
         if am ~= bm then return am end
@@ -351,6 +375,10 @@ function PGM:ProfessionCrafters(id, byPlayer)
     return out
 end
 
+-- ============================================================
+-- CSV
+-- ============================================================
+
 local function csv(v)
     v = tostring(v == nil and "" or v)
     if v:find('[,"\n]') then v = '"' .. v:gsub('"', '""') .. '"' end
@@ -370,7 +398,7 @@ function PGM:RosterCSV()
         "M+ score", "Race", "Professions", "Raid teams", "Raids attended", "Raids possible", "Public note", "Officer note" }) }
     local list = {}
     for guid, rec in pairs(g.members) do list[#list + 1] = { guid = guid, rec = rec } end
-    table.sort(list, function(a, b) return (a.rec.name or "") < (b.rec.name or "") end)
+    table.sort(list, function(a, b) return PGM.NameLess(a.rec.name or "", b.rec.name or "") end)
     for _, it in ipairs(list) do
         local rec = it.rec
         local main = PGM:KnownMain(it.guid) and g.members[PGM:KnownMain(it.guid)]

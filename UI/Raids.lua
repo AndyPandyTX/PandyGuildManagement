@@ -20,12 +20,16 @@ StaticPopupDialogs.PANDYGUILD_DELETE_RAID = {
 
 local function presentNames(s)
     local g = PGM.GuildDB()
-    local names = {}
+    local recs, names = {}, {}
     for guid in pairs(s.present) do
-        local rec = g.members[guid] or g.former[guid]
-        names[#names + 1] = rec and PGM.ColorName(rec) or "?"
+        recs[#recs + 1] = g.members[guid] or g.former[guid] or false
     end
-    table.sort(names)
+    -- By name: the coloured names would sort by their colour codes.
+    table.sort(recs, function(a, b)
+        if not a or not b then return b == false and a ~= false end
+        return PGM.NameLess(a.short, b.short)
+    end)
+    for i, rec in ipairs(recs) do names[i] = rec and PGM.ColorName(rec) or "?" end
     return names
 end
 
@@ -184,7 +188,8 @@ local function refresh(p)
         end
         chip.value = o[1]
         -- Long team names are shortened so the row fits.
-        local label = #o[2] > 18 and (o[2]:sub(1, 16) .. "...") or o[2]
+        -- Cut on a whole character: a name can have accents.
+        local label = #o[2] > 18 and (o[2]:sub(1, 16):gsub("[\192-\255][\128-\191]*$", "") .. "...") or o[2]
         chip:SetLabel(label)
         chip:SetWidth(chip.fs:GetStringWidth() + 22)
         chip:SetActive((state.team or false) == o[1])

@@ -158,7 +158,11 @@ local function mergeHour(key, peak, avg10, samples, ids)
         end
     end
     h.m = fromSet(set)
-    h.p = math.max(h.p or 0, peak)
+    -- No more online at once than were seen on in the hour at all (an hour
+    -- comes in batches, so this rises as the rest of its list arrives).
+    local seen = 0
+    for _ in pairs(set) do seen = seen + 1 end
+    h.p = math.max(h.p or 0, math.min(peak, seen))
     -- The average from whoever watched the hour most closely.
     if (samples or 0) > (h.n or 0) and avg10 then
         h.n = samples
@@ -172,8 +176,8 @@ end
 local handlers = PGM.SyncHandlers or {}
 
 -- Anyone may send these, so keep the numbers possible: no more samples than
--- an hour holds, no more online than the guild has, and an average no
--- higher than the peak. One wild record can't pin an hour's figures.
+-- an hour holds, no more online than the guild has (or than the hour's list
+-- of who was on, see mergeHour), and an average no higher than the peak.
 local MAX_SAMPLES = math.floor(3600 / SAMPLE_EVERY) + 1
 function handlers.W(f)
     local key, peak, avg10, samples = tonumber(f[2]), tonumber(f[3]), tonumber(f[4]), tonumber(f[5])

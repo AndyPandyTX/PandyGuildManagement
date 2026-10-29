@@ -16,6 +16,12 @@ local COLS = {
     { "Name", 6 }, { "Role", 214 }, { "ilvl", 284 }, { "M+", 334 }, { "Keystone", 384 },
     { "Zone", 514 }, { "State", 640 },
 }
+-- Forever has no scores or keys: Zone and State move left into their room.
+local ZONE_X, ZONE_W, STATE_X = 514, 122, 640
+if PGM.IS_FOREVER then
+    ZONE_X, ZONE_W, STATE_X = 334, 250, 590
+    COLS = { { "Name", 6 }, { "Role", 214 }, { "ilvl", 284 }, { "Zone", ZONE_X }, { "State", STATE_X } }
+end
 
 local function buildRow(list)
     local r = W.Row(list)
@@ -30,9 +36,10 @@ local function buildRow(list)
     r.ilvl = cell(284, 46, C.text2)
     r.score = cell(334, 46)
     r.key = cell(384, 126, C.text2)
-    r.zone = cell(514, 122, C.text2)
+    r.zone = cell(ZONE_X, ZONE_W, C.text2)
+    if PGM.IS_FOREVER then r.score:Hide() r.key:Hide() end
     r.state = W.FS(r, 12, C.text)
-    r.state:SetPoint("LEFT", 640, 0)
+    r.state:SetPoint("LEFT", STATE_X, 0)
     r.state:SetPoint("RIGHT", -6, 0)
     r:SetScript("OnClick", function(s, button)
         if button == "RightButton" then UI:MemberMenu(s, s.it.guid) else UI:OpenProfile(s.it.guid) end
@@ -110,7 +117,7 @@ local function refresh(p)
         if counts[it.state] then counts[it.state] = counts[it.state] + 1 end
     end
     p.title:SetText(("Who's free: %d looking, %d free"):format(counts.l, counts.f))
-    p.sub:SetText("Guildies running Pandy Guild Management say when they're free or grouped. Inside an instance they go quiet, and show as busy.")
+    p.sub:SetText("Guildies running " .. PGM.NAME .. " say when they're free or grouped. Inside an instance they go quiet, and show as busy.")
     p.looking:SetActive(G.opt("looking") and true or false)
     for k, chip in pairs(p.kindChips) do chip:SetActive(G.opt("lookingKinds")[k] and true or false) end
     p.addonOnly:SetActive(G.opt("freeAddonOnly") and true or false)

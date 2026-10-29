@@ -1,5 +1,5 @@
 ## Interface: 120105, 120100, 120007, 120001, 16001
-## Title: |cff55d194Pandy|r Guild Management
+## Title: |cff55d194Pandy|r Guild & Groups
 ## Notes: Guild roster, overview, group finder, play-time activity, professions, raid teams, loot, alts, history and attendance for Midnight and WoW Forever.
 ## Author: Pandy
 ## Version: 0.10.4
@@ -33,6 +33,7 @@ Stats.lua
 Bulk.lua
 Crafters.lua
 Loot.lua
+Check.lua
 
 UI\Widgets.lua
 UI\Main.lua
@@ -61,7 +62,9 @@ Groups\Keystone.lua
 Groups\Status.lua
 Groups\Posts.lua
 Groups\GroupFinder.lua
+Groups\Chat.lua
 Groups\UI\Common.lua
 Groups\UI\Groups.lua
 Groups\UI\Free.lua
+Groups\UI\Chat.lua
 Groups\UI\Keys.lua

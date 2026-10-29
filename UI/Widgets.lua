@@ -30,7 +30,6 @@ function W.Backdrop(f, bg, border, alpha)
     border = border or C.frame
     f:SetBackdropBorderColor(border[1], border[2], border[3], 1)
 end
-W.Thin = W.Backdrop
 
 -- The accent, darkened: the fill behind selected things.
 function W.AccentFill(f, strength)
@@ -119,6 +118,14 @@ function W.Chip(parent, text, onClick)
     b:SetScript("OnClick", function(s) onClick(s) end)
     b:SetActive(false)
     return b
+end
+
+-- "7/9" in green, gold or red by the share of raids attended, or a dash.
+function W.AttendanceText(present, possible)
+    if (possible or 0) <= 0 then return PGM.Hex(C.text3) .. "-|r" end
+    local pct = present / possible
+    local col = pct >= 0.8 and C.jade or (pct >= 0.5 and C.gold or C.red)
+    return PGM.Hex(col) .. present .. "/" .. possible .. "|r"
 end
 
 -- A flat input box with a placeholder hint; the frame lights up while typing.
@@ -302,7 +309,6 @@ function W.Bar(parent, labelW)
     f.frame:SetPoint("RIGHT", -70, 0)
     f.frame:SetHeight(10)
     W.Backdrop(f.frame, INK, C.line, 1)
-    f.track = f.frame
     f.fill = f.frame:CreateTexture(nil, "ARTWORK")
     f.fill:SetTexture(WHITE)
     f.fill:SetPoint("TOPLEFT", 1, -1)
@@ -637,7 +643,7 @@ function W.Divider(parent)
     return t
 end
 
--- A context menu, with the modern Menu API when it's there. Entries:
+-- A context menu, with the game's Menu API (nothing shows without it). Entries:
 --   { "Text", fn }                       a button
 --   { "Text", fn, disabled = true }      greyed out
 --   { "Text", sub = { entries } }        a submenu

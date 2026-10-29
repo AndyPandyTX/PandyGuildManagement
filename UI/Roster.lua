@@ -155,7 +155,7 @@ local function buildRow(list)
         local teams = PGM:TeamsText(it.guid)
         if teams ~= "" then GameTooltip:AddLine("Raid teams: " .. teams, 0.72, 0.54, 1) end
         local user = PGM:AddonUserOf(it.guid)
-        if user then GameTooltip:AddLine("Runs Pandy Guild Management v" .. (user.v or "?"), 0.33, 0.82, 0.58) end
+        if user then GameTooltip:AddLine("Runs " .. PGM.NAME .. " v" .. (user.v or "?"), 0.33, 0.82, 0.58) end
         local mine = PGM.GuildDB() and PGM.GuildDB().notes[it.guid]
         if mine and mine ~= "" then GameTooltip:AddLine("Your note: " .. mine, 1, 0.82, 0.4, true) end
         GameTooltip:AddLine("Click for profile, right-click for actions", 0.45, 0.45, 0.45)
@@ -187,13 +187,7 @@ local function updateRow(r, it)
     else
         r.cells.mplus:SetText(PGM.Hex(C.text3) .. "-|r")
     end
-    if it.possible > 0 then
-        local pct = it.present / it.possible
-        local col = pct >= 0.8 and C.jade or (pct >= 0.5 and C.gold or C.red)
-        r.cells.raids:SetText(PGM.Hex(col) .. it.present .. "/" .. it.possible .. "|r")
-    else
-        r.cells.raids:SetText(PGM.Hex(C.text3) .. "-|r")
-    end
+    r.cells.raids:SetText(W.AttendanceText(it.present, it.possible))
     r.cells.note:SetText(rec.note or "")
     r.cells.note:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
     -- Offline members stand back: same colours, half as bright.

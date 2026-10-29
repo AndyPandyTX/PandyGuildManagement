@@ -104,15 +104,19 @@ function PGM:AddLog(g, kind, rec, extra)
     e.class = rec.class
     if PGM.CreditLog then PGM:CreditLog(e) end
     g.log[#g.log + 1] = e
-
-    local cap = PGM.opt("logCap") or 3000
-    if #g.log > cap then
-        local drop = #g.log - cap + 100
-        local keep = {}
-        for i = drop + 1, #g.log do keep[#keep + 1] = g.log[i] end
-        g.log = keep
-    end
+    PGM.TrimLog(g)
     return e
+end
+
+-- Past the cap (Settings), keep the newest, with 100 spare so this isn't
+-- every entry. In one pass: removing from the front one at a time is slow
+-- enough to freeze the game on a big import.
+function PGM.TrimLog(g)
+    local cap = PGM.opt("logCap") or 3000
+    if #g.log <= cap then return end
+    local keep = {}
+    for i = #g.log - cap + 101, #g.log do keep[#keep + 1] = g.log[i] end
+    g.log = keep
 end
 
 -- " Still here: A, B, C +2" for someone who left characters behind.

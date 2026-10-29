@@ -48,8 +48,16 @@ function PGM:MyRankIndex()
     return me and me.rankIndex
 end
 
--- What this character may do here: officers only (the same people who can
--- edit raid teams), and then only what the game lets their rank do.
+-- The ranks below yours: the only ones you can act on or move people to.
+function PGM:RanksBelowMe()
+    local out = {}
+    local my = PGM:MyRankIndex()
+    local num = GuildControlGetNumRanks and PGM.Plain(GuildControlGetNumRanks()) or 0
+    if not my then return out end
+    for i = my + 1, (num or 0) - 1 do out[#out + 1] = i end
+    return out
+end
+
 -- What the game lets this character do to guild members.
 function PGM:GuildPermissions()
     local function can(fn)
@@ -118,11 +126,6 @@ function PGM:BulkDeleteRule(action, id)
         if r.id == id then table.remove(b.rules[action], i) break end
     end
     PGM:Fire("BULK")
-end
-
-function PGM:BulkIgnored(action, guid)
-    local _, b = store()
-    return b and b.ignore[action][guid] and true or false
 end
 
 function PGM:BulkSetIgnored(action, guid, ignored)
@@ -251,22 +254,6 @@ function PGM:BulkMatches(action)
     end
     table.sort(out, function(a, c) return PGM.NameLess(a.rec.short, c.rec.short) end)
     return out, counts
-end
-
--- How many people one rule picks.
-function PGM:BulkRuleCount(action, rule)
-    local g = PGM.GuildDB()
-    local myRank = PGM:MyRankIndex()
-    if not (g and myRank) then return 0 end
-    local ctx = context(g)
-    local me, n = PGM:MyGuid(), 0
-    for guid, rec in pairs(g.members) do
-        if guid ~= me and rec.rankIndex and rec.rankIndex > myRank and rec.rankIndex ~= 0
-            and matches(rule, action, guid, rec, myRank, ctx) then
-            n = n + 1
-        end
-    end
-    return n
 end
 
 -- ============================================================

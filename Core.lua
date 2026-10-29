@@ -12,7 +12,9 @@ local PGM = {}
 NS.PGM = PGM
 PandyGuildManagement = PGM
 
-PGM.NAME = "Pandy Guild Management"
+PGM.NAME = "Pandy Guild & Groups"
+-- Where bugs, ideas and questions go.
+PGM.DISCORD = "https://discord.gg/tDtNKncGRT"
 PGM.VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata(ADDON, "Version")) or "dev"
 
 -- Modules (the group finder in Groups\, or a separate addon that lists
@@ -26,7 +28,7 @@ PGM.Modules = {}
 -- info: { name, version, api, slash }. False when this copy is too old.
 function PGM.RegisterModule(info)
     if (info.api or 1) > PGM.API then
-        PGM.Print(("%s needs a newer Pandy Guild Management. Please update it."):format(info.name or "A module"))
+        PGM.Print(("%s needs a newer %s. Please update it."):format(info.name or "A module", PGM.NAME))
         return false
     end
     PGM.Modules[#PGM.Modules + 1] = info
@@ -270,8 +272,7 @@ function PGM.ClassColor(classFile)
 end
 
 function PGM.ClassHex(classFile)
-    local r, g, b = PGM.ClassColor(classFile)
-    return ("|cff%02x%02x%02x"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+    return PGM.Hex({ PGM.ClassColor(classFile) })
 end
 
 function PGM.ClassName(classFile)
@@ -429,6 +430,10 @@ SlashCmdList.PANDYGUILD = function(input)
         end
     elseif cmd == "export" then
         PGM.UI:ShowExport("Roster CSV", PGM:RosterCSV())
+    elseif cmd == "discord" then
+        PGM.UI:ShowDiscord()
+    elseif cmd == "check" then
+        PGM:ForeverCheck()
     elseif cmd == "debug" then
         PandyGuildDB.debug = not PandyGuildDB.debug
         PGM.Print("Debug", PandyGuildDB.debug and "on" or "off")
@@ -440,6 +445,7 @@ SlashCmdList.PANDYGUILD = function(input)
         PGM.Print("  /pgm scan - refresh the roster now")
         PGM.Print("  /pgm minimap - show or hide the minimap button")
         PGM.Print("  /pgm reset - move the window back to the middle at normal size")
+        PGM.Print("  /pgm discord - our Discord, for bugs, ideas and help")
         for _, m in ipairs(PGM.Modules) do
             if m.slash then PGM.Print("  " .. m.slash .. " - " .. (m.name or "module")) end
         end

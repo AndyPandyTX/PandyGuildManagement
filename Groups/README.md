@@ -1,15 +1,16 @@
 # Guild group finder
 
-Part of [Pandy Guild Management](../README.md) since 0.9.0 (it began as a
+Part of [Pandy Guild & Groups](../README.md) since 0.9.0 (it began as a
 separate addon, Pandy Guild Groups). Post a Mythic+ key, a raid or a delve,
-and guildies running Pandy Guild Management see it and ask to join in one
+and guildies running Pandy Guild & Groups see it and ask to join in one
 click. You see who's asking (role, item level, M+ score, and whose alt they
 are) and invite with a click.
 
 Type `/pgg`, or open `/pgm` and look under **Groups** in the sidebar. Turn it
 off in Settings (Group finder) or with `/pgg off`; its pages then leave the
 sidebar and it stops sending and listening. Works on retail (Midnight) and
-WoW Forever (no keystones there).
+WoW Forever (dungeons and raids up to 40 there: no keystones, delves or
+scores).
 
 ## With Blizzard's Group Finder
 
@@ -147,6 +148,37 @@ LibKeystone (BigWigs, LittleWigs, EllesmereUI and others): the page asks
 them, at most every two minutes. A key someone hides from the guild stays
 hidden.
 
+## LFG Chat (WoW Forever)
+
+Classic players group in chat, so on Forever the **LFG Chat** page reads the
+channels you're in (LookingForGroup, General, Trade, World...) and guild
+chat. What others said isn't sent or saved; it starts empty at login.
+
+- **What counts:** LFM, LF1M..., "lf 2 dps", "need a tank", "looking for a
+  healer" or a class ("LF priest") make a group looking for more; LFG, "lf
+  group" or "LF strat" a player looking; WTS, WTB, WTT and "LF enchanter"
+  (or another crafter) trade. A bare "need" ("need a summon") is just talk,
+  and so is a line that asks for nothing.
+- **Where:** every Forever dungeon and raid, by the names and short forms
+  people type: "dm" is the Deadmines, "dm e/w/n" or "tribute" Dire Maul,
+  "sm cath" Scarlet Monastery, "strat ud", "krol'dok", "ony". "dm me" and
+  "pm me" are messages, not dungeons. Scarlet Monastery's wings need the
+  "sm" ("sm gy"), so "graveyard" alone is nothing.
+- **The board:** a heading per dungeon and raid, lowest level first, then
+  quests and other groups, then trade. Each person's newest line, for 15
+  minutes. Filters for dungeons, raids, quests, trade, players looking and
+  your level (within two of a dungeon's range), and a search.
+- **Clicks:** whisper; shift-click /who; ctrl-click invite; right-click for
+  all of them (and a guildie's profile).
+- It only repaints while it's the page showing, so busy Trade chat costs
+  nothing elsewhere.
+
+- **Your own line:** a box along the bottom keeps your LFM or LFG text (saved,
+  so it's there next session). Pick a channel from the ones you're in (it
+  starts on LookingForGroup, else World) and press Send or Enter. It won't
+  send twice within 5 seconds, and the game only lets it send from a click
+  or a key press.
+
 ## How posts clean up
 
 - Full: your copy counts who joins (by their assigned role, or the role
@@ -170,13 +202,13 @@ A `/reload` keeps your open post.
   turned off there, with a line saying why, so nothing stale goes out later.
 - **Invites and Group Finder listings need a real click**, so every invite
   is a button you press.
-- **Secret values** go through Pandy Guild Management's `PGM.Plain`: item
+- **Secret values** go through Pandy Guild & Groups' `PGM.Plain`: item
   level, roles, group members and keystones are read only when the game
   shows them.
 
 ## Guild traffic
 
-It all rides Pandy Guild Management's guild sync, under the record letter
+It all rides Pandy Guild & Groups' guild sync, under the record letter
 `G`. A post is one message, plus a heartbeat every 4 minutes. A status goes
 out when it changes (at most once a minute) and every 10 minutes. Logging in
 costs four messages. See [DESIGN.md](DESIGN.md) for every message.

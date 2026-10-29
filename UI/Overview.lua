@@ -122,7 +122,16 @@ local function build(p)
         tile(body, "Active this week", "Interface\\Icons\\INV_Misc_PocketWatch_01"),
         tile(body, "At max level", "Interface\\Icons\\Achievement_Level_90"),
         tile(body, "Vitality", "Interface\\Icons\\Spell_Nature_Rejuvenation"),
-    }
+    }
+    local vit = p.tiles[4]
+    vit:EnableMouse(true)
+    vit:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Vitality")
+        GameTooltip:AddLine("Each member counts by how recently they were online: this week 100%, last week 70%, this month 40%, 30-59 days 10%, longer 0%. The score is the average.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    vit:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     p.classes = W.Card(body, "Class mix", "Members per class. Hover for how many are at max level.")
     -- A breakdown strip across the top of the card.
@@ -210,14 +219,6 @@ local function refresh(p)
     local vcol = o.vitality >= 70 and C.jade or (o.vitality >= 40 and C.gold or C.red)
     t[4].value:SetText(PGM.Hex(vcol) .. o.vitality .. "|r" .. PGM.Hex(C.text3) .. " / 100|r")
     t[4].note:SetText(("%d this month"):format(o.active30))
-    t[4]:EnableMouse(true)
-    t[4]:SetScript("OnEnter", function(s)
-        GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
-        GameTooltip:SetText("Vitality")
-        GameTooltip:AddLine("Each member counts by how recently they were online: this week 100%, last week 70%, this month 40%, 30-59 days 10%, longer 0%. The score is the average.", 0.8, 0.8, 0.8, true)
-        GameTooltip:Show()
-    end)
-    t[4]:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Class mix.
     local peak = 1

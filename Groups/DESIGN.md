@@ -1,6 +1,6 @@
 # Guild group finder: design
 
-A guild group finder that plugs into Pandy Guild Management (PGM). Guildies
+A guild group finder that plugs into Pandy Guild & Groups (PGM). Guildies
 post a group (a Mythic+ key, a raid, a delve, anything), everyone running the
 module sees it, and one click asks to join. The leader sees who's asking
 (role, item level, M+ score, and whose alt they are) and invites with a click.
@@ -144,7 +144,7 @@ sub-type, then fields joined by `\031`.
    breaking it. `/pgm <tab id>` opens any tab, modules' included.
 2. **Reserved sync record letters.** Core uses
    `H V O R E T K M A S P D C J B W Y Z`. Reserved for modules:
-   `G` (Pandy Guild Groups), and `F I L N Q U X` for future ones.
+   `G` (the group finder, Groups\), and `F I L N Q U X` for future ones.
    `PGM.SyncRegister(letter, fn)` claims one, and refuses a core letter or
    one already taken. Module records aren't officer-only and aren't kept
    at logout; the module checks its own senders.

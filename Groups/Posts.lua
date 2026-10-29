@@ -59,7 +59,9 @@ end
 
 function G.PostTitle(p)
     local what, level = p.what or "", p.level or ""
-    if p.kind == "M" then
+    if p.kind == "M" and PGM.IS_FOREVER then
+        return what ~= "" and what or "Dungeon"
+    elseif p.kind == "M" then
         return (level ~= "" and ("+" .. level .. " ") or "") .. (what ~= "" and what or "Mythic+")
     elseif p.kind == "R" then
         return (what ~= "" and what or "Raid") .. (level ~= "" and (" (" .. level .. ")") or "")
@@ -374,10 +376,10 @@ end
 local FINDER_CATEGORY = { M = "Dungeons", R = "Raids", D = "Delves", O = "Custom" }
 function G:FindPugs()
     local p = G.mine
-    if PVEFrame_ShowFrame then
-        pcall(PVEFrame_ShowFrame, "GroupFinderFrame", "LFGListPVEStub")
-    elseif PVEFrame_ToggleFrame then
-        pcall(PVEFrame_ToggleFrame)
+    G.OpenFinder()
+    if PGM.IS_FOREVER then
+        PGM.Print("Looking for Group is open: list your group there. Guildies can still ask here.")
+        return
     end
     PGM.Print(("Group Finder: pick %s, then Start a Group. Guildies can still ask here."):format(
         FINDER_CATEGORY[p and p.kind or "O"]))

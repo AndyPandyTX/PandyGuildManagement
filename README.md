@@ -1,6 +1,12 @@
-# Pandy Guild Management
+# Pandy Guild & Groups
 
-A guild manager for retail WoW (Midnight), built for big raiding guilds:
+Formerly Pandy Guild Management: same addon, same folder, same saved data.
+
+Bugs, ideas or questions? Join the [Discord](https://discord.gg/tDtNKncGRT)
+(or type `/pgm discord` in game).
+
+A guild manager and group finder for Midnight and WoW Forever, built for big
+raiding guilds:
 
 - **Guild overview:** class, race, level and activity breakdowns, professions,
   Mythic+ spread and a vitality score for the whole guild
@@ -30,7 +36,7 @@ show it, with how many guildies are online.
 
 ## Install
 
-**Easiest: [Pandy Guild Management on CurseForge](https://www.curseforge.com/wow/addons/pandy-guild-management).**
+**Easiest: [Pandy Guild & Groups on CurseForge](https://www.curseforge.com/wow/addons/pandy-guild-management).**
 Install it with the CurseForge app and it keeps itself up to date. It works
 for Midnight and WoW Forever.
 
@@ -41,7 +47,7 @@ for Midnight and WoW Forever.
    zip, not GitHub's "Source code" zip (that one is missing the libraries
    the minimap button needs).
 2. Unzip it into `World of Warcraft\_retail_\Interface\AddOns\` (or
-   `_classic_beta_` for WoW Forever). You should end up with
+   `_forever_` for WoW Forever). You should end up with
    `AddOns\PandyGuildManagement\PandyGuildManagement.toc`.
 3. Restart WoW, or type `/reload` if it's already running.
 
@@ -187,7 +193,7 @@ your account:
   (PGM text for another player's PGM, or CSV for a spreadsheet), and
   **Import** someone's export. Right-click an entry to delete it.
 
-**Addon Users.** Everyone in the guild running Pandy Guild Management, with
+**Addon Users.** Everyone in the guild running Pandy Guild & Groups, with
 their version, and who needs to update: one row per player (their main),
 with how many of their characters run it. Click a player to see those
 characters, or tick "Every character" for the full list. The Roster also
@@ -261,6 +267,25 @@ The same addon runs on WoW Forever. Everything above works there, except:
 - There's no Mythic+, so the M+ score, M+ column and M+ spread are hidden,
   along with RaiderIO raid progress.
 - The raid-buff checklist on Raid Teams is hidden, since it lists Midnight's buffs.
+- Professions show each character's skill ("Alchemy 285"). The best crafter
+  is the one with the most skill, and a profession counts as thin when few
+  active players have Artisan (225+).
+- The group finder posts dungeons instead of Mythic+ keys, and raids up to 40
+  with roles to match. There are no delves, keystones or M+ scores, and
+  **Find PuGs** opens Looking for Group.
+- **LFG Chat** (Forever only, under Groups) reads your chat channels and guild
+  chat for LFM, LFG, WTS and WTB lines. It sorts them under each dungeon and
+  raid, lowest level first, then quests and other groups, then trade. Each
+  person's newest line stays for 15 minutes. Filter by dungeons, raids,
+  quests, trade, players looking or your level, or search. Click to whisper,
+  shift-click for /who, ctrl-click to invite, right-click for a menu. It
+  knows all of Forever's dungeons and raids, the new ones included, by the
+  names and short forms people type ("strat ud", "dm e", "krol'dok").
+  Along the bottom, type your own LFM or LFG line once, pick a channel (it
+  starts on LookingForGroup), and press Send or Enter. The line is kept, so
+  you can post it again later without retyping it or making a macro.
+- `/pgm check` notes what the game offers the group finder and professions
+  pages, in the addon's saved data after a `/reload`. Handy for bug reports.
 
 Guild data stays separate: a Forever guild and a retail guild never share teams,
 raid nights or alts.
