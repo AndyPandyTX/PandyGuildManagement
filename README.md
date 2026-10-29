@@ -36,7 +36,7 @@ show it, with how many guildies are online.
 
 ## Install
 
-**Easiest: [Pandy Guild & Groups on CurseForge](https://www.curseforge.com/wow/addons/pandy-guild-management).**
+**Easiest: [Pandy Guild & Groups on CurseForge](https://www.curseforge.com/wow/addons/pandy-guild-groups).**
 Install it with the CurseForge app and it keeps itself up to date. It works
 for Midnight and WoW Forever.
 
