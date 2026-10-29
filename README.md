@@ -175,13 +175,17 @@ your account:
   type (tier tokens, weapons, trinkets, rings and necks, armor), drops or
   bonus rolls, and a search for a player, item or boss. Shortcuts for
   **Mine**, **My bonus rolls** and **Tier tokens**.
+- **When:** this week, the last 4 weeks or 3 months, or your own dates:
+  **One day**, **From** and **To** list the days that have loot, by month.
+- **Sort** by any column: click its heading, and again to flip it. Newest
+  first to start with.
 - **By player:** items, tier tokens, bonus rolls, raids attended and items
   per raid, with alts counted as their main.
 - A drop belongs to the raid night it fell in, so the team filter shows
   that team's raids, even when two teams raid at once.
-- Nothing is synced. **Export** what the filters show (PGM text for another
-  player's PGM, or CSV for a spreadsheet), and **Import** someone's export.
-  Right-click an entry to delete it.
+- Nothing is synced. **Export** what the filters show, in the order shown
+  (PGM text for another player's PGM, or CSV for a spreadsheet), and
+  **Import** someone's export. Right-click an entry to delete it.
 
 **Addon Users.** Everyone in the guild running Pandy Guild Management, with
 their version, and who needs to update: one row per player (their main),

@@ -39,6 +39,7 @@ Type **/pgm** to open it (or **/pgg** for the group finder), click the panda but
 **Loot**
 - Raid drops and bonus rolls, recorded as they happen; pulls in MRT's loot history and VoidcoreAdvisor's bonus rolls
 - Filter by team, player, boss, difficulty, tier tokens, bonus rolls and more; export and import
+- Pick a date range, and sort by any column
 
 **Play-time activity**
 - Average and peak online, and the guild's busiest hour of the week

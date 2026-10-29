@@ -2,7 +2,8 @@
 -- has recorded or imported (Loot.lua), with filters that all combine: when,
 -- raid or M+, team, boss, difficulty, item type, drops or bonus rolls, and a
 -- search for a player, item or boss. Two views: the items, or one row per
--- player with counts. Export what's showing, or import someone's export.
+-- player with counts. Click a column's heading to sort by it. Export what's
+-- showing, in the order it's showing, or import someone's export.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -10,9 +11,12 @@ local C = PGM.C
 local UI = PGM.UI
 local W = UI.W
 
+-- when = "range" uses from and to: days as "2026-10-21" (either may be nil,
+-- for no limit that side). sort and desc are per view.
 local state = {
-    search = "", when = "all", kind = "raid", team = nil, boss = nil, diff = nil, itype = nil, how = nil,
-    mine = false, view = "items", altsAsMain = true,
+    search = "", when = "all", from = nil, to = nil, kind = "raid", team = nil, boss = nil, diff = nil,
+    itype = nil, how = nil, mine = false, view = "items", altsAsMain = true,
+    sort = { items = "date", players = "items" }, desc = { items = true, players = true },
 }
 
 local WHEN = { { "all", "All time" }, { "week", "This week" }, { "month", "Last 4 weeks" }, { "3m", "Last 3 months" } }
@@ -55,6 +59,108 @@ local function since()
         return now - 91 * 86400
     end
     return 0
+end
+
+local function dayKey(t) return date("%Y-%m-%d", t or 0) end
+
+-- "2026-10-21" back to a time, at noon that day.
+local function dayTime(day)
+    local y, m, d = day:match("^(%d+)-(%d+)-(%d+)$")
+    return time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
+end
+
+-- A test for whether a time is inside the When filter. Ranges go by the
+-- day shown on each row.
+local function windowTest()
+    if state.when == "range" then
+        local from, to = state.from, state.to
+        return function(t)
+            local day = dayKey(t)
+            return (not from or day >= from) and (not to or day <= to)
+        end
+    end
+    local from = since()
+    return function(t) return (t or 0) >= from end
+end
+
+-- "Oct 21-28", "Sep 30-Oct 28", "Oct 28", "Since Oct 21" or "Until Oct 28".
+local function rangeLabel()
+    local from, to = state.from, state.to
+    local function short(day) return (date("%b %d", dayTime(day)):gsub(" 0", " ")) end
+    if from and to then
+        if from == to then return short(from) end
+        if from:sub(1, 7) == to:sub(1, 7) then return short(from) .. "-" .. tonumber(to:sub(9)) end
+        return short(from) .. "-" .. short(to)
+    end
+    if from then return "Since " .. short(from) end
+    if to then return "Until " .. short(to) end
+    return "All time"
+end
+
+-- The When menu: the quick choices, then one day, From and To, each a
+-- submenu of months and the days in them that have loot (newest first).
+local function whenMenu()
+    local counts, days = {}, {}
+    for _, rec in ipairs(PGM:LootItems()) do
+        if state.kind == "all" or rec.kind == state.kind then
+            local day = dayKey(rec.t)
+            if not counts[day] then days[#days + 1] = day end
+            counts[day] = (counts[day] or 0) + 1
+        end
+    end
+    table.sort(days, function(a, b) return a > b end)
+    local function dayMenu(isChecked, pick)
+        local months, byMonth = {}, {}
+        for _, day in ipairs(days) do
+            local month = day:sub(1, 7)
+            if not byMonth[month] then
+                byMonth[month] = {}
+                months[#months + 1] = { month, date("%B %Y", dayTime(day)) }
+            end
+            table.insert(byMonth[month], { date("%a %b %d", dayTime(day)) .. "  (" .. counts[day] .. ")",
+                checked = function() return state.when == "range" and isChecked(day) end,
+                toggle = function()
+                    state.when = "range"
+                    pick(day)
+                    UI:Refresh()
+                end })
+        end
+        local list = {}
+        for _, m in ipairs(months) do list[#list + 1] = { m[2], sub = byMonth[m[1]] } end
+        return list
+    end
+    local entries = {}
+    for _, o in ipairs(WHEN) do
+        entries[#entries + 1] = { o[2], checked = function() return state.when == o[1] end,
+            toggle = function()
+                state.when, state.from, state.to = o[1], nil, nil
+                UI:Refresh()
+            end }
+    end
+    if #days > 0 then
+        entries[#entries + 1] = { divider = true }
+        entries[#entries + 1] = { "One day", sub = dayMenu(
+            function(day) return state.from == day and state.to == day end,
+            function(day) state.from, state.to = day, day end) }
+        entries[#entries + 1] = { "From", sub = dayMenu(
+            function(day) return state.from == day end,
+            function(day)
+                state.from = day
+                if state.to and state.to < day then state.to = nil end
+            end) }
+        entries[#entries + 1] = { "To", sub = dayMenu(
+            function(day) return state.to == day end,
+            function(day)
+                state.to = day
+                if state.from and state.from > day then state.from = nil end
+            end) }
+    end
+    return entries
+end
+
+local function whenLabel(when)
+    if when == "range" then return rangeLabel() end
+    return labelOf(WHEN, when)
 end
 
 -- My characters: this one, and its main and alts in the guild.
@@ -210,13 +316,78 @@ local function itemName(rec)
     return name
 end
 
+-- ---- sorting ----
+-- Each column's sort key, and the way it sorts first (the rest A to Z).
+
+local DIFF_RANK = { [17] = 1, [14] = 2, [15] = 3, [16] = 4 }
+
+local function bossText(rec)
+    if rec.kind == "mplus" then return rec.where or rec.boss or "Mythic+" end
+    return rec.boss or "?"
+end
+
+local ITEM_KEY = {
+    date = function(r) return r.t or 0 end,
+    boss = function(r) return PGM.SortKey(bossText(r)) end,
+    diff = function(r) return r.kind == "mplus" and 5 or (DIFF_RANK[r.diff] or 0) end,
+    who = function(r) return PGM.SortKey(r.who) end,
+    -- Names not loaded yet go last; they move up when the game sends them.
+    item = function(r) return PGM.SortKey(itemName(r) or "\255") end,
+    how = function(r) return PGM.SortKey(PGM.LOOT_HOW_LABEL[r.how] or r.how) end,
+}
+local PLAYER_KEY = {
+    who = function(it) return PGM.SortKey(it.rec and it.rec.short or it.who) end,
+    items = function(it) return it.items end,
+    tokens = function(it) return it.tokens end,
+    bonus = function(it) return it.bonus end,
+    raids = function(it) return it.raids or -1 end,
+    per = function(it) return (it.raids and it.raids > 0) and it.items / it.raids or -1 end,
+    last = function(it) return it.last and it.last.t or 0 end,
+}
+local DESC_FIRST = { date = true, diff = true, items = true, tokens = true, bonus = true, raids = true,
+    per = true, last = true }
+
+-- Sorts list in place by the view's column; ties go newest first, then by
+-- name, so the order never shifts on its own.
+local function sortList(list, view, keys, tie)
+    local key = keys[state.sort[view]]
+    local desc = state.desc[view]
+    local k = {}
+    for _, v in ipairs(list) do k[v] = key(v) end
+    table.sort(list, function(a, b)
+        if k[a] ~= k[b] then
+            if desc then return k[a] > k[b] end
+            return k[a] < k[b]
+        end
+        return tie(a, b)
+    end)
+end
+
+local function itemTie(a, b)
+    if (a.t or 0) ~= (b.t or 0) then return (a.t or 0) > (b.t or 0) end
+    if a.who ~= b.who then return PGM.NameLess(a.who, b.who) end
+    return (a.id or 0) < (b.id or 0)
+end
+
+local function playerTie(a, b) return PGM.NameLess(a.who, b.who) end
+
+-- A heading clicked: sort by it, or flip it if it's sorting already.
+local function sortBy(view, key)
+    if state.sort[view] == key then
+        state.desc[view] = not state.desc[view]
+    else
+        state.sort[view], state.desc[view] = key, DESC_FIRST[key] or false
+    end
+    UI:Refresh()
+end
+
 local function filtered()
     local out = {}
-    local from = since()
+    local inWindow = windowTest()
     local mine = state.mine and myKeys()
     local q = state.search:lower()
     for _, rec in ipairs(PGM:LootItems()) do
-        local ok = (rec.t or 0) >= from
+        local ok = inWindow(rec.t)
             and (state.kind == "all" or rec.kind == state.kind)
             and (not state.diff or rec.diff == state.diff)
             and (not state.how or (state.how == "bonus") == (rec.how == "bonus"))
@@ -234,7 +405,7 @@ local function filtered()
         end
         if ok then out[#out + 1] = rec end
     end
-    table.sort(out, function(a, b) return (a.t or 0) > (b.t or 0) end)
+    sortList(out, "items", ITEM_KEY, itemTie)
     return out
 end
 
@@ -258,13 +429,13 @@ local function byPlayer(items)
         if not it.last or rec.t > it.last.t then it.last = rec end
     end
     -- Raids attended in the same window (and team), for guild members.
-    local from = since()
+    local inWindow = windowTest()
     for _, it in ipairs(order) do
         if it.guid and g then
             local group = PGM:GroupOf(it.guid)
             local n = 0
             for _, s in ipairs(g.raids and g.raids.sessions or {}) do
-                if (s.start or 0) >= from and (not state.team or s.team == state.team) then
+                if inWindow(s.start) and (not state.team or s.team == state.team) then
                     for _, gu in ipairs(group) do
                         if s.present and s.present[gu] then n = n + 1 break end
                     end
@@ -275,10 +446,7 @@ local function byPlayer(items)
             if rec then it.rec = rec end
         end
     end
-    table.sort(order, function(a, b)
-        if a.items ~= b.items then return a.items > b.items end
-        return PGM.NameLess(a.who, b.who)
-    end)
+    sortList(order, "players", PLAYER_KEY, playerTie)
     return order
 end
 
@@ -365,11 +533,7 @@ local function itemUpdate(r, rec)
     r.rec = rec
     r.date:SetText(date("%b %d", rec.t))
     -- M+ shows the dungeon; a raid, the boss.
-    if rec.kind == "mplus" then
-        r.boss:SetText(rec.where or rec.boss or "Mythic+")
-    else
-        r.boss:SetText(rec.boss or "?")
-    end
+    r.boss:SetText(bossText(rec))
     r.diff:SetText(rec.kind == "mplus" and "M+" or (SHORT_DIFF[rec.diff] or ""))
     r.who:SetText(whoText(rec.who, rec.class))
     r.item:SetText(itemText(rec))
@@ -413,29 +577,48 @@ end
 
 -- ---- the page ----
 
-local function header(p, cols)
+-- The column headings for a view: { label, x, justify, width, key }. Each
+-- is a button sorting by its key; the one sorting has an arrow.
+local function header(p, view, cols)
     local h = CreateFrame("Frame", nil, p)
     h:SetPoint("TOPLEFT", 0, -88)
     h:SetPoint("TOPRIGHT", 0, -88)
     h:SetHeight(20)
     local bg = W.Solid(h, "BACKGROUND", C.panel)
     bg:SetAllPoints()
+    h.cols = {}
     for _, c in ipairs(cols) do
-        local fs = W.FS(h, 11, C.text2, c[3])
+        local b = CreateFrame("Button", nil, h)
+        b:SetSize(c[4], 20)
         if c.right then
-            fs:SetPoint("RIGHT", -6, 0)   -- over a column that hangs off the right edge
+            b:SetPoint("RIGHT", -6, 0)   -- over a column that hangs off the right edge
         else
-            fs:SetPoint("LEFT", c[2], 0)
+            b:SetPoint("LEFT", c[2], 0)
         end
-        if c[4] then fs:SetWidth(c[4]) end
-        fs:SetText(c[1])
+        b.fs = W.FS(b, 11, C.text2, c[3])
+        b.fs:SetAllPoints()
+        b.label, b.key = c[1], c[5]
+        b.onClick = function() sortBy(view, b.key) end
+        b:SetScript("OnClick", b.onClick)
+        b:SetScript("OnEnter", function(s) s.fs:SetTextColor(C.text[1], C.text[2], C.text[3]) end)
+        b:SetScript("OnLeave", function() h:Update() end)
+        h.cols[#h.cols + 1] = b
+    end
+    function h:Update()
+        for _, b in ipairs(self.cols) do
+            local on = state.sort[view] == b.key
+            b.fs:SetText(on and (b.label .. (state.desc[view] and " v" or " ^")) or b.label)
+            local col = on and C.accent or C.text2
+            b.fs:SetTextColor(col[1], col[2], col[3])
+        end
     end
     return h
 end
 
 -- A filter button showing its current choice. `list` is { value, label }
 -- pairs (or a function giving them); or `custom` = { menu = fn() giving
--- menu entries, label = fn(value) }, for a menu with headings and submenus.
+-- menu entries, label = fn(value), default = the value that isn't
+-- filtering }, for a menu with headings and submenus.
 local function menuButton(p, width, title, list, key, after, custom)
     local b = W.Button(p, "", width, 22, C.text2)
     b.fs:SetWidth(width - 10)
@@ -459,7 +642,7 @@ local function menuButton(p, width, title, list, key, after, custom)
     b.sync = function()
         if custom then
             b:SetLabel(trim(custom.label(state[key]), 18))
-            b:SetAccent(state[key] ~= nil and C.text or C.text2)
+            b:SetAccent(state[key] ~= custom.default and C.text or C.text2)
             return
         end
         local current = type(list) == "function" and list() or list
@@ -564,7 +747,7 @@ local function build(p)
 
     -- The filters, as menus showing what each is set to.
     p.menus = {
-        menuButton(p, 92, "When", WHEN, "when"),
+        menuButton(p, 100, "When", nil, "when", nil, { menu = whenMenu, label = whenLabel, default = "all" }),
         menuButton(p, 92, "Raids or M+", KIND, "kind", function() state.boss = nil end),
         menuButton(p, 104, "Team", teamList, "team"),
         menuButton(p, 120, "Boss", nil, "boss", nil, { menu = bossMenu, label = bossLabel }),
@@ -604,7 +787,8 @@ local function build(p)
     p.clear = W.Button(p, "Clear filters", 96, 22, C.text2)
     p.clear:SetPoint("LEFT", p.alts, "RIGHT", 10, 0)
     p.clear:SetScript("OnClick", function()
-        state.search, state.when, state.kind, state.team, state.boss = "", "all", "raid", nil, nil
+        state.search, state.when, state.from, state.to = "", "all", nil, nil
+        state.kind, state.team, state.boss = "raid", nil, nil
         state.diff, state.itype, state.how, state.mine = nil, nil, nil, false
         p.search:SetText("")
         UI:Refresh()
@@ -612,11 +796,13 @@ local function build(p)
     p.count = W.FS(p, 11, C.text3, "RIGHT")
     p.count:SetPoint("TOPRIGHT", 0, -64)
 
-    p.itemHeader = header(p, { { "Date", 6 }, { "Boss", 62 }, { "Diff", 216 }, { "Player", 254 }, { "Item", 382 },
-        { "How", 0, "RIGHT", right = true } })
-    p.playerHeader = header(p, { { "Player", 6 }, { "Items", 160, "RIGHT", 52 }, { "Tokens", 220, "RIGHT", 52 },
-        { "Bonus", 280, "RIGHT", 52 }, { "Raids", 340, "RIGHT", 52 }, { "Per raid", 400, "RIGHT", 52 },
-        { "Last item", 470 } })
+    p.itemHeader = header(p, "items", { { "Date", 6, nil, 52, "date" }, { "Boss", 62, nil, 150, "boss" },
+        { "Diff", 216, nil, 36, "diff" }, { "Player", 254, nil, 124, "who" }, { "Item", 382, nil, 200, "item" },
+        { "How", 0, "RIGHT", 96, "how", right = true } })
+    p.playerHeader = header(p, "players", { { "Player", 6, nil, 150, "who" },
+        { "Items", 160, "RIGHT", 52, "items" }, { "Tokens", 220, "RIGHT", 52, "tokens" },
+        { "Bonus", 280, "RIGHT", 52, "bonus" }, { "Raids", 340, "RIGHT", 52, "raids" },
+        { "Per raid", 400, "RIGHT", 52, "per" }, { "Last item", 470, nil, 200, "last" } })
 
     p.itemList = W.List(p, 22, itemRow, itemUpdate)
     p.itemList:SetPoint("TOPLEFT", 0, -110)
@@ -644,6 +830,8 @@ local function refresh(p)
     p.alts:SetActive(state.altsAsMain)
     p.alts:SetShown(state.view == "players")
 
+    p.itemHeader:Update()
+    p.playerHeader:Update()
     p.items = filtered()
     local players = state.view == "players"
     p.itemHeader:SetShown(not players)

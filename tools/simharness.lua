@@ -1342,6 +1342,75 @@ do
             rawget(page, "clear").OnClick(rawget(page, "clear"))
         end)
         check(ok, "the Boss menu works (" .. tostring(why) .. ")")
+        -- Sorting by a heading, and the When menu's days. An extra drop ten
+        -- days back gives the range something to leave out.
+        ok, why = pcall(function()
+            local all = P:LootItems()
+            local newest, oldest = 0, math.huge
+            for _, r in ipairs(all) do
+                if r.kind == "raid" then newest, oldest = math.max(newest, r.t), math.min(oldest, r.t) end
+            end
+            local old = { t = oldest - 10 * 86400, who = "Anvar-MalGanis", id = 268256, link = "item:268256",
+                how = "need", kind = "raid", src = "pgm", boss = "Boss A", enc = 3429, diff = 15 }
+            table.insert(all, old)
+            local function items()
+                tab.refresh(page)
+                return rawget(page, "items") or {}
+            end
+            local list = items()
+            check(list[1].t >= list[#list].t and list[#list] == old, "the items start newest first")
+            local cols = {}
+            for _, b in ipairs(rawget(page, "itemHeader").cols) do cols[b.key] = b end
+            cols.date.onClick()
+            list = items()
+            check(list[1] == old, "clicking Date again puts the oldest first")
+            cols.who.onClick()
+            list = items()
+            local sorted = true
+            for i = 2, #list do
+                if P.SortKey(list[i - 1].who) > P.SortKey(list[i].who) then sorted = false end
+            end
+            check(sorted, "clicking Player sorts by player, A to Z")
+            for _, b in ipairs(rawget(page, "playerHeader").cols) do b.onClick() items() end
+            cols.date.onClick()
+            check(items()[1].t == newest, "back to Date: newest first again")
+
+            local when = rawget(page, "menus")[1]
+            local function whenSub(label)
+                when.OnClick(when)
+                for _, e in ipairs(lastMenu or {}) do
+                    if e[1] == label then return e.sub end
+                end
+            end
+            local months = whenSub("One day") or {}
+            check(#months >= 1 and months[1].sub and #months[1].sub >= 1, "One day lists months, then days with loot")
+            months[1].sub[1].toggle()
+            list = items()
+            local day, others = os.date("%Y-%m-%d", newest), 0
+            for _, r in ipairs(list) do if os.date("%Y-%m-%d", r.t) ~= day then others = others + 1 end end
+            check(#list > 0 and others == 0, "One day shows only that day (" .. #list .. " items)")
+            -- To the oldest day, which is before From: From goes, leaving
+            -- everything up to that day.
+            local to = whenSub("To") or {}
+            local lastMonth = to[#to].sub
+            lastMonth[#lastMonth].toggle()
+            list = items()
+            check(#list == 1 and list[1] == old, "To a day before From drops From: just the oldest day's loot")
+            -- From the newest day, after To: To goes the same way.
+            local from = whenSub("From") or {}
+            from[1].sub[1].toggle()
+            list = items()
+            others = 0
+            for _, r in ipairs(list) do if os.date("%Y-%m-%d", r.t) ~= day then others = others + 1 end end
+            check(#list > 0 and others == 0, "From a day after To drops To")
+            -- A quick choice ends the range.
+            when.OnClick(when)
+            lastMenu[1].toggle()
+            check(#items() > #list, "All time shows everything again")
+            rawget(page, "clear").OnClick(rawget(page, "clear"))
+            for i = #all, 1, -1 do if all[i] == old then table.remove(all, i) end end
+        end)
+        check(ok, "sorting and date ranges work (" .. tostring(why) .. ")")
         check(#exported == 4 and exported[1]:sub(1, 7) == "PGMLOOT", "export from the page gives PGM text and CSV")
         check(choices >= 20 and rows > 0, "...through " .. choices .. " menu choices, drawing " .. rows .. " rows")
         P.UI, A.env.CreateFrame, A.env.GameTooltip = realUI, realCreate, nil
