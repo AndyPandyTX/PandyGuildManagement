@@ -1,0 +1,28 @@
+# Posts a release to Discord by hand (Actions > Announce on Discord > Run
+# workflow), for one that went out before this existed or to post again.
+# New releases are announced by release.yml on their own.
+name: Announce on Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, like v0.11.0"
+        required: true
+      notes:
+        description: "What changed (optional; leave empty to use the tag's notes or its commits)"
+        required: false
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tell Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ANNOUNCE_NOTES: ${{ inputs.notes }}
+        run: bash .github/announce.sh "${{ inputs.tag }}"

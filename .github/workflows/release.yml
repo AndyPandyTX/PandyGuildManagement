@@ -1,6 +1,8 @@
 # Pushing a tag like v0.3.1 builds PandyGuildManagement-v0.3.1.zip,
 # publishes it as a GitHub release and uploads it to CurseForge (project id
-# from the .toc, token from the CF_API_KEY repository secret).
+# from the .toc, token from the CF_API_KEY repository secret). Then, if the
+# DISCORD_WEBHOOK secret is set, it posts the release to Discord: an
+# annotated tag's message is the notes (git tag -a v0.3.1 -F notes.txt).
 name: Release
 
 on:
@@ -14,6 +16,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,3 +27,7 @@ jobs:
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
+
+      - name: Tell Discord
+        if: env.DISCORD_WEBHOOK != ''
+        run: bash .github/announce.sh "$GITHUB_REF_NAME"
