@@ -2,7 +2,7 @@
 ## Title: |cff55d194Pandy|r Guild & Groups
 ## Notes: Guild roster, overview, group finder, play-time activity, professions, raid teams, loot, alts, history and attendance for Midnight and WoW Forever.
 ## Author: Pandy
-## Version: 0.10.4
+## Version: 0.11.0
 ## Category: Guild
 ## X-License: MIT
 ## X-Curse-Project-ID: 1761564
