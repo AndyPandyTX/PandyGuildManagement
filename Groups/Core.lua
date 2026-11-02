@@ -108,6 +108,7 @@ local DEFAULTS = {
         minRating = 0, skip = {},   -- skip: dungeons unticked in the list
         fitsMe = false, hideDeclined = true, brez = false, lust = false,
         needTank = false, needHealer = false, needDps = false, hasTank = false, hasHealer = false,
+        hideOce = false, hideLatam = false,
     },
 }
 
@@ -203,6 +204,55 @@ function G.WhoText(rec)
     local m = main and g and g.members[main]
     if m then text = text .. PGM.Hex(PGM.C.text3) .. "  alt of |r" .. PGM.ColorName(m) end
     return text
+end
+
+-- ============================================================
+-- REALM REGIONS
+-- ============================================================
+
+-- The Americas' realms outside North America (retail). Any other realm in
+-- the region is NA, so a new or merged one needs no change here.
+local REGION_REALMS = {
+    OCE = { "Aman'Thul", "Barthilas", "Caelestrasz", "Dath'Remar", "Dreadmaul", "Frostmourne", "Gundrak",
+            "Jubei'Thos", "Khaz'goroth", "Nagrand", "Saurfang", "Thaurissan" },
+    BRZL = { "Azralon", "Gallywix", "Goldrinn", "Nemesis", "Tol Barad" },
+    MEX = { "Drakkari", "Quel'Thalas", "Ragnaros" },
+}
+local REGION_OF = {}
+
+-- Names can come with or without their spaces ("TolBarad").
+local function realmKey(realm)
+    return (realm:gsub("[%s'%-]", "")):lower()
+end
+
+for region, realms in pairs(REGION_REALMS) do
+    for _, realm in ipairs(realms) do REGION_OF[realmKey(realm)] = region end
+end
+
+G.REGION_NAME = { NA = "North American", OCE = "Oceanic", BRZL = "Brazilian", MEX = "Latin American" }
+G.REGION_HIDE = { OCE = "hideOce", BRZL = "hideLatam", MEX = "hideLatam" }   -- the board filter for each
+local REGION_COLOR = { NA = PGM.C.text3, OCE = PGM.C.blue, BRZL = PGM.C.amber, MEX = PGM.C.amber }
+
+-- Retail's Americas region only: 1 is its number in the game.
+function G.ShowsRegions()
+    return not PGM.IS_FOREVER and GetCurrentRegion ~= nil and GetCurrentRegion() == 1
+end
+
+-- "OCE", "BRZL", "MEX" or "NA" for a realm (nil: ours), or nil where
+-- regions don't show.
+function G.RealmRegion(realm)
+    if not G.ShowsRegions() then return nil end
+    realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName())
+    return realm and (REGION_OF[realmKey(realm)] or "NA") or nil
+end
+
+-- The same for a "Name-Realm" (or a bare name on our realm).
+function G.NameRegion(name)
+    return G.RealmRegion(name:match("%-(.+)$"))
+end
+
+function G.RegionTag(region)
+    return region and (PGM.Hex(REGION_COLOR[region]) .. region .. "|r  ") or ""
 end
 
 -- ============================================================

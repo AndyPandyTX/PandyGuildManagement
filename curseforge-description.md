@@ -24,6 +24,7 @@ Bugs, ideas or questions? Join the [Discord](https://discord.gg/tDtNKncGRT).
 - Post a Mythic+ key, raid, delve or anything else; guildies ask to join in one click
 - See each asker's role, item level, M+ score and whose alt they are, then invite
 - Your Group Finder listing goes on the guild board too, and guild groups stand out in Blizzard's windows
+- Region tags on Group Finder groups and applicants (NA, OCE, BRZL, MEX), with filters to hide OCE or Latin American groups
 - Schedule a group for later, and tell guild chat about it in one click
 - Who's Free and everyone's Keystones, at a glance
 - /pgg, and it can be switched off in Settings

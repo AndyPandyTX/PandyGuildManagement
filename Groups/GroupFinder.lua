@@ -288,7 +288,8 @@ local function readApplicants()
                     local role = G.ROLE_OF[str(assigned) or ""]
                         or (P(tank) and "T") or (P(healer) and "H") or "D"
                     local a = {
-                        name = name, short = short or name, realm = realm, class = str(class), role = role,
+                        name = name, short = short or name, realm = realm, region = G.RealmRegion(realm),
+                        class = str(class), role = role,
                         offers = { T = P(tank) and true, H = P(healer) and true, D = P(damage) and true },
                         ilvl = math.floor(num(ilvl) or 0), spec = num(spec) or 0, note = comment,
                         score = num(score) or 0, at = firstSeen[id], members = members,
@@ -530,6 +531,7 @@ local function readResults()
                     diff = (kind == "R" or kind == "D") and paren or nil,
                     need = need, has = has, members = members, classes = classes, comp = comp, brez = brez, lust = lust,
                     leader = leader, rec = leader and G.RecByName(leader) or nil,
+                    region = leader and G.NameRegion(leader) or nil,
                     mates = num(info.numGuildMates) or 0,
                     score = num(info.leaderOverallDungeonScore) or 0,
                     playstyle = playstyleOf(info, a), age = num(info.age) or 0,
@@ -633,7 +635,7 @@ local function fromResult(r)
         result = r, kind = r.kind, what = r.what, level = r.level, size = r.size, need = r.need, has = r.has,
         rec = r.rec, guild = r.rec ~= nil or r.mates > 0, note = r.note, score = r.score, scheduled = false,
         playstyle = r.playstyle, brez = r.brez, lust = r.lust, comp = r.comp, u = PGM.Now() - (r.age or 0),
-        diff = r.diff,
+        diff = r.diff, region = r.region,
     }
 end
 
@@ -708,6 +710,8 @@ function G:Board(f)
             and (not f.hasHealer or (row.has and row.has.H > 0) or (not row.has and row.need.H == 0))
             and (not f.brez or row.brez ~= false)
             and (not f.lust or PGM.IS_FOREVER or row.lust ~= false)
+            -- A group with guildies in it stays, wherever its leader is from.
+            and (row.guild or not f[G.REGION_HIDE[row.region]])
         if keep and f.fitsMe then
             keep = false
             for r in pairs(roles) do

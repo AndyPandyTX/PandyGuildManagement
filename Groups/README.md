@@ -64,9 +64,14 @@ character's score comes from the game; main, warband and roles need RaiderIO.
   - **Filters** panel, like OAK's: **Apply as** (the roles Apply signs you
     up as), playstyle, leader rating, then tick boxes for Fits my role,
     Hide declined, Need or Has tank, Need or Has healer, Need DPS, Battle
-    res and Lust. Under them, this season's dungeons with their icons and
-    your best key in each: untick one to hide it, or use All and None.
-    Reset clears it all.
+    res, Lust, Hide OCE and Hide LatAm. Under them, this season's dungeons
+    with their icons and your best key in each: untick one to hide it, or
+    use All and None. Reset clears it all.
+  - **Regions** (Americas, retail): a tag by the leader's name, and by each
+    applicant's realm under My group, says where the realm is: **NA**,
+    **OCE**, **BRZL** or **MEX**. It goes by the realm, so it's the leader's
+    for a whole group, and not always where someone lives. Hide OCE and
+    Hide LatAm (Brazil and Mexico together) keep groups with guildies in them.
   - **Searching by key level:** Group Finder titles reach addons as
     protected strings (the game draws them, no addon can read them), so
     the search is Blizzard's: its own search box moves into the Filters

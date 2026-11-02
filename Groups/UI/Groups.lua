@@ -409,6 +409,7 @@ local function askRow(list)
         local a = it.ask
         GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
         GameTooltip:SetText(a.name or "?")
+        if a.region and not it.rec then GameTooltip:AddLine(G.REGION_NAME[a.region] .. " realm", 0.6, 0.6, 0.6) end
         if a.note ~= "" then GameTooltip:AddLine(a.note, 0.85, 0.85, 0.85, true) end
         G.AddScoreLines(GameTooltip, it.scores or {})
         if (a.members or 1) > 1 then
@@ -450,7 +451,8 @@ local function askUpdate(r, it)
             .. (it.app and "  -  Group Finder" or "  -  asked here"))
     else
         r.name:SetText(icon .. PGM.ClassHex(a.class) .. (a.short or a.name or "?") .. "|r")
-        r.tag:SetText((a.realm or "") .. (((a.members or 1) > 1 and not follower) and ("  -  group of " .. a.members) or ""))
+        r.tag:SetText(G.RegionTag(a.region) .. (a.realm or "")
+            .. (((a.members or 1) > 1 and not follower) and ("  -  group of " .. a.members) or ""))
     end
     r.edge:SetShown(rec ~= nil)
 
@@ -777,6 +779,7 @@ local function boardRow(list)
         elseif row.result and row.result.leader then
             local short, realm = row.result.leader:match("^([^-]+)-(.+)$")
             GameTooltip:AddLine(row.result.leader, 1, 1, 1)
+            if row.region then GameTooltip:AddLine(G.REGION_NAME[row.region] .. " realm", 0.6, 0.6, 0.6) end
             G.AddScoreLines(GameTooltip, G.Scores(short or row.result.leader, realm, row.score))
         end
         if row.note ~= "" then GameTooltip:AddLine(row.note, 0.85, 0.85, 0.85, true) end
@@ -841,7 +844,9 @@ local function boardUpdate(r, row)
         leader = G.WhoText(row.rec) .. "  " .. PGM.Hex(C.jade) .. "Guild|r"
     elseif row.result and row.result.leader then
         local short, realm = row.result.leader:match("^([^-]+)-(.+)$")
-        leader = PGM.Hex(C.text) .. (short or row.result.leader) .. "|r" .. (realm and (PGM.Hex(C.text3) .. "-" .. realm .. "|r") or "")
+        -- The region first: a long realm name can run off the end of the line.
+        leader = G.RegionTag(row.region) .. PGM.Hex(C.text) .. (short or row.result.leader) .. "|r"
+            .. (realm and (PGM.Hex(C.text3) .. "-" .. realm .. "|r") or "")
     end
     -- A Group Finder title ("+14 Relaxed") is a protected string: the game
     -- draws it, so it goes in the key column as it came, never read. A
@@ -1163,7 +1168,8 @@ local function buildPanel(v)
     reset:SetScript("OnClick", function()
         local f = G.opt("board")
         f.minRating, f.playstyle, f.skip = 0, nil, {}
-        for _, key in ipairs({ "fitsMe", "needTank", "needHealer", "needDps", "hasTank", "hasHealer", "brez", "lust" }) do
+        for _, key in ipairs({ "fitsMe", "needTank", "needHealer", "needDps", "hasTank", "hasHealer", "brez", "lust",
+                               "hideOce", "hideLatam" }) do
             f[key] = false
         end
         UI:Refresh()
@@ -1239,9 +1245,13 @@ local function buildPanel(v)
         { { "Need healer", "needHealer" }, { "Has healer", "hasHealer" } },
         { { "Need DPS", "needDps" }, { "Battle res", "brez" } },
         not PGM.IS_FOREVER and { { "Lust", "lust" } } or {},
+        G.ShowsRegions() and {
+            { "Hide OCE", "hideOce", "Hide groups led from Oceanic realms. Groups with guildies stay." },
+            { "Hide LatAm", "hideLatam", "Hide groups led from Brazilian and Latin American realms. Groups with guildies stay." },
+        } or {},
     }) do
-        for i, it in ipairs(pair) do flagCheck(panel, it[1], it[2], x + (i - 1) * 100, y) end
-        y = y - 21
+        for i, it in ipairs(pair) do flagCheck(panel, it[1], it[2], x + (i - 1) * 100, y).tip = it[3] end
+        if pair[1] then y = y - 21 end
     end
 
     y = y - 8

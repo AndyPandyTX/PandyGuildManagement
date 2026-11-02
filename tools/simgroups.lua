@@ -208,6 +208,7 @@ local function newClient(guid, name, class, specRole)
     env.IsInGuild = function() return true end
     env.GetGuildInfo = function() return "For Honor and Mercy", "x", 1, REALM end
     env.GetNormalizedRealmName = function() return REALM end
+    env.GetCurrentRegion = function() return st.region or 1 end
     env.UnitGUID = function(u) if u == "player" then return guid end end
     env.UnitFullName = function() return name, REALM end
     env.UnitLevel = function() return 90 end
@@ -480,6 +481,7 @@ if FOREVER then
     check(#B.G:KeyList() == 0, "no keystones go out")
     check(A.PGM.UI.tabs.keys.hidden() == true, "no Keystones tab")
     check(G.ScoreText(B.G.RecByName("Funkyshade")) == nil and G.ScoreLine({}) == "", "no M+ scores")
+    check(not G.ShowsRegions() and G.RealmRegion("Frostmourne") == nil, "no region tags")
 
     print("-- a dungeon post")
     local p = A.G:Post({ kind = "M", what = "Stratholme", level = "", size = 5, need = { T = 0, H = 1, D = 3 } })
@@ -807,6 +809,7 @@ check(said(A, "applied through the Group Finder"), "a guildie applying is announ
 local order = {}
 for _, it in ipairs(A.G:Asks()) do order[#order + 1] = it.ask.short end
 check(table.concat(order, ",") == "Funkyshade,Pug", "guildies first (got " .. table.concat(order, ",") .. ")")
+check(A.G:Asks()[2].ask.region == "NA", "an applicant's region comes from their realm")
 B.G:Ask(firstPost(B, "M").id, "H")
 run(10)
 local n = 0
@@ -1064,6 +1067,49 @@ A.env.SlashCmdList.PANDYGUILDGROUPS("on")
 check(A.G:IsEnabled() and A.G.Send(true, "Q"), "/pgg on brings it back")
 check(navBuilt == 2, "and lays the sidebar out again")
 A.PGM.UI.frame, A.PGM.UI.BuildNav = nil, nil
+
+print("-- realm regions")
+check(C.G.RealmRegion("Frostmourne") == "OCE" and C.G.RealmRegion("Aman'Thul") == "OCE", "Oceanic realms")
+check(C.G.RealmRegion("Tol Barad") == "BRZL" and C.G.RealmRegion("TolBarad") == "BRZL", "Brazilian realms, with or without the space")
+check(C.G.RealmRegion("Quel'Thalas") == "MEX", "Latin American realms")
+check(C.G.RealmRegion("Stormrage") == "NA" and C.G.RealmRegion("BrandNewRealm") == "NA", "every other realm is NA")
+check(C.G.RealmRegion() == C.G.RealmRegion(REALM) and C.G.NameRegion("Bare") == C.G.RealmRegion(REALM), "no realm means ours")
+check(C.G.RegionTag("OCE"):find("OCE", 1, true) and C.G.RegionTag(nil) == "", "the tag")
+L.order = { 301, 302, 303, 304, 305, 306 }
+L.results[301] = { activityIDs = { 1 }, name = "31", leaderName = "Aus-Frostmourne", numMembers = 1, age = 60 }
+L.results[302] = { activityIDs = { 1 }, name = "32", leaderName = "Bra-TolBarad", numMembers = 1, age = 60 }
+L.results[303] = { activityIDs = { 1 }, name = "33", leaderName = "Mex-Ragnaros", numMembers = 1, age = 60 }
+L.results[304] = { activityIDs = { 1 }, name = "34", leaderName = "Us-Stormrage", numMembers = 1, age = 60 }
+L.results[305] = { activityIDs = { 1 }, name = "35", leaderName = "Home", numMembers = 1, age = 60 }
+L.results[306] = { activityIDs = { 1 }, name = "36", leaderName = "Mate-Barthilas", numMembers = 1, age = 60, numGuildMates = 1 }
+local function regionSearch()
+    C.G:SearchFinder("M")
+    C.fire("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+    run(1)
+end
+-- Which of the groups above a filter leaves on the board.
+local function regionKeys(extra)
+    local shown = board(C, "M", extra)
+    local t = {}
+    for level = 31, 36 do
+        if shown:find("+" .. level, 1, true) then t[#t + 1] = level end
+    end
+    return table.concat(t, ",")
+end
+regionSearch()
+local regions = {}
+for _, x in ipairs(C.G:FinderResults()) do regions[x.id] = x.region end
+check(regions[301] == "OCE" and regions[302] == "BRZL" and regions[303] == "MEX" and regions[304] == "NA", "a group's region comes from its leader's realm")
+check(regions[305] == C.G.RealmRegion(REALM), "a leader on our realm has our region")
+check(regionKeys() == "31,32,33,34,35,36", "nothing's hidden by default")
+check(regionKeys({ hideOce = true }) == "32,33,34,35,36", "Hide OCE, but a group with guildies stays")
+check(regionKeys({ hideLatam = true }) == "31,34,35,36", "Hide LatAm hides Brazil and Mexico together")
+check(regionKeys({ hideOce = true, hideLatam = true }) == "34,35,36", "both filters")
+C.st.region = 3
+regionSearch()
+check(C.G:FinderResults()[1].region == nil and regionKeys({ hideOce = true }) == "31,32,33,34,35,36", "no tags or filtering outside the Americas")
+C.st.region = nil
+regionSearch()
 
 print("-- every page and view draws")
 for _, cl in ipairs({ A, B, C }) do
