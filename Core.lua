@@ -104,6 +104,7 @@ local DEFAULTS = {
     announce = { join = true, leave = true, rank = true, maxLevel = true, rename = true },
     raidMinGuildies = 5,
     scale = 1,
+    navCollapsed = false,   -- the sidebar collapsed to icons
     accent = "ice",
     syncEnabled = true,
     chatMains = true,       -- an alt's main in front of what they say in chat

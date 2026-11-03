@@ -4,7 +4,7 @@ A guild manager and group finder for Midnight and WoW Forever, built for big rai
 
 Formerly Pandy Guild Management: same addon, and updating keeps all your data.
 
-Type **/pgm** to open it (or **/pgg** for the group finder), click the panda button on the minimap, or use the buttons under the Guild & Communities window.
+Type **/pgm** to open it (or **/pgg** for the group finder), click the panda button on the minimap, or use the buttons under the Guild & Communities window. The arrow at the top of the menu collapses it to icons, for a wider page.
 
 Bugs, ideas or questions? Join the [Discord](https://discord.gg/tDtNKncGRT).
 

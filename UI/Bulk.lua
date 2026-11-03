@@ -145,8 +145,10 @@ PGM:RegisterEvent("PLAYER_REGEN_DISABLED", function()
     wantArmed = false
     UI:BulkDisarm()
 end)
--- After a drag or scale, put it back where it was, if it was armed.
+-- After a drag or scale, put it back where it was, if it was armed. Not while
+-- a profile covers the page: opening one put the button away on purpose.
 UI:On("MOVED", function()
+    if UI.profile and UI.profile:IsVisible() then return end
     if wantArmed and PGM:BulkRunning() and page and page:IsVisible() then UI:BulkArm(false) end
 end)
 -- The button gets its next batch at once; the page repaints at most every

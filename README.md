@@ -26,6 +26,10 @@ or click it in Blizzard's AddOns button there. If the window ever ends up
 somewhere you can't drag it back from, `/pgm reset` puts it back in the
 middle at normal size.
 
+The arrow at the top of the sidebar collapses it to icons, with each page's
+name on hover, and gives the page about 160 pixels more width. It stays that
+way until you expand it again.
+
 The minimap button can be dragged around the minimap's edge, and minimap
 button collectors pick it up. Right-click it for Settings, where it can be
 turned off (or `/pgm minimap`). It's also a LibDataBroker launcher, so

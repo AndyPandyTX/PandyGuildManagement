@@ -1748,6 +1748,129 @@ do
     P.UI, A.env.CreateFrame = realUI, realCreate
 end
 
+print("-- the sidebar, collapsed to icons")
+do
+    local P, env = A.PGM, A.env
+    -- Frames that remember what they were told. Methods are capitalised and
+    -- do nothing unless listed; a field nobody set is nil, as in the game.
+    local noop = function() end
+    local methods = {
+        SetWidth = function(s, w) s.width = w end,
+        SetShown = function(s, v) s.shown = not not v end,
+        Show = function(s) s.shown = true end,
+        Hide = function(s) s.shown = false end,
+        IsShown = function(s) return s.shown end,
+        SetText = function(s, t) s.text = t end,
+        SetLabel = function(s, t) s.text = t end,
+        SetDesaturated = function(s, v) s.grey = v end,
+        SetPoint = function(s, point, a, b) s.point, s.x, s.y = point, a, b end,
+        SetScript = function(s, k, fn) s.scripts = s.scripts or {} s.scripts[k] = fn end,
+        GetName = function() return "PandyGuildManagementFrame" end,
+    }
+    local mt = { __index = function(_, k)
+        return methods[k] or (k:match("^%u") and noop or nil)
+    end }
+    local function Fake() return setmetatable({}, mt) end
+    methods.CreateTexture = function() return Fake() end
+    methods.CreateFontString = methods.CreateTexture
+
+    local heads, lines, buttons
+    local W = setmetatable({}, { __index = function() return function() return Fake() end end })
+    rawset(W, "Heading", function() local h = Fake() heads[#heads + 1] = h return h end)
+    rawset(W, "Divider", function() local l = Fake() lines[#lines + 1] = l return l end)
+    rawset(W, "Button", function() local b = Fake() buttons[#buttons + 1] = b return b end)
+
+    local tip = Fake()
+    local real = { UI = P.UI, CreateFrame = env.CreateFrame, GameTooltip = env.GameTooltip, UIParent = env.UIParent,
+        GetFileIDFromPath = env.GetFileIDFromPath, UISpecialFrames = env.UISpecialFrames, tinsert = env.tinsert,
+        RegisterEvent = P.RegisterEvent, On = P.On, InCombatLockdown = env.InCombatLockdown, C_Timer = env.C_Timer }
+    env.C_Timer = { After = function(_, fn) fn() end }
+    env.CreateFrame = function() return Fake() end
+    env.GameTooltip = tip
+    env.UIParent = Fake()
+    rawset(env.UIParent, "GetWidth", function() return 1920 end)
+    rawset(env.UIParent, "GetHeight", function() return 1080 end)
+    env.GetFileIDFromPath = function(path) return not path:find("Missing", 1, true) and 1 or nil end
+    env.UISpecialFrames = {}
+    env.tinsert = table.insert
+    env.InCombatLockdown = function() return false end
+    P.RegisterEvent, P.On = noop, noop
+
+    -- A fresh window, as after a /reload.
+    local function open()
+        heads, lines, buttons = {}, {}, {}
+        local UI = { W = W }
+        P.UI = UI
+        local fn, err = load(FILES["UI/Main.lua"], "@UI/Main.lua", "t", env)
+        if not fn then error(err) end
+        fn("PandyGuildManagement", A.NS)
+        UI:AddTab({ id = "overview", label = "Overview" })
+        UI:AddTab({ id = "roster", label = "Roster" })
+        UI:AddTab({ id = "teams", label = "Raid Teams" })
+        UI:AddTab({ id = "mod", label = "Module", module = true, icon = "Interface\\Icons\\Missing" })
+        UI.current = "overview"
+        return UI, UI:Create()
+    end
+
+    local ok, why = pcall(function()
+        check(P.opt("navCollapsed") == false, "the sidebar starts in full")
+        local UI, f = open()
+        local roster, teams, mod = f.navButtons.roster, f.navButtons.teams, f.navButtons.mod
+        local y = { roster = roster.y, teams = teams.y, mod = mod.y }
+        check(f.side.width == 210 and roster.width == 188, "full width, tabs and all")
+        check(roster.fs.text == "Roster" and heads[1].shown and f.foot.shown, "...with labels, headings and footer")
+        check(roster.icon.grey == true, "...and quiet icons beside the labels")
+        check(#lines == 1 and lines[1] == f.footLine, "...and no lines in place of headings")
+        roster.scripts.OnEnter(roster)
+        check(tip.text == nil, "no tooltip while the label's there")
+
+        local order = {}
+        UI.secure = Fake()
+        rawset(UI.secure, "shown", true)
+        rawset(UI.secure, "Hide", function(s) s.shown = false order[#order + 1] = "hide" end)
+        UI:On("MOVED", function() order[#order + 1] = "moved:" .. f.side.width end)
+        UI:ToggleNav()
+        check(P.opt("navCollapsed") == true, "collapsing is remembered")
+        check(f.side.width == 48 and roster.width == 26, "collapsed: 48 wide")
+        check(roster.fs.text == "" and roster.icon.point == "CENTER", "...icon in the middle, label gone")
+        check(roster.icon.grey == false, "...in colour, to tell them apart")
+        check(mod.fs.text == "M" and not mod.icon, "...and a page with no icon keeps its first letter")
+        check(not f.foot.shown and not f.footLine.shown, "...no footer")
+        check(not heads[1].shown and not heads[2].shown, "...no headings")
+        local shownLines = 0
+        for _, l in ipairs(lines) do if l.shown then shownLines = shownLines + 1 end end
+        check(shownLines == #heads - 1, "...a line between sections, none over the first (" .. shownLines .. ")")
+        check(roster.y == y.roster and teams.y == y.teams and mod.y == y.mod, "...and no tab moves up or down")
+        check(f.navToggle.text == ">", "...and the button points back out")
+        check(order[1] == "hide" and order[2] == "moved:48", "the secure buttons go, then return at the new width")
+        roster.scripts.OnEnter(roster)
+        check(tip.text == "Roster", "hovering an icon names the page")
+
+        -- Selecting a page keeps working with no labels.
+        roster:SetSelected(true)
+        check(roster.icon.grey == false, "the selected icon stays in colour")
+
+        UI, f = open()
+        check(f.side.width == 48 and f.navButtons.roster.width == 26, "still collapsed after a reload")
+        check(#buttons > 0 and f.navToggle.text == ">", "...with the button pointing out")
+
+        UI:ToggleNav()
+        roster = f.navButtons.roster
+        check(P.opt("navCollapsed") == false and f.side.width == 210, "expanding puts it back")
+        check(roster.fs.text == "Roster" and roster.icon.point == "LEFT" and roster.icon.grey == true, "...labels and quiet icons")
+        check(f.foot.shown and f.footLine.shown and heads[1].shown, "...footer and headings")
+        for _, l in ipairs(lines) do
+            if l ~= f.footLine then check(not l.shown, "...and the lines go") end
+        end
+    end)
+    check(ok, "the sidebar lays out (" .. tostring(why) .. ")")
+    P.setOpt("navCollapsed", false)
+    P.UI, P.RegisterEvent, P.On = real.UI, real.RegisterEvent, real.On
+    env.CreateFrame, env.GameTooltip, env.UIParent = real.CreateFrame, real.GameTooltip, real.UIParent
+    env.GetFileIDFromPath, env.UISpecialFrames, env.tinsert = real.GetFileIDFromPath, real.UISpecialFrames, real.tinsert
+    env.InCombatLockdown, env.C_Timer = real.InCombatLockdown, real.C_Timer
+end
+
 print("-- game version: " .. (FOREVER and "WoW Forever" or "retail"))
 for _, f in ipairs({ "Stats.lua", "Progress.lua" }) do
     local fn, err = load(FILES[f], "@" .. f, "t", A.env)

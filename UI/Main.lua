@@ -10,7 +10,7 @@ local C = PGM.C
 local UI = PGM.UI
 local W = UI.W
 
-local WIDTH, HEIGHT, SIDE_W = 1020, 660, 210
+local WIDTH, HEIGHT, SIDE_W, SIDE_ICONS = 1020, 660, 210, 48
 
 -- Sidebar sections, in order. A page not listed lands in the last one.
 local NAV = {
@@ -76,7 +76,7 @@ end
 
 local function navTab(parent, id, label, iconPath)
     local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    b:SetSize(SIDE_W - 22, 28)
+    b:SetHeight(28)
     W.Backdrop(b, C.side, C.side, 1)
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
@@ -91,13 +91,35 @@ local function navTab(parent, id, label, iconPath)
     if icon then
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetSize(16, 16)
-        b.icon:SetPoint("LEFT", 10, 0)
         b.icon:SetTexture(icon)
         b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
     b.fs = W.FS(b, 13, C.text2)
-    b.fs:SetPoint("LEFT", icon and 34 or 12, 0)
-    b.fs:SetText(label)
+    -- Icons only: the label moves to a tooltip. A page with no icon on this
+    -- client keeps its first letter, so its button isn't blank.
+    function b:SetCollapsed(on)
+        self.collapsed = on
+        self:SetWidth((on and SIDE_ICONS or SIDE_W) - 22)
+        if self.icon then
+            self.icon:ClearAllPoints()
+            if on then self.icon:SetPoint("CENTER") else self.icon:SetPoint("LEFT", 10, 0) end
+        end
+        self.fs:ClearAllPoints()
+        if on then
+            self.fs:SetPoint("CENTER")
+            self.fs:SetText(self.icon and "" or label:sub(1, 1))
+        else
+            self.fs:SetPoint("LEFT", self.icon and 34 or 12, 0)
+            self.fs:SetText(label)
+        end
+    end
+    b:SetScript("OnEnter", function(s)
+        if not s.collapsed then return end
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        GameTooltip:SetText(label, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     function b:SetSelected(on)
         if on then
             W.AccentFill(self, 0.16)
@@ -110,7 +132,11 @@ local function navTab(parent, id, label, iconPath)
             self:SetBackdropBorderColor(C.side[1], C.side[2], C.side[3], 1)
             self.fs:SetTextColor(C.text2[1], C.text2[2], C.text2[3])
             self.mark:Hide()
-            if self.icon then self.icon:SetDesaturated(true) self.icon:SetAlpha(0.7) end
+            -- With no label beside them, grey icons are hard to tell apart.
+            if self.icon then
+                self.icon:SetDesaturated(not self.collapsed)
+                self.icon:SetAlpha(self.collapsed and 0.85 or 0.7)
+            end
         end
     end
     b:SetScript("OnClick", function() UI:Show(id) end)
@@ -120,10 +146,12 @@ end
 -- The sidebar: each section's heading over its tabs. A page not in NAV
 -- lands in the last section, or under "Modules" if a module added it. A page
 -- whose hidden() says so is left out (the group finder, when switched off).
--- Run again whenever a page is added or hidden, reusing its buttons.
+-- Run again whenever a page is added or hidden, reusing its buttons. Collapsed
+-- to icons, a line stands where each heading was, so nothing changes height.
 function UI:BuildNav()
     local f = self.frame
     local side = f.side
+    local collapsed = PGM.opt("navCollapsed")
     local sections, placed = {}, {}
     for _, sec in ipairs(NAV) do
         local ids = {}
@@ -144,7 +172,9 @@ function UI:BuildNav()
 
     f.navButtons = f.navButtons or {}
     f.navHeads = f.navHeads or {}
+    f.navLines = f.navLines or {}
     for _, h in ipairs(f.navHeads) do h:Hide() end
+    for _, l in pairs(f.navLines) do l:Hide() end
     local function shown(id)
         local tab = self.tabs[id]
         return tab ~= nil and not (tab.hidden and tab.hidden())
@@ -161,7 +191,16 @@ function UI:BuildNav()
             h:SetText(sec.heading:upper())
             h:ClearAllPoints()
             h:SetPoint("TOPLEFT", 14, y)
-            h:Show()
+            h:SetShown(not collapsed)
+            -- The first heading's place belongs to the collapse button.
+            if collapsed and heads > 1 then
+                local l = f.navLines[heads] or W.Divider(side)
+                f.navLines[heads] = l
+                l:ClearAllPoints()
+                l:SetPoint("TOPLEFT", 11, y - 5)
+                l:SetPoint("TOPRIGHT", -11, y - 5)
+                l:Show()
+            end
             y = y - 17
             for _, id in ipairs(sec.ids) do
                 local tab = self.tabs[id]
@@ -170,6 +209,7 @@ function UI:BuildNav()
                     f.navButtons[id] = b
                     b:ClearAllPoints()
                     b:SetPoint("TOPLEFT", 11, y)
+                    b:SetCollapsed(collapsed)
                     b:SetSelected(id == self.current)
                     y = y - 30
                 end
@@ -177,6 +217,34 @@ function UI:BuildNav()
             y = y - 10
         end
     end
+end
+
+-- The sidebar's width, its collapse button and footer, and its tabs.
+local function layoutSide(f)
+    local collapsed = PGM.opt("navCollapsed")
+    f.side:SetWidth(collapsed and SIDE_ICONS or SIDE_W)
+    local toggle = f.navToggle
+    toggle:ClearAllPoints()
+    if collapsed then toggle:SetPoint("TOP", 0, -8) else toggle:SetPoint("TOPRIGHT", -8, -8) end
+    toggle:SetLabel(collapsed and ">" or "<")
+    toggle.tip = collapsed and "Show the full menu" or "Collapse the menu to icons, for a wider page"
+    f.foot:SetShown(not collapsed)
+    f.footLine:SetShown(not collapsed)
+    UI:BuildNav()
+end
+
+-- The page's edge moves, so what's placed over it by position goes back too,
+-- and what fits its width to the page is drawn again. Next frame, once the
+-- page has its new size.
+function UI:ToggleNav()
+    PGM.setOpt("navCollapsed", not PGM.opt("navCollapsed"))
+    if not self.frame then return end
+    self:HideSecure()
+    layoutSide(self.frame)
+    C_Timer.After(0, function()
+        self:Fire("MOVED")
+        self:Refresh()
+    end)
 end
 
 function UI:Create()
@@ -267,11 +335,15 @@ function UI:Create()
     local side = CreateFrame("Frame", nil, f, "BackdropTemplate")
     side:SetPoint("TOPLEFT", 16, -73)
     side:SetPoint("BOTTOMLEFT", 16, 17)
-    side:SetWidth(SIDE_W)
     W.Backdrop(side, C.side, C.frame, 1)
 
     f.side = side
-    self:BuildNav()
+
+    f.navToggle = W.Button(side, "<", 22, 18, C.text2)
+    f.navToggle:SetScript("OnClick", function()
+        GameTooltip:Hide()
+        UI:ToggleNav()
+    end)
 
     local foot = W.FS(side, 10, C.text3, "CENTER")
     foot:SetPoint("BOTTOM", 0, 12)
@@ -280,6 +352,8 @@ function UI:Create()
     local footLine = W.Divider(side)
     footLine:SetPoint("BOTTOMLEFT", 14, 30)
     footLine:SetPoint("BOTTOMRIGHT", -14, 30)
+    f.footLine = footLine
+    layoutSide(f)
 
     -- The page well.
     local main = CreateFrame("Frame", nil, f, "BackdropTemplate")
