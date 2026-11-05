@@ -19,6 +19,14 @@ local PGM = NS.PGM
 PGM.BULK_ACTIONS = { "kick", "promote", "demote" }
 PGM.BULK_VERB = { kick = "/gremove", promote = "/gpromote", demote = "/gdemote" }
 
+-- The name /gpromote, /gdemote and /gremove take. Retail wants the full
+-- Name-Realm (guildies on other realms). WoW Forever's servers find nobody
+-- by it: there it's just the name, spaces and all ("Totems Reddeath").
+function PGM.CommandName(rec)
+    if PGM.IS_FOREVER then return rec.short or rec.name end
+    return rec.name
+end
+
 local MACRO_MAX = 255
 local CONFIRM_WAIT = 20   -- seconds for a change to show in the roster
 local MAX_TRIES = 2
@@ -355,7 +363,7 @@ function PGM:BulkBatch()
                 Bulk.state[item.guid] = { s = "done", tries = 0 }
             elseif rec.name then
                 -- One rank per person per press (see the top of the file).
-                local line = verb .. " " .. rec.name
+                local line = verb .. " " .. PGM.CommandName(rec)
                 local extra = #line + (size > 0 and 1 or 0)
                 if size + extra > MACRO_MAX then break end   -- the macro is full
                 lines[#lines + 1] = line

@@ -713,7 +713,14 @@ check(P:BulkStart("kick") == 21, "an ignored member is left out of the run (got 
 local text, items = P:BulkBatch()
 print(("  first batch: %d people, %d characters"):format(#items, #text))
 check(#text <= 255 and #items >= 6, "a batch fills one macro and does several people")
-check(text:find("^/gremove Codiexalt%-MalGanis\n"), "commands use the full name")
+if FOREVER then
+    check(text:find("^/gremove Codiexalt\n"), "commands use the plain name: Forever finds nobody by Name-Realm")
+else
+    check(text:find("^/gremove Codiexalt%-MalGanis\n"), "commands use the full name")
+end
+-- Forever names have spaces, and the command takes them as they are.
+check(P.CommandName({ short = "Totems Reddeath", name = "Totems Reddeath-CAMWOWUS2Realm4PvP" })
+    == (FOREVER and "Totems Reddeath" or "Totems Reddeath-CAMWOWUS2Realm4PvP"), "a name with a space goes in whole")
 P:BulkSent(items)
 for _, it in ipairs(items) do g.members[it.guid] = nil end
 P:Fire("ROSTER")
@@ -738,13 +745,14 @@ pr.ranks, pr.toRank, pr.skipTeams = { [6] = true }, 4, nil
 check((select(2, P:BulkMatches("promote"))[pr.id] or 0) == 1, "promote rule picks the trial")
 P:BulkStart("promote")
 local pt, pi = P:BulkBatch()
-check(pt == "/gpromote Yinsane-MalGanis", "two ranks up is one command per press")
+local yinCmd = "/gpromote " .. (FOREVER and "Yinsane" or "Yinsane-MalGanis")
+check(pt == yinCmd, "two ranks up is one command per press")
 P:BulkSent(pi)
 yin.rankIndex = 5
 P:Fire("ROSTER")
 check(P:BulkState(gid(26)) == nil, "partway there: queued for the rest")
 local pt2 = P:BulkBatch()
-check(pt2 == "/gpromote Yinsane-MalGanis", "...which is one more command")
+check(pt2 == yinCmd, "...which is one more command")
 yin.rankIndex = 4
 P:BulkSent(select(2, P:BulkBatch()))
 P:Fire("ROSTER")

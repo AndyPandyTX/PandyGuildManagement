@@ -450,8 +450,9 @@ function UI:RefreshProfile()
     local h = buildSecure()
     -- Refreshes come after every roster scan; only a new person disarms
     -- Remove, or "Confirm remove" could reset under your cursor.
-    if h.target ~= rec.name then UI:DisarmRemove() end
-    h.target = rec.name
+    local name = PGM.CommandName(rec)
+    if h.target ~= name then UI:DisarmRemove() end
+    h.target = name
     -- Only someone below your own rank can be moved, and only to a rank
     -- below yours (the game refuses anything else).
     local my = PGM:MyRankIndex()
@@ -464,7 +465,7 @@ function UI:RefreshProfile()
     -- Just clicked: wait for the roster to show the new rank (or give up
     -- after 15 seconds, say if the game refused).
     local sent = h.sent
-    if sent and (sent.name ~= rec.name or sent.from ~= rec.rankIndex or GetTime() - sent.at > 15) then
+    if sent and (sent.name ~= name or sent.from ~= rec.rankIndex or GetTime() - sent.at > 15) then
         h.sent, sent = nil, nil
     end
     local text
@@ -473,7 +474,7 @@ function UI:RefreshProfile()
     elseif movable and target ~= rec.rankIndex then
         local promoting = target < rec.rankIndex
         if (promoting and can.promote) or (not promoting and can.demote) then
-            text = rankMacro(rec.name, rec.rankIndex, target)
+            text = rankMacro(name, rec.rankIndex, target)
             local left = math.abs(target - rec.rankIndex)
             h.setRank:SetLabel((promoting and "Promote" or "Demote") .. (left > 1 and (" (" .. left .. ")") or ""))
         else
