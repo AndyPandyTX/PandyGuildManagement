@@ -248,8 +248,23 @@ function PGM:RebuildAlts()
     -- Loops: an officer links Aldrimord to Uncleloupy while the player's
     -- account still says Uncleloupy is Aldrimord's alt. Left alone, nobody in
     -- the group would have a main, so every character came out unlinked. In
-    -- each loop the weakest link goes (the earliest GUID on a tie, so every
-    -- copy drops the same one), and its character becomes the main.
+    -- each loop the weakest link goes, and its character becomes the main.
+    -- Between two of a kind the older goes: Hazmina still saying Aldrimord
+    -- is its main from before the player picked Hazmina. Then the earliest
+    -- GUID, so every copy drops the same one.
+    local stampOf = { manual = g.linkU or {}, player = g.claims and g.claimU or {} }
+    local function stamp(guid)
+        local s = src[guid]
+        if s == "account" then return math.huge end   -- this copy, right now
+        return (stampOf[s] and stampOf[s][guid]) or 0
+    end
+    local function weaker(a, b)
+        local sa, sb = STRENGTH[src[a]], STRENGTH[src[b]]
+        if sa ~= sb then return sa < sb end
+        local ta, tb = stamp(a), stamp(b)
+        if ta ~= tb then return ta < tb end
+        return a < b
+    end
     for start in pairs(raw) do
         local at, path, node = {}, {}, start
         while raw[node] and not at[node] do
@@ -260,9 +275,7 @@ function PGM:RebuildAlts()
         if raw[node] then
             local weakest
             for i = at[node], #path do
-                local c = path[i]
-                local s, w = STRENGTH[src[c]], weakest and STRENGTH[src[weakest]]
-                if not weakest or s < w or (s == w and c < weakest) then weakest = c end
+                if not weakest or weaker(path[i], weakest) then weakest = path[i] end
             end
             raw[weakest], src[weakest] = nil, nil
         end

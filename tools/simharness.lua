@@ -569,6 +569,23 @@ do
     P:RebuildAlts()
     check(P:KnownMain(AL) == U and P:KnownMain(X) == U, "an alt not logged in since follows its old main to the new one")
 
+    -- Hammer's copy: Aldrimord says Hazmina (Triclops here) is its main,
+    -- Hazmina still says Aldrimord from before, and the rest say Aldrimord.
+    -- The newer claim wins, and everyone ends up under Hazmina.
+    reset()
+    local savedU = { g.claimU[U], g.claimU[AL], g.claimU[X] }
+    g.claims[AL], g.claimU[AL] = X, BASE + 200
+    g.claims[X], g.claimU[X] = AL, BASE + 100
+    g.claims[U], g.claimU[U] = AL, BASE + 50
+    P:RebuildAlts()
+    check(P:MainOf(X) == X and P:KnownMain(AL) == X and P:KnownMain(U) == X,
+        "two claims in a loop: the newer wins, and the rest follow it")
+    -- The other way round in time: Aldrimord is the main.
+    g.claimU[AL], g.claimU[X] = BASE + 100, BASE + 200
+    P:RebuildAlts()
+    check(P:MainOf(AL) == AL and P:KnownMain(X) == AL and P:KnownMain(U) == AL, "...whichever is newer")
+    g.claimU[U], g.claimU[AL], g.claimU[X] = savedU[1], savedU[2], savedU[3]
+
     -- Two officers link them to each other: one main, not none.
     reset()
     g.links[U], g.links[AL] = AL, U
