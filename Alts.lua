@@ -181,6 +181,8 @@ end
 -- RESOLUTION
 -- ============================================================
 
+local STRENGTH = { note = 1, player = 2, account = 3, manual = 4 }
+
 function PGM:RebuildAlts()
     local before = {}
     for k, v in pairs(mainOf) do before[k] = v end
@@ -213,13 +215,15 @@ function PGM:RebuildAlts()
     end
 
     -- What other players' copies told us about their own characters. A claim
-    -- "A's main is M" counts only if M claims to be a main itself, so nobody
-    -- can pull someone else's characters under their own. (The worst a false
-    -- claim does is attach the claimer's own character to a stranger's main,
-    -- and an officer's link or "Not an alt" overrides it.)
+    -- "A's main is M" counts only if M runs the addon and made a claim of its
+    -- own, so nobody can pull someone else's characters under their own. (The
+    -- worst a false claim does is attach the claimer's own character to a
+    -- stranger's group, and an officer's link or "Not an alt" overrides it.)
+    -- M may since have named a new main: A follows it there, without waiting
+    -- for A to log in again.
     local claims = g.claims or {}
     for guid, main in pairs(claims) do
-        if main ~= guid and members[guid] and members[main] and claims[main] == main then
+        if main ~= guid and members[guid] and members[main] and claims[main] ~= nil then
             raw[guid], src[guid] = main, "player"
         end
     end
@@ -238,6 +242,29 @@ function PGM:RebuildAlts()
             raw[guid], src[guid] = nil, nil
         elseif members[guid] and members[target] then
             raw[guid], src[guid] = target, "manual"
+        end
+    end
+
+    -- Loops: an officer links Aldrimord to Uncleloupy while the player's
+    -- account still says Uncleloupy is Aldrimord's alt. Left alone, nobody in
+    -- the group would have a main, so every character came out unlinked. In
+    -- each loop the weakest link goes (the earliest GUID on a tie, so every
+    -- copy drops the same one), and its character becomes the main.
+    for start in pairs(raw) do
+        local at, path, node = {}, {}, start
+        while raw[node] and not at[node] do
+            path[#path + 1] = node
+            at[node] = #path
+            node = raw[node]
+        end
+        if raw[node] then
+            local weakest
+            for i = at[node], #path do
+                local c = path[i]
+                local s, w = STRENGTH[src[c]], weakest and STRENGTH[src[weakest]]
+                if not weakest or s < w or (s == w and c < weakest) then weakest = c end
+            end
+            raw[weakest], src[weakest] = nil, nil
         end
     end
 
@@ -320,9 +347,10 @@ end
 function PGM:LinkAlt(altGuid, mainGuid)
     local g = PGM.GuildDB(true)
     if not g or altGuid == mainGuid or not canEdit() then return false end
-    -- Linking to someone's alt means linking to their main.
-    mainGuid = PGM:MainOf(mainGuid)
-    if mainGuid == altGuid then return false end
+    -- Linking to someone's alt means linking to their main, unless that main
+    -- is this character: then it's this one's alt that should be the main.
+    local top = PGM:MainOf(mainGuid)
+    if top ~= altGuid then mainGuid = top end
     g.links[altGuid] = mainGuid
     share(altGuid)
     PGM:RebuildAlts()

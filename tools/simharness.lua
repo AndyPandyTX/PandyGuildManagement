@@ -538,6 +538,67 @@ run(10)
 check(A.PGM:KnownMain(gid(30)) == nil, "officer's Not an alt wins locally")
 check(D.PGM:KnownMain(gid(30)) == nil, "...and for everyone else")
 
+print("-- an officer's link against the player's own: no loop")
+do
+    -- Funkyshade (Uncleloupy), Selwyne (Aldrimord) and Triclops (another
+    -- alt) are one player's. Their copy picked Selwyne as the main; an
+    -- officer then linked Selwyne to Funkyshade. That loop used to leave the
+    -- whole group with no main: every character unlinked, for everyone.
+    local P, g = A.PGM, A.g
+    local U, AL, X = gid(22), gid(23), gid(24)
+    local saved = {}
+    for _, k in ipairs({ U, AL, X }) do saved[k] = { g.claims[k], g.links[k] } end
+    local function reset()
+        for _, k in ipairs({ U, AL, X }) do g.claims[k], g.links[k] = nil, nil end
+    end
+    reset()
+    P:RebuildAlts()
+    check(P:MainOf(U) == U and P:MainOf(AL) == AL and P:MainOf(X) == X, "three separate players to start")
+
+    g.claims[AL], g.claims[U], g.claims[X] = AL, AL, AL
+    g.links[AL] = U
+    P:RebuildAlts()
+    check(P:KnownMain(AL) == U and P:AltSource(AL) == "manual", "the officer's link wins the loop")
+    check(P:KnownMain(X) == U, "...and the rest of the group follows it")
+    check(P:MainOf(U) == U and P:AltCount(U) == 2, "...under one main with both alts")
+
+    -- The player then picks Funkyshade as their main. Triclops hasn't logged
+    -- in since, so still says Selwyne: it follows Selwyne's new claim.
+    reset()
+    g.claims[U], g.claims[AL], g.claims[X] = U, U, AL
+    P:RebuildAlts()
+    check(P:KnownMain(AL) == U and P:KnownMain(X) == U, "an alt not logged in since follows its old main to the new one")
+
+    -- Two officers link them to each other: one main, not none.
+    reset()
+    g.links[U], g.links[AL] = AL, U
+    P:RebuildAlts()
+    local a, b = P:KnownMain(U), P:KnownMain(AL)
+    check((a == AL and b == nil) or (a == nil and b == U), "two hand-made links in a loop still leave one main")
+
+    -- On the player's own copy: the account makes Funkyshade Selwyne's alt,
+    -- and an officer links Selwyne under Funkyshade. That used to do nothing
+    -- (Funkyshade's main was Selwyne itself); now Funkyshade is the main.
+    reset()
+    local db = A.env.PandyGuildDB
+    local savedMain, me = db.myMain, A.guid
+    shareAccount(A, { U })
+    db.myMain = me
+    P:RebuildAlts()
+    check(P:KnownMain(U) == me, "the officer's own alt, by account")
+    local realShare = P.SyncLink
+    P.SyncLink = function() end
+    check(P:LinkAlt(me, U), "linking a main under its own alt works")
+    P.SyncLink = realShare
+    check(P:KnownMain(me) == U and P:MainOf(U) == U, "...and makes that alt the main")
+    g.links[me] = nil
+    db.chars[U], db.myMain = nil, savedMain
+
+    reset()
+    for k, v in pairs(saved) do g.claims[k], g.links[k] = v[1], v[2] end
+    P:RebuildAlts()
+end
+
 print("-- editing a team's details syncs")
 local nt = A.PGM:CreateTeam()   -- default name, like "+ New raid team"
 run(5)

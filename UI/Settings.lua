@@ -352,7 +352,12 @@ local function refresh(p)
     for _, sync in ipairs(p.syncers) do sync() end
     local mainGuid = PGM:AccountMain()
     local c = mainGuid and PandyGuildDB.chars[mainGuid]
-    p.mainText:SetText(c and ("Main: %s%s|r%s. Your other characters here are its alts, shared with the guild once you've logged into each."):format(
+    -- An officer's link outranks this pick: show the main the guild sees.
+    local top = mainGuid and PGM:MainOf(mainGuid)
+    local over = top ~= mainGuid and g and g.members[top]
+    p.mainText:SetText(over and ("Main: %s%s|r, set by an officer. Your other characters here are its alts."):format(
+        PGM.ClassHex(over.class), over.short or "?")
+        or c and ("Main: %s%s|r%s. Your other characters here are its alts, shared with the guild once you've logged into each."):format(
         PGM.ClassHex(c.class), c.name or "?", PandyGuildDB.myMain == mainGuid and "" or " (picked for you)")
         or "Your characters in this guild are linked as alts of your main, shared with the guild once you've logged into each.")
 end

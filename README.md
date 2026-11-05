@@ -310,8 +310,13 @@ raid nights or alts.
    guild who its main is, so once you've logged into each of them with the
    addon, everyone sees them linked ("set by the player" on the profile).
    Each character can only speak for itself, and a link only counts once
-   the main has also said it's a main, so nobody can claim someone else's
-   characters.
+   the main has run the addon and said who its own main is, so nobody can
+   claim someone else's characters. Pick a new main and your other
+   characters follow it, even before you log into them again.
+
+   When an officer's link and a player's own disagree (an officer puts
+   Aldrimord under Uncleloupy, while Uncleloupy's account says the
+   opposite), the officer's wins and the rest of the group follows it.
 2. **Guild notes:** all of these name the main:
    - "alt of Natty", "Natty's alt" and "main: Natty"
    - the slash format many guilds use, like "VA/Alt/258/Crafter/Anvar"
