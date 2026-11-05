@@ -165,7 +165,7 @@ local function postFor(id, entry)
         r = r or "D"
         if need[r] > 0 then need[r] = need[r] - 1 end
     end
-    take(G.ROLE_OF[str(UnitGroupRolesAssigned("player")) or ""] or G.SpecRole())
+    take(G.MyRole())
     for _, m in ipairs(G.GroupNames()) do take(m.role) end
 
     -- A protected comment can't go to the guild as text.

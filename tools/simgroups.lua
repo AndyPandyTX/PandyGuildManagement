@@ -295,6 +295,7 @@ local function newClient(guid, name, class, specRole)
     local L = st.lfg
     env.C_LFGList = {
         HasActiveEntryInfo = function() return L.listed end,
+        GetRoles = function() return L.roles or { tank = false, healer = false, dps = false } end,
         GetActiveEntryInfo = function()
             if not L.listed then return nil end
             return { activityIDs = { L.activity }, name = "|Ks1|k0000|k", comment = "" }
@@ -799,6 +800,34 @@ A.st.group = {}
 A.fire("GROUP_ROSTER_UPDATE")
 run(5)
 check(lfgNeeds() == "013", "back to the listing's own needs (got " .. lfgNeeds() .. ")")
+
+print("-- my role: the one I ticked on Blizzard's Group Finder")
+do
+    -- A level 12 Forever druid: no spec, listed as a tank.
+    local spec = A.st.specRole
+    A.st.specRole = nil
+    A.st.lfg.roles = { tank = true, healer = false, dps = false }
+    A.fire("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+    run(5)
+    check(A.G.MyRole() == "T" and A.G.MyComp()[1].role == "T", "no spec: the Group Finder's tank tick says tank")
+    check(lfgNeeds() == "013", "...so the listing needs no tank (got " .. lfgNeeds() .. ")")
+    A.st.lfg.roles = { tank = false, healer = true, dps = false }
+    A.fire("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+    run(5)
+    check(lfgNeeds() == "103", "ticked healer: the listing needs a tank, not a healer (got " .. lfgNeeds() .. ")")
+    -- Several ticked: the spec decides, when there is one.
+    A.st.lfg.roles = { tank = true, healer = false, dps = true }
+    A.st.specRole = "DAMAGER"
+    check(A.G.MyRole() == "D", "several ticked: the spec's role")
+    A.st.specRole = nil
+    check(A.G.MyRole() == "T", "...or the scarcer, with no spec")
+    A.st.lfg.roles = nil
+    check(A.G.MyRole() == "D", "nothing ticked and no spec: DPS, as before")
+    A.st.specRole = spec
+    A.fire("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+    run(5)
+    check(lfgNeeds() == "013", "back to the spec's role (got " .. lfgNeeds() .. ")")
+end
 
 print("-- applicants")
 A.st.lfg.apps[7] = { status = "applied", comment = "lfg", members = { { name = "Pug-Other", class = "MAGE", ilvl = 655, dps = true, score = 2100, spec = 63 } } }

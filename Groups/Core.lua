@@ -369,22 +369,27 @@ end
 -- { class, role }. Someone with no role yet counts as DPS.
 function G.MyComp()
     local _, myClass = UnitClass("player")
-    local myRole = G.ROLE_OF[P(UnitGroupRolesAssigned("player")) or ""] or G.SpecRole()
-    local out = { { class = P(myClass), role = myRole, spec = G.SpecID(), me = true } }
+    local out = { { class = P(myClass), role = G.MyRole(), spec = G.SpecID(), me = true } }
     for _, m in ipairs(G.GroupNames()) do
         out[#out + 1] = { class = m.class, role = m.role or "D", name = m.name }
     end
     return out
 end
 
--- My spec's role letter (T, H or D), or D when the game won't say.
-function G.SpecRole()
-    if not (GetSpecialization and GetSpecializationRole) then return "D" end
+-- My spec's role letter (T, H or D), or nil when the game won't say: no
+-- spec yet, as on a low-level Forever character.
+local function knownSpecRole()
+    if not (GetSpecialization and GetSpecializationRole) then return nil end
     local ok, spec = pcall(GetSpecialization)
     spec = ok and P(spec) or nil
-    if not spec then return "D" end
+    if not spec then return nil end
     local ok2, role = pcall(GetSpecializationRole, spec)
-    return G.ROLE_OF[ok2 and P(role) or ""] or "D"
+    return G.ROLE_OF[ok2 and P(role) or ""]
+end
+
+-- My spec's role letter, or D when the game won't say.
+function G.SpecRole()
+    return knownSpecRole() or "D"
 end
 
 function G.SpecID()
@@ -396,14 +401,55 @@ function G.SpecID()
     return (ok2 and P(id)) or 0
 end
 
--- The roles I'll play: ticked in settings, or my spec's.
+-- The roles ticked on Blizzard's Group Finder (its role buttons), as a set,
+-- or nil when none are or the game won't say.
+function G.FinderRoles()
+    local get = C_LFGList and C_LFGList.GetRoles
+    if not get then return nil end
+    local ok, set = pcall(function()
+        local t, out, any = get(), {}, false
+        if type(t) ~= "table" then return nil end
+        for key, r in pairs({ tank = "T", healer = "H", dps = "D" }) do
+            if P(t[key]) == true then out[r] = true any = true end
+        end
+        return any and out or nil
+    end)
+    return ok and set or nil
+end
+
+-- The roles I'll play: ticked in settings, else on Blizzard's Group Finder,
+-- else my spec's.
 function G.MyRoles()
     local set, any = {}, false
     for _, r in ipairs(G.ROLES) do
         if G.opt("roles")[r] then set[r] = true any = true end
     end
-    if not any then set[G.SpecRole()] = true end
+    if not any then set = G.FinderRoles() or { [G.SpecRole()] = true } end
     return set
+end
+
+-- The one role I'm playing now, for my own group's needs: the group's pick
+-- for me; else the one role ticked on Blizzard's Group Finder (a level 12
+-- druid listed as a tank, with no spec yet to say so); else my spec's; else
+-- the scarcest of the roles I'll play.
+function G.MyRole()
+    local r = G.ROLE_OF[P(UnitGroupRolesAssigned("player")) or ""]
+    if r then return r end
+    local listed, one = G.FinderRoles(), nil
+    for _, x in ipairs(G.ROLES) do
+        if listed and listed[x] then
+            if one then one = nil break end
+            one = x
+        end
+    end
+    if one then return one end
+    r = knownSpecRole()
+    if r then return r end
+    local set = G.MyRoles()
+    for _, x in ipairs(G.ROLES) do
+        if set[x] then return x end
+    end
+    return "D"
 end
 
 function G.MyIlvl()
