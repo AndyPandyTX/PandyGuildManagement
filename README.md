@@ -26,6 +26,10 @@ or click it in Blizzard's AddOns button there. If the window ever ends up
 somewhere you can't drag it back from, `/pgm reset` puts it back in the
 middle at normal size.
 
+Drag the grabber in the bottom-right corner to make the window bigger:
+longer lists, wider charts. Shift-drag it to scale everything instead (or
+use Scale in Settings). Either way the top-left corner stays where it is.
+
 The arrow at the top of the sidebar collapses it to icons, with each page's
 name on hover, and gives the page about 160 pixels more width. It stays that
 way until you expand it again.

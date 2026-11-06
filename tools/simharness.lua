@@ -1849,9 +1849,27 @@ do
         SetText = function(s, t) s.text = t end,
         SetLabel = function(s, t) s.text = t end,
         SetDesaturated = function(s, v) s.grey = v end,
-        SetPoint = function(s, point, a, b) s.point, s.x, s.y = point, a, b end,
+        -- SetPoint(point, x, y) or SetPoint(point, relativeTo, relativePoint, x, y).
+        SetPoint = function(s, point, a, b, c, d)
+            if type(a) == "table" then
+                s.point, s.relPoint, s.x, s.y = point, b, c, d
+            else
+                s.point, s.relPoint, s.x, s.y = point, nil, a, b
+            end
+        end,
         SetScript = function(s, k, fn) s.scripts = s.scripts or {} s.scripts[k] = fn end,
         GetName = function() return "PandyGuildManagementFrame" end,
+        SetSize = function(s, w, h) s.width, s.height = w, h end,
+        SetHeight = function(s, h) s.height = h end,
+        GetWidth = function(s) return s.width end,
+        GetHeight = function(s) return s.height end,
+        SetScale = function(s, v) s.scale = v end,
+        GetScale = function(s) return s.scale or 1 end,
+        GetEffectiveScale = function(s) return s.scale or 1 end,
+        -- Placed by its top-left corner on the screen's bottom-left: where it is.
+        GetLeft = function(s) return s.point == "TOPLEFT" and s.relPoint == "BOTTOMLEFT" and s.x or nil end,
+        GetTop = function(s) return s.point == "TOPLEFT" and s.relPoint == "BOTTOMLEFT" and s.y or nil end,
+        GetPoint = function(s) return s.point, nil, s.relPoint, s.x, s.y end,
     }
     local mt = { __index = function(_, k)
         return methods[k] or (k:match("^%u") and noop or nil)
@@ -1951,6 +1969,62 @@ do
     end)
     check(ok, "the sidebar lays out (" .. tostring(why) .. ")")
     P.setOpt("navCollapsed", false)
+
+    print("-- resizing the window")
+    local db = A.env.PandyGuildDB
+    local cx, cy, shift = 0, 0, false
+    local realCursor, realShift = env.GetCursorPosition, env.IsShiftKeyDown
+    env.GetCursorPosition = function() return cx, cy end
+    env.IsShiftKeyDown = function() return shift end
+    rawset(env.UIParent, "GetEffectiveScale", function() return 1 end)
+    ok, why = pcall(function()
+        db.window, db.windowSize = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }, nil
+        local UI, f = open()
+        local grab = f.grab
+        local moved = 0
+        UI:On("MOVED", function() moved = moved + 1 end)
+        local function drag(dx, dy, withShift)
+            shift = withShift
+            cx, cy = 1000, 300
+            grab.scripts.OnMouseDown(grab, "LeftButton")
+            cx, cy = 1000 + dx, 300 - dy   -- the screen's y goes up
+            grab.scripts.OnUpdate(grab, 0.2)
+            grab.scripts.OnMouseUp(grab)
+        end
+        check(f.width == 1020 and f.height == 660, "starts at the smallest size")
+
+        drag(200, 150)
+        check(f.width == 1220 and f.height == 810, "dragging the corner resizes (" .. f.width .. "x" .. f.height .. ")")
+        check(f.x == 100 and f.y == 900 and (f.scale or 1) == 1, "...the corner and scale stay put")
+        check(db.windowSize and db.windowSize[1] == 1220 and db.windowSize[2] == 810, "...and the size is kept")
+        check(f.content.point == "BOTTOMRIGHT", "...and the page fills the well again")
+        check(moved == 1, "...and what's placed over the page goes back")
+
+        drag(-900, -900)
+        check(f.width == 1020 and f.height == 660, "never smaller than the pages are laid out for")
+        check(db.windowSize == nil, "...which isn't saved as a size")
+
+        drag(200, 200, true)
+        check(f.scale == 1.25 and P.opt("scale") == 1.25, "shift-drag scales (" .. tostring(f.scale) .. ")")
+        check(f.width == 1020, "...and leaves the size alone")
+        check(f.x == 80 and f.y == 720, "...with the top-left corner where it was on screen")
+        drag(-200, -200, true)
+        check(f.scale == 1 and f.x == 100 and f.y == 900, "...and back, to the same place")
+
+        drag(5000, 5000)
+        check(f.width == 1820 and f.height == 900, "never past the screen's edge (" .. f.width .. "x" .. f.height .. ")")
+        drag(200, 200, true)
+        check(f.scale < 1.04, "a window that fills the screen can't be scaled off it (" .. tostring(f.scale) .. ")")
+
+        UI, f = open()
+        check(f.width == 1820 and f.height == 900, "the size is back after a reload")
+        UI:ResetWindow()
+        check(f.width == 1020 and f.height == 660 and db.windowSize == nil and db.window == nil, "/pgm reset puts the size back too")
+    end)
+    check(ok, "the window resizes (" .. tostring(why) .. ")")
+    db.window, db.windowSize = nil, nil
+    P.setOpt("scale", 1)
+    env.GetCursorPosition, env.IsShiftKeyDown = realCursor, realShift
     P.UI, P.RegisterEvent, P.On = real.UI, real.RegisterEvent, real.On
     env.CreateFrame, env.GameTooltip, env.UIParent = real.CreateFrame, real.GameTooltip, real.UIParent
     env.GetFileIDFromPath, env.UISpecialFrames, env.tinsert = real.GetFileIDFromPath, real.UISpecialFrames, real.tinsert

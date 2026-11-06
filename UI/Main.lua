@@ -2,7 +2,8 @@
 --
 -- The layout: a header plate across the top, a sidebar on the left
 -- with section headings over its tabs, and the page in an inset well on the
--- right. A grabber in the corner scales the whole window.
+-- right. A grabber in the corner resizes the window (shift: scales it), its
+-- top-left corner staying put either way.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -10,6 +11,8 @@ local C = PGM.C
 local UI = PGM.UI
 local W = UI.W
 
+-- WIDTH and HEIGHT are the smallest the window goes: every page is laid out
+-- for at least that.
 local WIDTH, HEIGHT, SIDE_W, SIDE_ICONS = 1020, 660, 210, 48
 
 -- Sidebar sections, in order. A page not listed lands in the last one.
@@ -53,7 +56,9 @@ end
 local function maxScale()
     local w, h = UIParent:GetWidth(), UIParent:GetHeight()
     if not (w and h and w > 0 and h > 0) then return 1.6 end
-    return math.max(0.6, math.min(1.6, w * 0.98 / WIDTH, h * 0.98 / HEIGHT))
+    local fw, fh = WIDTH, HEIGHT
+    if UI.frame then fw, fh = UI.frame:GetWidth() or WIDTH, UI.frame:GetHeight() or HEIGHT end
+    return math.max(0.6, math.min(1.6, w * 0.98 / fw, h * 0.98 / fh))
 end
 
 -- A scale that fits: the one asked for, or the biggest that fits.
@@ -64,6 +69,36 @@ end
 local function savePosition(f)
     local point, _, relPoint, x, y = f:GetPoint()
     PandyGuildDB.window = { point, relPoint, x, y }
+end
+
+-- The size picked with the grabber, never under the smallest.
+local function savedSize()
+    local s = PandyGuildDB.windowSize
+    local w, h = s and tonumber(s[1]), s and tonumber(s[2])
+    return math.max(WIDTH, w or WIDTH), math.max(HEIGHT, h or HEIGHT)
+end
+
+-- A new scale with the top-left corner where it was on screen. A window
+-- placed by its centre (or anything else) grows from there, and a scale
+-- dragged in the corner pulled the window around under the cursor.
+local function scaleInPlace(f, scale)
+    local left, top = f:GetLeft(), f:GetTop()
+    local old = f:GetEffectiveScale()
+    f:SetScale(scale)
+    if not (left and top) then return end
+    local new = f:GetEffectiveScale()
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / new, top * old / new)
+end
+
+-- The scale from Settings, or after the screen changed.
+function UI:SetWindowScale(scale)
+    local f = self.frame
+    if not f then return end
+    self:HideSecure()
+    scaleInPlace(f, self:FitScale(scale))
+    savePosition(f)
+    self:Fire("MOVED")
 end
 
 -- An icon path the client actually has, or nil (so a wrong guess shows
@@ -251,7 +286,7 @@ function UI:Create()
     if self.frame then return self.frame end
     local f = CreateFrame("Frame", "PandyGuildManagementFrame", UIParent, "BackdropTemplate")
     self.frame = f
-    f:SetSize(WIDTH, HEIGHT)
+    f:SetSize(savedSize())
     local pos = PandyGuildDB.window
     if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("CENTER") end
     f:SetScale(UI:FitScale(PGM.opt("scale")))
@@ -365,37 +400,98 @@ function UI:Create()
     f.content:SetPoint("TOPLEFT", 12, -12)
     f.content:SetPoint("BOTTOMRIGHT", -12, 12)
 
-    -- Corner grabber: drag to scale the window.
+    -- The page fills the well again. While the window is being resized it
+    -- keeps a fixed size instead, caught up a few times a second: pages that
+    -- redraw on a new size (Activity redraws everything) would otherwise do
+    -- it every frame of the drag.
+    local function fillWell()
+        f.content:ClearAllPoints()
+        f.content:SetPoint("TOPLEFT", 12, -12)
+        f.content:SetPoint("BOTTOMRIGHT", -12, 12)
+    end
+    local function pinPage()
+        local w, h = main:GetWidth(), main:GetHeight()
+        if not (w and h) then return end
+        f.content:ClearAllPoints()
+        f.content:SetPoint("TOPLEFT", 12, -12)
+        f.content:SetSize(w - 24, h - 24)
+    end
+
+    -- Corner grabber: drag to resize, shift-drag to scale. The top-left
+    -- corner stays where it is.
     local grab = CreateFrame("Button", nil, f)
+    f.grab = grab
     grab:SetSize(16, 16)
     grab:SetPoint("BOTTOMRIGHT", -3, 3)
     grab:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grab:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     grab:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grab:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Drag to resize", 1, 1, 1)
+        GameTooltip:AddLine("Shift-drag to scale everything instead.", C.text2[1], C.text2[2], C.text2[3])
+        GameTooltip:Show()
+    end)
+    grab:SetScript("OnLeave", function() GameTooltip:Hide() end)
     grab:SetScript("OnMouseDown", function(s, button)
         if button ~= "LeftButton" then return end
+        local left, top = f:GetLeft(), f:GetTop()
+        if not (left and top) then return end
+        GameTooltip:Hide()
         UI:HideSecure()
+        f:ClearAllPoints()
+        f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
         local x, yy = GetCursorPosition()
-        s.dragging, s.x, s.y, s.scale = true, x, yy, f:GetScale()
+        s.dragging, s.x, s.y, s.since = true, x, yy, 0
+        s.scaling = IsShiftKeyDown() and true or false
+        s.scale, s.w, s.h, s.left, s.top = f:GetScale(), f:GetWidth(), f:GetHeight(), left, top
+        if not s.scaling then pinPage() end
     end)
-    grab:SetScript("OnUpdate", function(s)
+    grab:SetScript("OnUpdate", function(s, elapsed)
         if not s.dragging then return end
         local x, yy = GetCursorPosition()
-        local delta = ((x - s.x) - (yy - s.y)) / (2 * UIParent:GetEffectiveScale())
-        f:SetScale(math.max(0.6, math.min(maxScale(), s.scale + delta / 800)))
+        if s.scaling then
+            local delta = ((x - s.x) - (yy - s.y)) / (2 * UIParent:GetEffectiveScale())
+            scaleInPlace(f, math.max(0.6, math.min(maxScale(), s.scale + delta / 800)))
+            return
+        end
+        -- Bigger down and to the right, never past the screen's edge.
+        local es = f:GetEffectiveScale()
+        local sw = UIParent:GetWidth() * UIParent:GetEffectiveScale() / es
+        local sh = UIParent:GetHeight() * UIParent:GetEffectiveScale() / es
+        local w = math.max(WIDTH, math.min(s.w + (x - s.x) / es, sw * 0.98, sw - s.left))
+        local h = math.max(HEIGHT, math.min(s.h + (s.y - yy) / es, sh * 0.98, s.top))
+        f:SetSize(w, h)
+        s.since = s.since + (elapsed or 0)
+        if s.since >= 0.15 then
+            s.since = 0
+            pinPage()
+        end
     end)
     grab:SetScript("OnMouseUp", function(s)
         if not s.dragging then return end
         s.dragging = false
-        local scale = UI:FitScale(math.floor(f:GetScale() * 20 + 0.5) / 20)
-        f:SetScale(scale)
-        PGM.setOpt("scale", scale)
-        UI:Fire("MOVED")
+        if s.scaling then
+            local scale = UI:FitScale(math.floor(f:GetScale() * 20 + 0.5) / 20)
+            scaleInPlace(f, scale)
+            PGM.setOpt("scale", scale)
+        else
+            local w, h = math.floor(f:GetWidth() + 0.5), math.floor(f:GetHeight() + 0.5)
+            f:SetSize(w, h)
+            PandyGuildDB.windowSize = (w > WIDTH or h > HEIGHT) and { w, h } or nil
+            fillWell()
+        end
+        savePosition(f)
+        -- Next frame, once the page has its new size.
+        C_Timer.After(0, function()
+            UI:Fire("MOVED")
+            UI:Refresh()
+        end)
     end)
 
     f:SetScript("OnShow", function()
         -- The screen may have changed since (resolution, UI scale).
-        f:SetScale(UI:FitScale(PGM.opt("scale")))
+        scaleInPlace(f, UI:FitScale(PGM.opt("scale")))
         PGM:RequestRoster()
         UI:Refresh()
     end)
@@ -440,10 +536,11 @@ end
 -- Back to the middle of the screen at normal size (/pgm reset), for a
 -- window that ended up somewhere it can't be dragged back from.
 function UI:ResetWindow()
-    PandyGuildDB.window = nil
+    PandyGuildDB.window, PandyGuildDB.windowSize = nil, nil
     PGM.setOpt("scale", 1)
     local f = self.frame
     if f then
+        f:SetSize(WIDTH, HEIGHT)
         f:ClearAllPoints()
         f:SetPoint("CENTER")
         f:SetScale(UI:FitScale(1))
@@ -565,7 +662,7 @@ end)
 -- Resolution or UI scale changed: refit an open window, and put the secure
 -- buttons back where their anchors now are.
 local function replaceSecure()
-    if UI.frame then UI.frame:SetScale(UI:FitScale(PGM.opt("scale"))) end
+    if UI.frame then scaleInPlace(UI.frame, UI:FitScale(PGM.opt("scale"))) end
     if InCombatLockdown() then return end
     UI:HideSecure()
     if UI.profile and UI.profile:IsVisible() and UI.RefreshProfile then UI:RefreshProfile() end
