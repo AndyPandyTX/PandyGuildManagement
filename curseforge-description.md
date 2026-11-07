@@ -107,6 +107,7 @@ The same download runs on WoW Forever. Everything above works there too, with a 
 - Thin professions are the ones with few active Artisans
 - The group finder posts dungeons and raids of 10, 20 or 40, with roles to match
 - Raid loot is labelled by raid size
+- Clicking a crafter opens their profile, since Forever can't show another player's recipes
 
 **LFG Chat** (Forever only)
 - Reads LookingForGroup, Trade, World, General and guild chat for LFM, LFG, WTS and WTB

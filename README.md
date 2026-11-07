@@ -114,7 +114,8 @@ that member's play time.
   another character, it says "Online as ..." and right-click whispers them
   there.
 - Click anyone to open the game's recipe view for them, showing every recipe
-  they know and don't.
+  they know and don't. Forever has no such view, so there it opens their
+  profile.
 - **Who can craft...:** type a recipe name, or shift-click an item into the
   box, and pick a match: everyone in the guild who knows that recipe is
   listed, online first. It's the game's own guild data, so it covers every

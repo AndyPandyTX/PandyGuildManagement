@@ -39,6 +39,12 @@ end
 -- window's "View Recipes" opens: everything they know, and don't.
 -- (No CanViewGuildRecipes check first: in Midnight it can say no for a
 -- profession whose recipe view then opens fine. The game decides.)
+-- Forever has no such view: the query goes nowhere, so a click there opens
+-- the member's profile instead.
+local function canViewRecipes()
+    return not PGM.IS_FOREVER and C_GuildInfo and C_GuildInfo.QueryGuildMemberRecipes ~= nil
+end
+
 local function viewRecipes(guid, professionId)
     if not (C_GuildInfo and C_GuildInfo.QueryGuildMemberRecipes and guid and professionId) then return end
     pcall(C_GuildInfo.QueryGuildMemberRecipes, guid, professionId)
@@ -178,24 +184,31 @@ local function memberRow(list)
             end
             GameTooltip:AddLine("Also on: " .. table.concat(names, ", "), 0.8, 0.8, 0.8, true)
         end
-        GameTooltip:AddLine("Click to see " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf())
-            .. " recipes: what they know and don't.", 0.8, 0.8, 0.8, true)
+        if canViewRecipes() then
+            GameTooltip:AddLine("Click to see " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf())
+                .. " recipes: what they know and don't.", 0.8, 0.8, 0.8, true)
+        else
+            GameTooltip:AddLine("Click for " .. (it.rec.short or "their") .. "'s profile.", 0.8, 0.8, 0.8, true)
+        end
         GameTooltip:AddLine("Right-click for more.", 0.45, 0.45, 0.45)
         GameTooltip:Show()
     end
     r:SetScript("OnClick", function(s, button)
         local it = s.it
         if button == "RightButton" then
-            local extra = {
-                { "View " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf()) .. " recipes",
-                  function() viewRecipes(it.guid, currentProf()) end },
-            }
+            local extra = {}
+            if canViewRecipes() then
+                extra[1] = { "View " .. (it.rec.short or "their") .. "'s " .. PGM.ProfName(currentProf()) .. " recipes",
+                             function() viewRecipes(it.guid, currentProf()) end }
+            end
             if not it.rec.online and it.onlineAs then
                 extra[#extra + 1] = { "Whisper " .. it.onlineAs.short .. " (online now)", function() UI:Whisper(it.onlineAs) end }
             end
             UI:MemberMenu(s, it.guid, extra)
-        else
+        elseif canViewRecipes() then
             viewRecipes(it.guid, currentProf())
+        else
+            UI:OpenProfile(it.guid)
         end
     end)
     return r
