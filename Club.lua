@@ -28,14 +28,54 @@ local PROF_ICON = {
 }
 PGM.PROF_GATHERING = { [182] = true, [186] = true, [393] = true }
 
--- Forever's professions are Classic ones, 1-300, and the roster's rank looks
--- like real skill there. Retail's isn't (see ProfText), so this is nil on
--- retail, and for anything that doesn't look like Classic skill.
-function PGM.ProfSkill(p)
-    if not PGM.IS_FOREVER then return nil end
-    local r = p and p.rank
-    if type(r) == "number" and r >= 1 and r <= 300 then return r end
-    return nil
+-- Forever's professions are Classic ones, 1-300. The guild roster's rank
+-- isn't skill on either game (on Forever every member reads 1), so the skill
+-- of guid's profession p comes from that player's own copy of the addon,
+-- read from their game and shared (g.skills, see Sync.lua). Nil on retail,
+-- and for anyone who hasn't told us.
+function PGM.ProfSkill(p, guid)
+    if not (PGM.IS_FOREVER and p and guid) then return nil end
+    local g = PGM.GuildDB()
+    local t = g and g.skills and g.skills[guid]
+    local s = t and t[p.id]
+    return type(s) == "number" and s or nil
+end
+
+-- My own profession skill, { [id] = skill }, or nil when the game can't say.
+local idByName
+function PGM.ReadMySkills()
+    local out, any = {}, false
+    if GetProfessions and GetProfessionInfo then
+        local ok, a, b, c, d, e = pcall(GetProfessions)
+        if ok then
+            for _, idx in pairs({ a, b, c, d, e }) do
+                -- name, icon, skill, max skill, abilities, offset, skill line
+                local okI, _, _, rank, _, _, _, line = pcall(GetProfessionInfo, idx)
+                rank, line = P(rank), P(line)
+                if okI and type(line) == "number" and line > 0 and type(rank) == "number" and rank > 0 then
+                    out[line], any = rank, true
+                end
+            end
+        end
+    end
+    -- The Classic skill list, by name, for a client without GetProfessions.
+    if not any and GetNumSkillLines and GetSkillLineInfo then
+        if not idByName then
+            idByName = {}
+            for id, en in pairs(PROF_EN) do
+                idByName[en:lower()] = id
+                idByName[PGM.ProfName(id):lower()] = id
+            end
+        end
+        local okN, n = pcall(GetNumSkillLines)
+        for i = 1, (okN and tonumber(P(n)) or 0) do
+            local okI, name, header, _, rank = pcall(GetSkillLineInfo, i)
+            name, rank = P(name), P(rank)
+            local id = okI and not header and type(name) == "string" and idByName[name:lower()]
+            if id and type(rank) == "number" and rank > 0 then out[id], any = rank, true end
+        end
+    end
+    return any and out or nil
 end
 
 -- Artisan: what the best recipes (and most raid consumables) need. 225 is
@@ -133,13 +173,13 @@ end
 
 -- "Alchemy, Herbalism", or nil. Names only on retail: the roster's profession
 -- "rank" isn't Midnight skill (most members read 1, others 600-800). On
--- Forever it is, so it follows the name: "Alchemy 245".
+-- Forever a skill we know follows the name: "Alchemy 245".
 function PGM.ProfText(rec, withIcons)
     if not (rec and rec.prof and #rec.prof > 0) then return nil end
     local parts = {}
     for _, p in ipairs(rec.prof) do
         local icon = withIcons and ("|T" .. PGM.ProfIcon(p.id) .. ":14:14|t ") or ""
-        local skill = PGM.ProfSkill(p)
+        local skill = PGM.ProfSkill(p, rec.guid)
         parts[#parts + 1] = icon .. PGM.ProfName(p.id) .. (skill and (" " .. skill) or "")
     end
     return table.concat(parts, ", ")

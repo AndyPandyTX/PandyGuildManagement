@@ -275,9 +275,12 @@ The same addon runs on WoW Forever. Everything above works there, except:
 - There's no Mythic+, so the M+ score, M+ column and M+ spread are hidden,
   along with RaiderIO raid progress.
 - The raid-buff checklist on Raid Teams is hidden, since it lists Midnight's buffs.
-- Professions show each character's skill ("Alchemy 285"). The best crafter
-  is the one with the most skill, and a profession counts as thin when few
-  active players have Artisan (225+).
+- Professions show each character's skill ("Alchemy 285") for players
+  running the addon: the guild roster's skill reads 1 for everyone on
+  Forever, so each copy reads its own character's and shares it. The best
+  crafter is the one with the most skill, and once at least half of a
+  profession's players have shared theirs, it counts as thin when few active
+  players have Artisan (225+).
 - The group finder posts dungeons instead of Mythic+ keys, and raids up to 40
   with roles to match. There are no delves, keystones or M+ scores, and
   **Find PuGs** opens Looking for Group.
@@ -302,8 +305,10 @@ raid nights or alts.
 
 - **Guild roster:** name, rank, level, class, zone, notes and last online.
 - **Communities roster:** race, Blizzard's Mythic+ score and both primary
-  professions with skill. This covers every member, whether or not they run
-  this addon. It's the same data the guild window's Professions column shows.
+  professions. This covers every member, whether or not they run this addon.
+  It's the same data the guild window's Professions column shows. Its skill
+  number isn't real skill on either game, so it isn't used.
+- **Each player's own copy (Forever):** their characters' profession skill.
 - **RaiderIO (optional):** fills in M+ scores Blizzard didn't give, plus raid progress.
 
 ## How alts are found

@@ -30,7 +30,7 @@ end
 local function skillOf(rec)
     local id = currentProf()
     for _, pr in ipairs(rec and rec.prof or {}) do
-        if pr.id == id then return PGM.ProfSkill(pr) end
+        if pr.id == id then return PGM.ProfSkill(pr, rec.guid) end
     end
     return nil
 end

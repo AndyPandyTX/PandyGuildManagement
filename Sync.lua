@@ -8,8 +8,9 @@
 -- member's PC can't push changes. The guild master decides which ranks count
 -- as officers (Settings); until then, ranks named like "Officer", "Leader" or
 -- "Guild Master" do. One exception: anyone may say which of their own
--- characters is their main (record B), but only about the character sending
--- it; officers may relay everyone's during a catch-up.
+-- characters is their main (record B), and their own profession skill
+-- (record L), but only about the character sending it; officers may relay
+-- everyone's during a catch-up.
 --
 -- HOW IT MERGES: every record carries the time it was made, and newest wins,
 -- record by record (one team member, one alt link). A raid night's attendees
@@ -45,10 +46,12 @@
 --   J guid u joined [guid u joined ...]             join dates (e.g. from GRM)
 --   B guid u main [guid u main ...]                 "this character's main is main"
 --                                                   (itself, if it's the main)
+--   L guid u id:skill,... [guid u list ...]         profession skill (Forever),
+--                                                   about the sender's own character
 --   W Y Z                                           play-time hours (Activity.lua)
 --
 -- MODULES: the letters above are the core's. Modules claim one of their own
--- with PGM.SyncRegister: G is the group finder's (Groups\), and F I L N Q U X are
+-- with PGM.SyncRegister: G is the group finder's (Groups\), and F I N Q U X are
 -- kept free for others. A module's records aren't officer-only and aren't
 -- kept at logout, so each module checks its own senders.
 
@@ -105,6 +108,8 @@ local function store()
     g.users = g.users or {}
     g.claims = g.claims or {}
     g.claimU = g.claimU or {}
+    g.skills = g.skills or {}
+    g.skillU = g.skillU or {}
     return g, s
 end
 
@@ -654,6 +659,13 @@ local function dump(target, since)
         if u > since and g.claims[guid] then claims[#claims + 1] = { guid, u, g.claims[guid] } n = n + 1 end
     end
     sendPacked("1B", claims, true)
+    local skills = {}
+    for guid, u in pairs(g.skillU) do
+        if u > since and g.skills[guid] and g.members[guid] then
+            skills[#skills + 1] = { guid, u, PGM.SkillText(g.skills[guid]) } n = n + 1
+        end
+    end
+    sendPacked("1L", skills, true)
     send("1E", target, n, s.newest)   -- bulk too, so it arrives after what it follows
     bulkMode, dumping = false, false
 end
@@ -739,7 +751,7 @@ local handlers = {}
 PGM.SyncHandlers = handlers
 
 -- Record letters the core uses, and the ones kept for modules (see WIRE).
-local CORE_KINDS = "HVORETKMASPDCJBWYZ"
+local CORE_KINDS = "HVORETKMASPDCJBWYZL"
 
 -- A module claims a record letter: fn(fields, sender, senderRec) gets each
 -- record of that kind from a guild member, never one of our own. False if
@@ -977,6 +989,91 @@ function handlers.B(f, sender, rec)
     end
 end
 
+-- ---- profession skill (Forever) ----
+-- The guild roster's skill reads 1 for everyone on Forever, so each copy
+-- reads its own character's from the game and tells the guild.
+
+-- { [171] = 245, [182] = 300 } <-> "171:245,182:300"
+function PGM.SkillText(t)
+    local ids = {}
+    for id in pairs(t or {}) do ids[#ids + 1] = id end
+    table.sort(ids)
+    for i, id in ipairs(ids) do ids[i] = id .. ":" .. t[id] end
+    return table.concat(ids, ",")
+end
+
+local function skillParse(text)
+    local t, any = {}, false
+    for id, v in tostring(text or ""):gmatch("(%d+):(%d+)") do
+        id, v = tonumber(id), tonumber(v)
+        if id and v and v >= 1 and v <= 525 then t[id], any = v, true end
+    end
+    return any and t or nil
+end
+
+function handlers.L(f, sender, rec)
+    if not rec then return end
+    local g = store()
+    local relay = PGM:IsOfficerRec(rec)
+    for i = 2, #f, 3 do
+        local guid, u, t = f[i], clampU(f[i + 1]), skillParse(f[i + 2])
+        if (guid == rec.guid or relay) and isGuid(guid) and u and t
+            and g.members[guid] and u > (g.skillU[guid] or 0) then
+            g.skills[guid] = t
+            g.skillU[guid] = u
+            Sync.lastApplied = PGM.Now()
+            changed("ROSTER")
+        end
+    end
+end
+
+local function sendMySkills()
+    local g = store()
+    local me = PGM:MyGuid()
+    if not (g and me and g.skills[me] and g.skillU[me] and g.members[me] and enabled()) then return end
+    sendPacked("1L", { { me, g.skillU[me], PGM.SkillText(g.skills[me]) } }, false)
+end
+
+-- Reads my skill and keeps it. A change goes out within five minutes (a
+-- skinning session is a skill-up every few seconds); sendNow sends it now.
+local skillTimer
+function PGM:SyncMySkills(sendNow)
+    if not PGM.IS_FOREVER then return end
+    local g = store()
+    local me = PGM:MyGuid()
+    local mineNow = PGM.ReadMySkills and PGM.ReadMySkills()
+    if not (g and me and g.members[me] and mineNow) then return end
+    local text = PGM.SkillText(mineNow)
+    if text ~= PGM.SkillText(g.skills[me]) or not g.skillU[me] then
+        g.skills[me] = mineNow
+        g.skillU[me] = PGM.Stamp(g.skillU[me])
+        changed("ROSTER")
+        if not (sendNow or skillTimer) then
+            skillTimer = C_Timer.NewTimer(300, function()
+                skillTimer = nil
+                sendMySkills()
+            end)
+        end
+    end
+    if sendNow then sendMySkills() end
+end
+
+do
+    local f = CreateFrame("Frame")
+    for _, e in ipairs({ "SKILL_LINES_CHANGED", "TRADE_SKILL_SHOW", "CHAT_MSG_SKILL" }) do
+        pcall(f.RegisterEvent, f, e)   -- not every client has every one
+    end
+    local pending
+    f:SetScript("OnEvent", function()
+        if pending or not PGM.IS_FOREVER then return end
+        pending = true
+        C_Timer.After(2, function()
+            pending = nil
+            PGM:SyncMySkills()
+        end)
+    end)
+end
+
 function handlers.C(f, sender, rec)
     if not (rec and rec.rankIndex == 0) then return end   -- the guild master's call alone
     local u = clampU(f[2])
@@ -1016,6 +1113,7 @@ local function answerVersion()
         versionTimer = nil
         Sync.versionAt = GetTime()
         send("1V", PGM.VERSION)
+        sendMySkills()
     end)
 end
 
@@ -1188,6 +1286,7 @@ PGM:On("ROSTER", function()
     C_Timer.After(8, sendHello)
     C_Timer.NewTicker(HELLO_EVERY, sendHello)
     C_Timer.After(15, function() PGM:SyncMyMain() end)
+    C_Timer.After(20, function() PGM:SyncMySkills(true) end)
     -- Bookkeeping that would only grow: ids of nights no longer kept (an
     -- alias for one would only re-add a night past the oldest kept, which
     -- is trimmed again), and addon users not heard from in six months.

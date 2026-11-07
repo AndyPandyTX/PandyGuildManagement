@@ -247,7 +247,7 @@ end
 -- A character's skill in profession id (Forever only, see ProfSkill).
 local function skillIn(rec, id)
     for _, pr in ipairs(rec.prof or {}) do
-        if pr.id == id then return PGM.ProfSkill(pr) end
+        if pr.id == id then return PGM.ProfSkill(pr, rec.guid) end
     end
     return nil
 end
@@ -257,7 +257,9 @@ end
 -- the level cap), onlineChars (the crafting character is on), onlinePlayers
 -- (the player is on, on any character), thin. On Forever also artisans
 -- (players with Artisan skill on any character) and activeArtisans; thin
--- then counts active artisans, once any skill is known for it.
+-- then counts active artisans, once skill is known for at least half its
+-- players (skill comes from each player's own copy of the addon, so until
+-- then "0 artisans" would only mean "nobody's told us").
 function PGM:ProfessionStats()
     local g = PGM.GuildDB()
     local out = {}
@@ -291,9 +293,12 @@ function PGM:ProfessionStats()
                 p.active = true
                 e.activePlayers = e.activePlayers + 1
             end
-            local skill = PGM.ProfSkill(pr)
+            local skill = PGM.ProfSkill(pr, guid)
             if skill then
-                e.skillKnown = true
+                if not p.skill then
+                    p.skill = true
+                    e.skillPlayers = (e.skillPlayers or 0) + 1
+                end
                 if skill >= PGM.SKILL_ARTISAN then
                     if not p.artisan then
                         p.artisan = true
@@ -308,6 +313,7 @@ function PGM:ProfessionStats()
         end
     end
     for _, e in pairs(out) do
+        e.skillKnown = (e.skillPlayers or 0) * 2 >= e.players
         e.thin = (e.skillKnown and e.activeArtisans or e.activePlayers) <= PGM.PROF_THIN
     end
     return out

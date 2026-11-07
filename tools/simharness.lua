@@ -2077,11 +2077,15 @@ local ok, why = pcall(function()
         return guid
     end
     -- One player: an online alt at Alchemy 40 and an offline main at 285.
-    -- Another player at 120, and a third whose rank isn't skill (800).
-    local main = member(210, "Brewmain", "", false, 60, { { id = 171, rank = 285 } })
-    local alt = member(211, "Brewalt", "alt of Brewmain", true, 20, { { id = 171, rank = 40 } })
-    local mid = member(212, "Brewmid", "", false, 50, { { id = 171, rank = 120 } })
-    local odd = member(213, "Brewodd", "", false, 60, { { id = 171, rank = 800 } })
+    -- Another player at 120, and a third who hasn't told us. The guild
+    -- roster says 1 for everyone, as Forever's does: skill comes from each
+    -- player's own copy (g.skills).
+    local main = member(210, "Brewmain", "", false, 60, { { id = 171, rank = 1 } })
+    local alt = member(211, "Brewalt", "alt of Brewmain", true, 20, { { id = 171, rank = 1 } })
+    local mid = member(212, "Brewmid", "", false, 50, { { id = 171, rank = 1 } })
+    local odd = member(213, "Brewodd", "", false, 60, { { id = 171, rank = 285 } })
+    g.skills = g.skills or {}
+    g.skills[main], g.skills[alt], g.skills[mid] = { [171] = 285 }, { [171] = 40 }, { [171] = 120 }
     P:RebuildAlts()
     local function rowOf(main)
         for _, it in ipairs(P:ProfessionCrafters(171, true)) do if it.main == main then return it end end
@@ -2094,7 +2098,56 @@ local ok, why = pcall(function()
         check(st and st.skillKnown and st.artisans == 1 and st.activeArtisans == 1, "one artisan (225+), active")
         check(st and st.thin, "...so Alchemy is thin")
         check(P.ProfText(g.members[main]) == "Alchemy 285", "skill follows the name")
-        check(P.ProfText(g.members[odd]) == "Alchemy", "...but not a rank that isn't skill")
+        check(P.ProfText(g.members[odd]) == "Alchemy", "...but not the guild roster's rank, which isn't skill")
+        -- Skill told for under half the players: no artisan counts yet, so
+        -- "0 artisans" never just means "nobody's said".
+        local saved = g.skills
+        g.skills = { [alt] = { [171] = 40 } }
+        local few = P:ProfessionStats()[171]
+        check(few and not few.skillKnown, "skill from too few players doesn't count artisans")
+        check(P.ProfText(g.members[alt]) == "Alchemy 40", "...but still shows for those who said")
+        g.skills = saved
+
+        -- My own skill, read from the game: GetProfessions, or the Classic
+        -- skill list without it.
+        A.env.GetProfessions = function() return 1, nil, 3 end
+        A.env.GetProfessionInfo = function(i)
+            if i == 1 then return "Skinning", 0, 150, 225, 0, 0, 393 end
+            if i == 3 then return "Cooking", 0, 75, 150, 0, 0, 185 end
+        end
+        local mine = P.ReadMySkills()
+        check(mine and mine[393] == 150 and mine[185] == 75, "my skill, from GetProfessions")
+        A.env.GetProfessions, A.env.GetProfessionInfo = nil, nil
+        local lines = { { "Professions", true }, { "Skinning", false, false, 160 }, { "Mining", false, false, 90 },
+                        { "Defense", false, false, 300 } }
+        A.env.GetNumSkillLines = function() return #lines end
+        A.env.GetSkillLineInfo = function(i) return (table.unpack or unpack)(lines[i]) end
+        mine = P.ReadMySkills()
+        local count = 0
+        for _ in pairs(mine or {}) do count = count + 1 end
+        check(mine and mine[393] == 160 and mine[186] == 90 and count == 2, "...or the Classic skill list, professions only")
+        -- Kept, and told to the guild.
+        P:SyncMySkills(true)
+        run(30)
+        check(g.skills[gid(10)] and g.skills[gid(10)][393] == 160, "my skill is kept")
+        check(B.g.skills and B.g.skills[gid(10)] and B.g.skills[gid(10)][393] == 160, "...and the guild learns it")
+        local u = g.skillU[gid(10)]
+        P:SyncMySkills(true)
+        check(g.skillU[gid(10)] == u, "the same skill again isn't a change")
+        lines[2][4] = 161
+        P:SyncMySkills()
+        run(5)
+        check(g.skillU[gid(10)] > u and B.g.skills[gid(10)][393] == 160, "a skill-up is kept now, sent later")
+        run(300)
+        check(B.g.skills[gid(10)][393] == 161, "...within five minutes")
+        A.env.GetNumSkillLines, A.env.GetSkillLineInfo = nil, nil
+        -- A member can only speak for their own character.
+        TR.PGM.SyncSend(false, "1L", gid(40), BASE + math.floor(T), "171:300")
+        TR.PGM.SyncSend(false, "1L", gid(14), BASE + math.floor(T), "171:300")
+        run(10)
+        check(g.skills[gid(40)] and g.skills[gid(40)][171] == 300, "a member's own skill is taken")
+        check(not g.skills[gid(14)], "...but not what they say about someone else")
+        g.skills[gid(10)], g.skills[gid(40)] = nil, nil
         check(P.SkillTier(285) == "Artisan" and P.SkillTier(150) == "Journeyman" and P.SkillTier(75) == "Apprentice",
             "skill tiers")
 
