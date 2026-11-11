@@ -342,7 +342,9 @@ raid nights or alts.
 **Mains in chat.** When a guildie's alt talks (guild, officer, party, raid,
 whispers, say, yell and channels), their main goes in front of the line in
 the main's class colour: "(Natty) on my way". Only on your screen; nothing
-sent changes. Turn it off with Mains in chat in Settings.
+sent changes. Turn it off with Mains in chat in Settings, or untick Trade &
+General too to keep it to guild, officer, party, raid and instance chat
+and whispers.
 
 ## Midnight notes
 

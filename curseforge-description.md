@@ -57,7 +57,7 @@ Bugs, ideas or questions? Join the [Discord](https://discord.gg/tDtNKncGRT).
 - Found from alt ranks and common guild-note formats ("alt of Natty", "VA/Alt/.../Natty")
 - Players link their own characters just by logging into each one, and the whole guild sees it
 - Officers can link, unlink or pick a main by hand, and that always wins
-- An alt's main shows in front of what they say in chat
+- An alt's main shows in front of what they say in chat, and you can keep it out of Trade and General
 
 **Professions**
 - Pick a profession and see everyone who has it, counted by player with alts folded in

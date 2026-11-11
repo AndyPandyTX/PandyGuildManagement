@@ -136,13 +136,24 @@ local function build(p)
     heading(p, "Your characters", y)
     p.chatMainsCheck = W.Check(p, "Mains in chat",
         function() return PGM.opt("chatMains") ~= false end,
-        function(v) PGM.setOpt("chatMains", v) end)
+        function(v)
+            PGM.setOpt("chatMains", v)
+            p.chatPublicCheck:SetAlpha(v and 1 or 0.4)
+        end)
     p.chatMainsCheck:SetPoint("TOPLEFT", 260, y + 2)
     p.chatMainsCheck:SetWidth(150)
     p.chatMainsCheck.tip = "When a guildie's alt talks, their main shows in front of the line: (Mainname) hi. "
         .. "Only on your screen. Not during boss fights" .. (PGM.IS_FOREVER and "" or " or Mythic+ runs")
         .. ", when the game hides chat from addons."
-    y = y - 26
+    p.chatPublicCheck = W.Check(p, "Trade & General too",
+        function() return PGM.opt("chatMainsPublic") ~= false end,
+        function(v) PGM.setOpt("chatMainsPublic", v) end)
+    p.chatPublicCheck:SetPoint("TOPLEFT", 276, y - 22)
+    p.chatPublicCheck:SetWidth(140)
+    p.chatPublicCheck:SetAlpha(PGM.opt("chatMains") ~= false and 1 or 0.4)
+    p.chatPublicCheck.tip = "Mains in Say, Yell and channels like Trade and General as well. Off: only in guild, "
+        .. "officer, party, raid and instance chat, and whispers."
+    y = y - 48
     p.mainText = W.FS(p, 12, C.text2)
     p.mainText:SetPoint("TOPLEFT", 4, y)
     p.mainText:SetWidth(380)

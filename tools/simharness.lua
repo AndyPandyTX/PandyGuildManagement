@@ -345,6 +345,23 @@ do
     local _, hidden = say("secret", gid(26))
     check(hidden == nil, "a line the game keeps secret is left alone")
     C.env.issecretvalue = nil
+    -- In Trade and General too: off keeps mains out of public chat only.
+    local function chan(event, msg)
+        return C.chatFilters[event](nil, event, msg, "Yinsane-" .. REALM, "", "", "", "", 0, 0, "", 0, 1, gid(26))
+    end
+    local _, trade = chan("CHAT_MSG_CHANNEL", "wts stuff")
+    check(trade and trade:find("(Tiferis)", 1, true), "mains show in Trade by default")
+    C.PGM.setOpt("chatMainsPublic", false)
+    local _, tradeOff = chan("CHAT_MSG_CHANNEL", "wts stuff")
+    local _, sayOff = chan("CHAT_MSG_SAY", "hello")
+    local _, yellOff = chan("CHAT_MSG_YELL", "hello")
+    check(tradeOff == nil and sayOff == nil and yellOff == nil, "...not in Trade, Say or Yell with the option off")
+    local _, guildOn = say("hi all", gid(26))
+    local _, partyOn = chan("CHAT_MSG_PARTY", "pull")
+    local _, whisperOn = chan("CHAT_MSG_WHISPER", "inv")
+    check(guildOn and partyOn and whisperOn and guildOn:find("(Tiferis)", 1, true),
+        "...but still in guild, party and whispers")
+    C.PGM.setOpt("chatMainsPublic", true)
     C.PGM.setOpt("chatMains", false)
     local _, off = say("hi all", gid(26))
     check(off == nil, "...and every line, with Mains in chat off")

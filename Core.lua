@@ -108,6 +108,7 @@ local DEFAULTS = {
     accent = "ice",
     syncEnabled = true,
     chatMains = true,       -- an alt's main in front of what they say in chat
+    chatMainsPublic = true, -- ...in Say, Yell and channels like Trade and General too
     overviewScope = "all",
     overviewMainsOnly = false,
     logCap = 3000,

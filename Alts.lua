@@ -451,6 +451,10 @@ local CHAT_EVENTS = {
     "CHAT_MSG_WHISPER", "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL",
 }
 
+-- Public chat: strangers' channels. With "Trade & General too" off,
+-- mains show only in the guild's and the group's own chat, and whispers.
+local PUBLIC = { CHAT_MSG_SAY = true, CHAT_MSG_YELL = true, CHAT_MSG_CHANNEL = true }
+
 -- "(Mainname) " for a guild alt whose main we know, else nil.
 function PGM:ChatMainTag(guid)
     if PGM.opt("chatMains") == false then return nil end
@@ -462,7 +466,8 @@ function PGM:ChatMainTag(guid)
 end
 
 -- The sender's GUID is the event's 12th value, after the text and name.
-local function chatFilter(_, _, msg, author, ...)
+local function chatFilter(_, event, msg, author, ...)
+    if PUBLIC[event] and PGM.opt("chatMainsPublic") == false then return false end
     local text, guid = PGM.Plain(msg), PGM.Plain((select(10, ...)))
     if type(text) ~= "string" or type(guid) ~= "string" then return false end
     local tag = PGM:ChatMainTag(guid)
