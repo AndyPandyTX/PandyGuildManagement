@@ -48,7 +48,7 @@
 --                                                   (itself, if it's the main)
 --   L guid u id:skill,... [guid u list ...]         profession skill (Forever),
 --                                                   about the sender's own character
---   W Y Z                                           play-time hours (Activity.lua)
+--   W Y Z w y z h                                   play-time hours (Activity.lua)
 --
 -- MODULES: the letters above are the core's. Modules claim one of their own
 -- with PGM.SyncRegister: G is the group finder's (Groups\), and F I N Q U X are
@@ -751,7 +751,7 @@ local handlers = {}
 PGM.SyncHandlers = handlers
 
 -- Record letters the core uses, and the ones kept for modules (see WIRE).
-local CORE_KINDS = "HVORETKMASPDCJBWYZL"
+local CORE_KINDS = "HVORETKMASPDCJBWYZLwyzh"
 
 -- A module claims a record letter: fn(fields, sender, senderRec) gets each
 -- record of that kind from a guild member, never one of our own. False if

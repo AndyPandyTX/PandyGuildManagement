@@ -98,9 +98,10 @@ to whisper or invite.
 Every copy notes who's in game every 5 minutes; the mobile app doesn't count.
 The guild roster shows everyone's online status, so one copy covers the whole
 guild while its player is on. Other copies fill in the hours you're not: each
-finished hour is shared once, and logging in after time away catches up on up
-to a week. Everything is shown in your local time. Each profile also shows
-that member's play time.
+finished hour is shared once, and logging in fills in any hour of the last 90
+days you're missing that another copy has. Whatever one copy can't fill, the
+next one asked can, so gaps close over a few logins. Everything is shown in
+your local time. Each profile also shows that member's play time.
 
 ![Activity](screenshots/04-activity.png)
 

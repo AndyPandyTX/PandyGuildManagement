@@ -9,8 +9,10 @@
 --
 --   * after each hour, one copy (chosen at random among those online) sends
 --     that hour to the guild; the others hear it and don't repeat it
---   * logging in after time away, a copy asks for the hours it missed (up to
---     a week back) and one copy that has them sends them
+--   * logging in, a copy says which of the last 90 days' hours it has. The
+--     copy that can fill the most of the gaps sends those hours and the
+--     others stand down; then it asks again, so a gap the first couldn't
+--     fill (or a message that went missing) is filled by someone else
 --
 -- Hours merge without double counting: the peak is the highest anyone saw,
 -- the people on are joined together, and the average comes from whichever
@@ -19,8 +21,19 @@
 --
 -- WIRE (see Sync.lua for the rest):
 --   W hour peak avg10 samples id,id,...   one hour (several W's for a busy hour)
---   Y lastHour                            "I've nothing after this hour"
---   Z target                              "I'll catch target up"
+--   y from count bits                     the hours from..from+count-1 I have,
+--                                         6 to a character (see DIGITS)
+--   z target from                         "I'll fill target's gaps from there"
+--   w base id:run.run,...                 who was on, by person; a run is
+--                                         "start" or "start+more", hours after
+--                                         base, in base 36
+--   h base gap.peak.avg10.samples,...     each hour's numbers, in base 36; gap
+--                                         is hours after the one before (the
+--                                         first is base). These follow their
+--                                         w's and complete those hours.
+--   Y lastHour / Z target                 the older catch-up (a week after the
+--                                         newest hour), for copies that
+--                                         haven't updated
 -- An id is a GUID without its "Player-" prefix.
 
 local _, NS = ...
@@ -29,7 +42,11 @@ local P = PGM.Plain
 
 local SAMPLE_EVERY = 5 * 60
 local KEEP_HOURS = 92 * 24      -- the longest page shows 90 days
-local CATCHUP_HOURS = 7 * 24
+local CATCHUP_HOURS = 7 * 24    -- how far the older catch-up reaches
+local GAP_HOURS = 90 * 24       -- how far back a copy asks about gaps
+local PIECE_HOURS = 1200        -- hours per "y" (200 characters)
+local HAVE_SAMPLES = 6          -- half an hour watched: we have that hour
+local GAP_ROUNDS = 3            -- asks per session, while someone answers
 
 local lastSample = 0
 
@@ -108,6 +125,32 @@ end
 
 local heard = {}   -- [hour] = samples someone else already shared for it
 
+-- Base 36 for numbers, and 6 bits per character for the "y" bits.
+local DIGITS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_"
+local function b36(n)
+    n = math.floor(n)
+    if n <= 0 then return "0" end
+    local s = ""
+    while n > 0 do
+        local d = n % 36
+        s = DIGITS:sub(d + 1, d + 1) .. s
+        n = math.floor(n / 36)
+    end
+    return s
+end
+local POW = { 1, 2, 4, 8, 16, 32 }
+local function bitAt(bits, i)
+    local c = bits:sub(math.floor(i / 6) + 1, math.floor(i / 6) + 1)
+    local v = c ~= "" and DIGITS:find(c, 1, true)
+    if not v then return false end
+    return math.floor((v - 1) / POW[i % 6 + 1]) % 2 == 1
+end
+
+local function hasHour(a, key)
+    local h = a.hours[key]
+    return h ~= nil and (h.n or 0) >= HAVE_SAMPLES
+end
+
 -- One hour, split across as many messages as its list of people needs.
 local function sendHour(key, bulk)
     local _, a = store()
@@ -141,20 +184,21 @@ local function shareFinishedHour()
     end)
 end
 
--- Merge a shared hour into ours.
-local function mergeHour(key, peak, avg10, samples, ids)
+-- Merge a shared hour into ours. True if it changed anything; `quiet`
+-- leaves telling the page to the caller (a catch-up merges many at once).
+local function mergeHour(key, peak, avg10, samples, ids, quiet)
     local g, a = store()
-    if not (g and key and peak) then return end
+    if not (g and key and peak) then return false end
     local now = hourOf(PGM.Now())
-    if key > now or key < now - KEEP_HOURS then return end
+    if key > now or key < now - KEEP_HOURS then return false end
     local h = a.hours[key] or { p = 0, n = 0, s = 0, m = "" }
     local set = toSet(h.m)
-    local added = false
+    local changed = false
     for id in (ids or ""):gmatch("[^,]+") do
         local guid = fullGuid(id)
         if not set[id] and (g.members[guid] or g.former[guid]) then
             set[id] = true
-            added = true
+            changed = true
         end
     end
     h.m = fromSet(set)
@@ -162,15 +206,19 @@ local function mergeHour(key, peak, avg10, samples, ids)
     -- comes in batches, so this rises as the rest of its list arrives).
     local seen = 0
     for _ in pairs(set) do seen = seen + 1 end
-    h.p = math.max(h.p or 0, math.min(peak, seen))
+    local before = h.p or 0
+    h.p = math.max(before, math.min(peak, seen))
+    if h.p ~= before then changed = true end
     -- The average from whoever watched the hour most closely.
     if (samples or 0) > (h.n or 0) and avg10 then
         h.n = samples
         h.s = avg10 / 10 * samples
+        changed = true
     end
     a.hours[key] = h
     heard[key] = math.max(heard[key] or 0, samples or 0)
-    if added then PGM:Fire("ACTIVITY") end
+    if changed and not quiet then PGM:Fire("ACTIVITY") end
+    return changed
 end
 
 local handlers = PGM.SyncHandlers or {}
@@ -179,19 +227,26 @@ local handlers = PGM.SyncHandlers or {}
 -- an hour holds, no more online than the guild has (or than the hour's list
 -- of who was on, see mergeHour), and an average no higher than the peak.
 local MAX_SAMPLES = math.floor(3600 / SAMPLE_EVERY) + 1
-function handlers.W(f)
-    local key, peak, avg10, samples = tonumber(f[2]), tonumber(f[3]), tonumber(f[4]), tonumber(f[5])
-    if not (key and peak and peak >= 0) then return end
+local function saneHour(key, peak, avg10, samples)
+    if not (key and peak and peak >= 0) then return nil end
     local members = PGM.CountMembers and PGM:CountMembers() or 0
-    if members > 0 and peak > members then return end
-    if key > hourOf(PGM.Now()) then return end
+    if members > 0 and peak > members then return nil end
+    if key > hourOf(PGM.Now()) then return nil end
     samples = samples and math.max(0, math.min(math.floor(samples), MAX_SAMPLES)) or nil
     avg10 = avg10 and math.max(0, math.min(avg10, peak * 10)) or nil
-    mergeHour(key, peak, avg10, samples, f[6])
+    return peak, avg10, samples
 end
 
--- Catch-up: someone has nothing after `lastHour`. If we have newer hours,
--- volunteer after a random wait, unless someone else volunteers first.
+function handlers.W(f)
+    local key = tonumber(f[2])
+    local peak, avg10, samples = saneHour(key, tonumber(f[3]), tonumber(f[4]), tonumber(f[5]))
+    if peak then mergeHour(key, peak, avg10, samples, f[6]) end
+end
+
+-- ---------- the older catch-up, for copies that haven't updated ----------
+
+-- Someone has nothing after `lastHour`. If we have newer hours, volunteer
+-- after a random wait, unless someone else volunteers first.
 local volunteer, volunteerFor
 function handlers.Y(f, sender)
     local since = tonumber(f[2]) or 0
@@ -213,7 +268,7 @@ function handlers.Y(f, sender)
     end)
 end
 
-function handlers.Z(f, sender)
+function handlers.Z(f)
     -- Someone else is already catching that player up: stand down.
     if volunteer and volunteerFor and PGM.SyncNorm(f[2]) == PGM.SyncNorm(volunteerFor) then
         volunteer:Cancel()
@@ -221,7 +276,256 @@ function handlers.Z(f, sender)
     end
 end
 
--- After logging in: ask for what we missed, then share each hour as it ends.
+-- ---------- filling gaps ----------
+
+-- The hours we were asked for and have, sent by person: each person once,
+-- with the stretches they were on, then each hour's numbers.
+local LIMIT = 248
+local function packer(kind, base)
+    local head = #kind + 1 + #tostring(base) + 1
+    local items, size = {}, head
+    local p = {}
+    function p.flush()
+        if #items > 0 then PGM.SyncSend(true, kind, base, table.concat(items, ",")) end
+        items, size = {}, head
+    end
+    function p.add(item)
+        if size + #item + 1 > LIMIT and #items > 0 then p.flush() end
+        items[#items + 1] = item
+        size = size + #item + 1
+    end
+    return p
+end
+
+local function sendGaps(keys)
+    local _, a = store()
+    if not (a and keys[1]) then return end
+    local base = keys[1]
+    local per, order = {}, {}
+    for _, key in ipairs(keys) do
+        for id in (a.hours[key].m or ""):gmatch("[^,]+") do
+            local l = per[id]
+            if not l then
+                l = {}
+                per[id] = l
+                order[#order + 1] = id
+            end
+            l[#l + 1] = key - base
+        end
+    end
+    table.sort(order)
+
+    local people = packer("1w", base)
+    for _, id in ipairs(order) do
+        local offs, runs = per[id], {}
+        local start, prev = offs[1], offs[1]
+        for i = 2, #offs + 1 do
+            local o = offs[i]
+            if o and o == prev + 1 then
+                prev = o
+            else
+                runs[#runs + 1] = prev == start and b36(start) or (b36(start) .. "+" .. b36(prev - start))
+                if o then start, prev = o, o end
+            end
+        end
+        -- Someone on for many separate stretches goes in more than one item.
+        local item, empty = id .. ":", true
+        for _, r in ipairs(runs) do
+            if not empty and #item + #r + 1 > 200 then
+                people.add(item)
+                item, empty = id .. ":", true
+            end
+            item = item .. (empty and "" or ".") .. r
+            empty = false
+        end
+        people.add(item)
+    end
+    people.flush()
+
+    -- Each message of numbers starts at its own first hour; the hours after
+    -- it are gaps from the one before.
+    local items, size, first, last = {}, 0, nil, nil
+    local function flush()
+        if first then PGM.SyncSend(true, "1h", first, table.concat(items, ",")) end
+        items, first = {}, nil
+    end
+    for _, key in ipairs(keys) do
+        local h = a.hours[key]
+        local avg10 = h.n > 0 and math.floor(h.s / h.n * 10 + 0.5) or (h.p * 10)
+        local tail = "." .. b36(h.p) .. "." .. b36(avg10) .. "." .. b36(h.n)
+        local item = first and (b36(key - last) .. tail) or tail
+        if first and size + #item + 1 > LIMIT then
+            flush()
+            item = tail
+        end
+        if not first then
+            first = key
+            size = 2 + 1 + #tostring(key) + 1
+        end
+        items[#items + 1] = item
+        size = size + #item + 1
+        last = key
+    end
+    flush()
+end
+
+-- Someone said which hours they have. If we have some they don't, offer to
+-- send them: whoever can fill the most waits least (by how many, not by
+-- share: most gaps are hours nobody saw); the rest hear "z" and stand down.
+local offers = {}   -- [who .. ":" .. from] = timer
+local function offerId(who, from) return PGM.SyncNorm(who or "") .. ":" .. tostring(from) end
+
+function handlers.y(f, sender)
+    local from, count, bits = tonumber(f[2]), tonumber(f[3]), f[4] or ""
+    if not (from and count and count >= 1 and count <= PIECE_HOURS) then return end
+    from, count = math.floor(from), math.floor(count)
+    local _, a = store()
+    if not a then return end
+    local now = hourOf(PGM.Now())
+    local keys = {}
+    for i = 0, count - 1 do
+        local key = from + i
+        if key >= now then break end   -- the hour in progress isn't over yet
+        if not bitAt(bits, i) and hasHour(a, key) then keys[#keys + 1] = key end
+    end
+    if #keys == 0 then return end
+    local id = offerId(sender, from)
+    if offers[id] then offers[id]:Cancel() end
+    offers[id] = C_Timer.NewTimer(1 + 6 / (1 + #keys) + math.random() * 2, function()
+        offers[id] = nil
+        PGM.SyncSend(false, "1z", sender, from)
+        sendGaps(keys)
+    end)
+end
+
+-- Our own ask: how many rounds this session, and whether anyone answered.
+local asked = { rounds = 0, answered = false }
+local quiet
+local askForGaps
+
+-- Once someone answers, ask again after their hours stop coming: whatever
+-- they couldn't fill (or whatever went missing) someone else may have.
+local function askAgainWhenQuiet()
+    if quiet then quiet:Cancel() end
+    quiet = C_Timer.NewTimer(30, function()
+        quiet = nil
+        if asked.rounds < GAP_ROUNDS then askForGaps() end
+    end)
+end
+
+function handlers.z(f)
+    local id = offerId(f[2], tonumber(f[3]))
+    if offers[id] then
+        offers[id]:Cancel()
+        offers[id] = nil
+    end
+    if PGM.SyncIsMe and PGM.SyncIsMe(f[2]) then
+        asked.answered = true
+        askAgainWhenQuiet()
+    end
+end
+
+-- People heard before their hours' numbers; the numbers ("h") complete them.
+-- Kept apart till then, so an hour half-heard (a reload mid catch-up) is
+-- still a gap next time rather than an hour with nobody's numbers.
+local pending = {}   -- [hour] = { [id] = true }
+
+function handlers.w(f)
+    local g = PGM.GuildDB()
+    local base = tonumber(f[2])
+    if not (g and base) then return end
+    local now = hourOf(PGM.Now())
+    for item in (f[3] or ""):gmatch("[^,]+") do
+        local id, runs = item:match("^([^:]+):(.+)$")
+        local guid = id and fullGuid(id)
+        if guid and (g.members[guid] or g.former[guid]) then
+            for run in runs:gmatch("[^.]+") do
+                local s, more = run:match("^(%w+)%+?(%w*)$")
+                s = s and tonumber(s, 36)
+                if more == nil or more == "" then more = 0 else more = tonumber(more, 36) end
+                if s and more and s <= GAP_HOURS and more <= PIECE_HOURS then
+                    for key = base + s, base + s + more do
+                        if key < now and key >= now - KEEP_HOURS then
+                            local set = pending[key] or {}
+                            set[id] = true
+                            pending[key] = set
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if quiet then askAgainWhenQuiet() end
+end
+
+function handlers.h(f)
+    local key = tonumber(f[2])
+    if not key then return end
+    local changed = false
+    for item in (f[3] or ""):gmatch("[^,]+") do
+        local d, p, a10, n = item:match("^(%w*)%.(%w+)%.(%w+)%.(%w+)$")
+        if not p then break end
+        d = d == "" and 0 or tonumber(d, 36)
+        if not (d and d <= PIECE_HOURS) then break end
+        key = key + d
+        local peak, avg10, samples = saneHour(key, tonumber(p, 36), tonumber(a10, 36), tonumber(n, 36))
+        if peak then
+            local set = pending[key]
+            pending[key] = nil
+            if mergeHour(key, peak, avg10, samples, set and fromSet(set) or "", true) then changed = true end
+        end
+    end
+    if changed then PGM:Fire("ACTIVITY") end
+    if quiet then askAgainWhenQuiet() end
+end
+
+-- Tell the guild which of the last 90 days' hours we have, in pieces.
+-- False if we have them all (nothing to ask).
+askForGaps = function()
+    local _, a = store()
+    if not (a and PGM.SyncSend) then return false end
+    local now = hourOf(PGM.Now())
+    local first, last = now - GAP_HOURS, now - 1
+    local sent = false
+    for from = first, last, PIECE_HOURS do
+        local count = math.min(PIECE_HOURS, last - from + 1)
+        local chars, missing = {}, 0
+        for i = 0, count - 1, 6 do
+            local v = 0
+            for b = 0, 5 do
+                if i + b < count then
+                    if hasHour(a, from + i + b) then v = v + POW[b + 1] else missing = missing + 1 end
+                end
+            end
+            chars[#chars + 1] = DIGITS:sub(v + 1, v + 1)
+        end
+        if missing > 0 then
+            PGM.SyncSend(false, "1y", from, count, table.concat(chars))
+            sent = true
+        end
+    end
+    if sent then
+        asked.rounds = asked.rounds + 1
+        asked.answered = false
+    end
+    return sent
+end
+
+-- The older ask, for when nobody running this version answers.
+local function askTheOldWay()
+    local _, a = store()
+    if not (a and PGM.SyncSend) then return end
+    local newest = 0
+    for key in pairs(a.hours) do
+        -- The hours of this session don't count as "what we have".
+        if key > newest and key < hourOf(PGM.Now()) - 1 then newest = key end
+    end
+    if newest < hourOf(PGM.Now()) - 2 then
+        PGM.SyncSend(false, "1Y", math.max(newest, hourOf(PGM.Now()) - CATCHUP_HOURS))
+    end
+end
+
+-- After logging in: ask for what we're missing, then share each hour as it ends.
 local started = false
 PGM:On("ROSTER", function()
     if started then return end
@@ -230,16 +534,10 @@ PGM:On("ROSTER", function()
     started = true
     prune()
     C_Timer.After(30, function()
-        local _, a = store()
-        if not (a and PGM.SyncSend) then return end
-        local newest = 0
-        for key in pairs(a.hours) do
-            -- The hours of this session don't count as "what we have".
-            if key > newest and key < hourOf(PGM.Now()) - 1 then newest = key end
-        end
-        if newest < hourOf(PGM.Now()) - 2 then
-            PGM.SyncSend(false, "1Y", math.max(newest, hourOf(PGM.Now()) - CATCHUP_HOURS))
-        end
+        if not askForGaps() then return end
+        C_Timer.After(20, function()
+            if asked.rounds == 1 and not asked.answered then askTheOldWay() end
+        end)
     end)
     -- Check at each new hour whether to share the one that just ended.
     local lastHour = hourOf(PGM.Now())

@@ -504,6 +504,86 @@ local alt
 for _, p in ipairs(mainsView.people) do if p.guid == gid(15) then alt = p end end
 check(alt == nil, "mains-only view doesn't list the alt separately")
 
+print("-- activity catch-up fills gaps, by person")
+do
+    local function hourNow() return math.floor((BASE + T) / 3600) end
+    local function id(n) return (gid(n):gsub("^Player%-", "")) end
+    -- Nattypandy's copy has 20 days from three weeks ago, beyond the old
+    -- week's reach: four people on 6pm-11pm each day.
+    local now = hourNow()
+    local old0 = now - 25 * 24
+    local filled, injected = 0, {}
+    for d = 0, 19 do
+        for hr = 18, 22 do
+            local key = old0 + d * 24 + hr
+            A.g.activity.hours[key] = { p = 4, n = 12, s = 36, m = table.concat({ id(10), id(14), id(21), id(22) }, ",") }
+            filled = filled + 1
+            injected[#injected + 1] = key
+        end
+    end
+    local KY, Kw, Kh, KW = KINDS.Y or 0, KINDS.w or 0, KINDS.h or 0, KINDS.W or 0
+    local NEW = newClient(gid(26), "Yinsane")
+    -- One gap request goes astray: the first "h" it would hear is lost.
+    local realFire, dropped = NEW.fire, 0
+    NEW.fire = function(event, prefix, msg, ...)
+        if event == "CHAT_MSG_ADDON" and type(msg) == "string" and msg:sub(1, 2) == "1h" and dropped == 0 then
+            dropped = 1
+            return
+        end
+        return realFire(event, prefix, msg, ...)
+    end
+    for i = 1, 4 do rosterTick() run(60, 1) end
+    local got = 0
+    for _, k in ipairs(injected) do
+        local h = NEW.g.activity.hours[k]
+        if h and h.n == 12 then got = got + 1 end
+    end
+    check(dropped == 1, "a catch-up message was dropped on the way")
+    check(got == filled, "a new copy gets hours older than a week (" .. got .. " of " .. filled .. ")")
+    local h1 = NEW.g.activity.hours[old0 + 18]
+    check(h1 and h1.p == 4 and h1.m:find(id(21), 1, true), "...with who was on and the peak")
+    check((KINDS.Y or 0) == KY, "the older ask isn't needed when this version answers")
+    local catchUp = (KINDS.w or 0) - Kw + (KINDS.h or 0) - Kh
+    print("  messages for " .. filled .. " hours of 4 people: " .. catchUp .. " (one hour each before: " .. filled .. ")")
+    check(catchUp < filled / 3, "far fewer messages than an hour each (" .. catchUp .. ")")
+    check((KINDS.W or 0) - KW <= 8, "the catch-up doesn't use one-hour records")
+
+    -- A gap in the middle (a week ago) is filled next time, not just what's
+    -- after the newest hour.
+    local mid = now - 7 * 24 + 19
+    A.g.activity.hours[mid] = { p = 3, n = 12, s = 30, m = table.concat({ id(10), id(14), id(21) }, ",") }
+    local NEW2 = newClient(gid(26), "Yinsane")
+    for k, v in pairs(NEW.g.activity.hours) do NEW2.g.activity = NEW2.g.activity or { hours = {} } NEW2.g.activity.hours[k] = v end
+    NEW2.g.activity.hours[mid] = nil
+    for i = 1, 3 do rosterTick() run(60, 1) end
+    check(NEW2.g.activity.hours[mid] and NEW2.g.activity.hours[mid].n == 12, "a gap between hours it has is filled")
+
+    -- Nonsense is ignored: someone not in the guild, an impossible peak.
+    local key = now - 30
+    C.PGM.SyncSend(false, "1w", key, "9999-0BADBEEF:0+3")
+    C.PGM.SyncSend(false, "1h", key, ".zz.zz.c")
+    run(5)
+    local hk = A.g.activity.hours[key]
+    check(not (hk and (hk.p or 0) > 20), "an impossible peak from a catch-up is ignored")
+    check(not (hk and (hk.m or ""):find("0BADBEEF", 1, true)), "someone not in the guild isn't added")
+
+    -- With nobody on this version, it falls back to the older ask.
+    local saved = {}
+    for name, cl in pairs(clients) do
+        saved[name] = cl.PGM.SyncHandlers.y
+        cl.PGM.SyncHandlers.y = nil
+    end
+    local KY2 = KINDS.Y or 0
+    local OLD = newClient(gid(24), "Triclops")
+    for i = 1, 2 do rosterTick() run(60, 1) end
+    check((KINDS.Y or 0) > KY2, "no answer: asks the older way")
+    for name, cl in pairs(clients) do
+        if saved[name] then cl.PGM.SyncHandlers.y = saved[name] end
+    end
+    local oO = OLD.PGM:ComputeActivity(7, false)
+    check(oO.observed >= 3, "...and older copies catch it up (" .. oO.observed .. " hours)")
+end
+
 print("-- players linking their own characters")
 -- Codiex's account also has Codiexalt. Codiex is the main (same rank and
 -- level, so the name decides).
