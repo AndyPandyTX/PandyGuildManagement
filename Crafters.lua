@@ -12,6 +12,14 @@
 -- profession window that opens (yours, or a guildie's recipes) adds its
 -- recipes to an index, keeping only the newest expansion's: they're the
 -- ones people craft, and it keeps the saved file small.
+--
+-- WOW FOREVER: the server answers that question with nobody, so there each
+-- copy reads which recipes its own character knows whenever one of their
+-- profession windows opens, and tells the guild (record "r", Sync.lua).
+-- Who knows a recipe is then answered from those lists: guildies running the
+-- addon who've opened that profession's window. A shared list also makes
+-- its recipes searchable here, by name, once this client has shown that a
+-- recipe's id is its spell's (so the spell's name is the recipe's).
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -95,9 +103,14 @@ PGM:RegisterEvent("GUILD_RECIPE_KNOWN_BY_MEMBERS", settle)
 -- may be from the last ten minutes. One question at a time: asking about
 -- another recipe drops the wait for the first (the newest is what's on
 -- screen).
+local sharedRows
 function PGM:RecipeCrafters(line, recipe, callback)
     line, recipe = tonumber(line), tonumber(recipe)
     if not (line and recipe) or not IsInGuild() then return false end
+    if PGM.IS_FOREVER then
+        if callback then callback(sharedRows(line, recipe)) end
+        return true
+    end
     local known = answers[key(line, recipe)]
     if known and PGM.Now() - known.t < KEEP_ANSWER then
         if callback then callback(rows(known.guids)) end
@@ -125,12 +138,14 @@ end
 -- The answer we already have for a recipe, if any (nil while asking, or
 -- when the server didn't answer).
 function PGM:KnownCrafters(line, recipe)
+    if PGM.IS_FOREVER then return sharedRows(tonumber(line) or 0, tonumber(recipe) or 0) end
     local known = answers[key(tonumber(line) or 0, tonumber(recipe) or 0)]
     return known and rows(known.guids)
 end
 
 -- Whether that question is still out.
 function PGM:CraftersAsking(line, recipe)
+    if PGM.IS_FOREVER then return false end
     return pending ~= nil and pending.line == tonumber(line) and pending.recipe == tonumber(recipe)
 end
 
@@ -209,7 +224,9 @@ function PGM:LearnOpenRecipes()
             if name then
                 local e = idx[bl[1]]
                 if not e or (e.line or 0) < bl[2] then
-                    e = { line = bl[2], list = {} }
+                    -- A newer expansion starts afresh; names from shared
+                    -- lists (line 0) are kept.
+                    e = { line = bl[2], list = (e and (e.line or 0) == 0) and e.list or {} }
                     idx[bl[1]] = e
                 end
                 local item
@@ -225,6 +242,7 @@ function PGM:LearnOpenRecipes()
             end
         end
     end
+    if PGM.IS_FOREVER then PGM:CheckRecipeSpells(ids) end
     if n > 0 then PGM:Fire("RECIPES") end
     return n
 end
@@ -237,6 +255,7 @@ local function queueLearn()
     C_Timer.After(1, function()
         learnQueued = false
         PGM:LearnOpenRecipes()
+        if PGM.SyncMyRecipes then PGM:SyncMyRecipes() end
     end)
 end
 PGM:RegisterEvent("TRADE_SKILL_SHOW", queueLearn)
@@ -282,4 +301,215 @@ function PGM:FindRecipes(text, limit)
     end)
     while limit and #out > limit do table.remove(out) end
     return out
+end
+
+-- ============================================================
+-- SHARED RECIPES (WoW Forever)
+-- ============================================================
+-- g.known[guid][base profession] = { u = stamp, ids = text }, text being the
+-- recipe ids, sorted, in base 36: the first in full, each after it as the
+-- gap from the one before, joined by "." ("" knows none).
+
+local MAX_KNOWN = 1000   -- more recipes than any one profession has
+
+local DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
+local function b36(n)
+    if n == 0 then return "0" end
+    local out = ""
+    while n > 0 do
+        local d = n % 36
+        out = DIGITS:sub(d + 1, d + 1) .. out
+        n = (n - d) / 36
+    end
+    return out
+end
+
+local function sorted(ids)
+    local list, seen = {}, {}
+    for _, id in ipairs(ids or {}) do
+        if type(id) == "number" and id > 0 and not seen[id] then
+            seen[id] = true
+            list[#list + 1] = id
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+function PGM.RecipeText(ids)
+    local list, out = sorted(ids), {}
+    for i, id in ipairs(list) do out[i] = b36(i == 1 and id or id - list[i - 1]) end
+    return table.concat(out, ".")
+end
+
+-- The ids a text holds, or nil if it isn't one.
+function PGM.RecipeParse(text)
+    text = tostring(text or "")
+    local out, at = {}, 0
+    if text == "" then return out end
+    for part in (text .. "."):gmatch("([^.]*)%.") do
+        if not part:match("^[0-9a-z]+$") or #part > 7 then return nil end
+        at = at + tonumber(part, 36)
+        out[#out + 1] = at
+        if #out > MAX_KNOWN or at > 2147483647 then return nil end
+    end
+    return out
+end
+
+-- The same ids as texts that each fit in room bytes, each starting over
+-- (its first id in full), so every piece reads on its own. At least one.
+function PGM.RecipeChunks(ids, room)
+    local list, out, cur, size, prev = sorted(ids), {}, {}, 0, nil
+    for _, id in ipairs(list) do
+        local piece = b36(prev and id - prev or id)
+        if prev and size + 1 + #piece > room then
+            out[#out + 1] = table.concat(cur, ".")
+            cur, size, piece = {}, 0, b36(id)
+        end
+        cur[#cur + 1] = piece
+        size = size + (#cur > 1 and 1 or 0) + #piece
+        prev = id
+    end
+    out[#out + 1] = table.concat(cur, ".")
+    return out
+end
+
+-- Parsed lists, kept while their text is the same.
+local sets = {}
+local function knows(e, key, recipe)
+    local c = sets[key]
+    if not c or c.text ~= e.ids then
+        c = { text = e.ids, set = {} }
+        for _, id in ipairs(PGM.RecipeParse(e.ids) or {}) do c.set[id] = true end
+        sets[key] = c
+    end
+    return c.set[recipe] == true
+end
+
+-- Whether the roster still shows rec with that profession (a dropped one
+-- leaves its old list behind). Unknown professions don't rule anyone out.
+local function stillHas(rec, base)
+    if not (rec.prof and #rec.prof > 0) then return true end
+    for _, pr in ipairs(rec.prof) do
+        if pr.id == base then return true end
+    end
+    return false
+end
+
+sharedRows = function(base, recipe)
+    local g = PGM.GuildDB()
+    local guids = {}
+    for guid, profs in pairs(g and g.known or {}) do
+        local e, rec = profs[base], g.members[guid]
+        if e and rec and stillHas(rec, base) and knows(e, guid .. ":" .. base, recipe) then
+            guids[#guids + 1] = guid
+        end
+    end
+    return rows(guids)
+end
+
+-- How many guildies have shared a list for a profession.
+function PGM:RecipeSharers(base)
+    local g, n = PGM.GuildDB(), 0
+    for guid, profs in pairs(g and g.known or {}) do
+        if profs[base] and g.members[guid] then n = n + 1 end
+    end
+    return n
+end
+
+-- The window that's open is my own profession: not a linked or guild view,
+-- or an NPC's.
+local function ownWindow()
+    local T = C_TradeSkillUI
+    for _, name in ipairs({ "IsTradeSkillLinked", "IsTradeSkillGuild", "IsNPCCrafting", "IsRuneforging" }) do
+        if type(T[name]) == "function" then
+            local ok, v = pcall(T[name])
+            if ok and P(v) then return false end
+        end
+    end
+    return true
+end
+
+-- What my character knows in the profession window that's open: its base
+-- profession and the recipe ids, or nil (not my own window, or not ready).
+function PGM:ReadMyRecipes()
+    local T = C_TradeSkillUI
+    if not (PGM.IS_FOREVER and T and T.GetAllRecipeIDs and T.GetRecipeInfo) then return nil end
+    if T.IsTradeSkillReady and not T.IsTradeSkillReady() then return nil end
+    if not ownWindow() then return nil end
+    local base = openProfession()
+    local mine = PGM.ReadMySkills and PGM.ReadMySkills()
+    if not (base and mine and mine[base]) then return nil end
+    local ok, ids = pcall(T.GetAllRecipeIDs)
+    if not ok or type(ids) ~= "table" or #ids == 0 then return nil end
+    local learned = {}
+    for _, recipe in ipairs(ids) do
+        if lineOf(recipe) == base then
+            local okI, info = pcall(T.GetRecipeInfo, recipe)
+            if okI and type(info) == "table" and P(info.learned) then learned[#learned + 1] = recipe end
+        end
+    end
+    return base, learned
+end
+
+-- A recipe's name from its spell, once this client has shown that's the
+-- same thing.
+local function spellName(id)
+    local name
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, n = pcall(C_Spell.GetSpellName, id)
+        name = ok and P(n) or nil
+    elseif GetSpellInfo then
+        local ok, n = pcall(GetSpellInfo, id)
+        name = ok and P(n) or nil
+    end
+    return (type(name) == "string" and name ~= "") and name or nil
+end
+
+-- With a window open: do this client's recipe ids name their spells? A few
+-- recipes are compared; the answer is kept (PandyGuildDB.recipeSpells).
+function PGM:CheckRecipeSpells(ids)
+    if not (PandyGuildDB and C_TradeSkillUI and C_TradeSkillUI.GetRecipeInfo) then return end
+    local same, tried = 0, 0
+    for _, recipe in ipairs(ids or {}) do
+        if tried >= 5 then break end
+        local ok, info = pcall(C_TradeSkillUI.GetRecipeInfo, recipe)
+        local name = ok and type(info) == "table" and P(info.name)
+        if name then
+            tried = tried + 1
+            if spellName(recipe) == name then same = same + 1 end
+        end
+    end
+    if tried == 0 then return end
+    local was = PandyGuildDB.recipeSpells
+    PandyGuildDB.recipeSpells = same == tried
+    if PandyGuildDB.recipeSpells and not was then
+        local g = PGM.GuildDB()
+        for _, profs in pairs(g and g.known or {}) do
+            for base, e in pairs(profs) do PGM:IndexSharedRecipes(base, PGM.RecipeParse(e.ids)) end
+        end
+    end
+end
+
+-- A shared list's recipes, made searchable by name.
+function PGM:IndexSharedRecipes(base, ids)
+    local idx = index()
+    if not (idx and ids and PandyGuildDB.recipeSpells) then return 0 end
+    local e = idx[base]
+    if not e then
+        e = { line = 0, list = {} }
+        idx[base] = e
+    end
+    local n = 0
+    for _, id in ipairs(ids) do
+        if not e.list[id] then
+            local name = spellName(id)
+            if name then
+                e.list[id] = { n = name }
+                n = n + 1
+            end
+        end
+    end
+    if n > 0 then PGM:Fire("RECIPES") end
+    return n
 end

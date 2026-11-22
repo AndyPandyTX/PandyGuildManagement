@@ -102,7 +102,7 @@ local function paint()
     local on = 0
     for _, it in ipairs(list) do if it.rec.online or it.onlineAs then on = on + 1 end end
     if #list == 0 then
-        panel.count:SetText("Nobody in the guild knows this one.")
+        panel.count:SetText(PGM.IS_FOREVER and "No guildie running the addon has shared this recipe yet. Their lists come in as they open that profession's window." or "Nobody in the guild knows this one.")
     else
         panel.count:SetText(("%d %s it  ·  %s%d online|r"):format(#list, #list == 1 and "guildie knows" or "guildies know",
             PGM.Hex(C.jade), on))
@@ -162,7 +162,9 @@ local function build()
     head:SetScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_TOP")
         GameTooltip:SetText(PGM.NAME, 1, 1, 1)
-        GameTooltip:AddLine("Guildies who know the selected recipe, from the game's guild data. Click to fold.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(PGM.IS_FOREVER
+            and "Guildies who know the selected recipe, from the lists guildies running the addon share. Click to fold."
+            or "Guildies who know the selected recipe, from the game's guild data. Click to fold.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     head:SetScript("OnLeave", function() GameTooltip:Hide() end)

@@ -318,7 +318,8 @@ local function build(p)
         end
         if #found == 0 then
             p.suggestNote:SetText(PGM:RecipeCount() == 0
-                and "No recipes learned yet. Open a profession window (yours, or click a crafter to see theirs) and its recipes become searchable."
+                and (PGM.IS_FOREVER and "No recipes yet. Open one of your profession windows; guildies' recipes come in as they open theirs."
+                    or "No recipes learned yet. Open a profession window (yours, or click a crafter to see theirs) and its recipes become searchable.")
                 or "No recipe matches. Recipes are learned from profession windows as they're opened.")
             p.suggest:SetHeight(64)
         else
@@ -415,7 +416,9 @@ local function refresh(p)
         local asking = PGM:CraftersAsking(r.line, r.recipe)
         p.empty:SetText(not known
             and (asking and "Asking the guild..." or "No answer from the server. Pick the recipe again to ask again.")
-            or (state.onlineOnly and "Nobody who knows it is online." or "Nobody in the guild knows this recipe."))
+            or (state.onlineOnly and "Nobody who knows it is online."
+                or PGM.IS_FOREVER and "No guildie running the addon has shared this recipe yet. Their lists come in as they open that profession's window."
+                or "Nobody in the guild knows this recipe."))
     elseif #profs == 0 then
         p.empty:SetText("No profession data yet. It comes from the game's guild roster; if it stays empty, open the guild window (J) once so the game loads it.")
     elseif #members == 0 then

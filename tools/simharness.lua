@@ -1079,42 +1079,45 @@ do
     check(#byItem == 1 and byItem[1].recipe == 1002, "...and by item link")
     check(#P:FindRecipes("old elixir") == 0, "older expansions' recipes aren't kept")
 
-    -- Asking the guild who knows one.
-    LAST_RECIPE_QUERY, RECIPE_ANSWER = nil, nil
-    local got
-    P:RecipeCrafters(171, 1001, function(list) got = list end)
-    check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[1] == 171 and LAST_RECIPE_QUERY[2] == 1001, "the game is asked about the recipe")
-    RECIPE_ANSWER = { line = 171, recipe = 1001, members = { "Magicpayne-MalGanis", "Nattypandy-MalGanis", "Stranger-Elsewhere" } }
-    A.fire("GUILD_RECIPE_KNOWN_BY_MEMBERS")
-    check(got and #got == 2, "the answer lists the guildies who know it (" .. (got and #got or "none") .. ")")
-    check(#(P:KnownCrafters(171, 1001) or {}) == 2, "...and is kept")
-    LAST_RECIPE_QUERY = nil
-    local again
-    P:RecipeCrafters(171, 1001, function(list) again = list end)
-    check(again and #again == 2 and LAST_RECIPE_QUERY == nil, "asking again soon uses the kept answer")
-    -- Who's online is read fresh, not kept with the answer.
-    local g = A.g
-    local wasOnline = g.members[gid(11)].online
-    g.members[gid(11)] = setmetatable({ online = not wasOnline }, { __index = g.members[gid(11)] })
-    local fresh
-    for _, it in ipairs(P:KnownCrafters(171, 1001)) do if it.guid == gid(11) then fresh = it end end
-    check(fresh and fresh.rec.online == not wasOnline, "the kept answer shows who's online now")
-    g.members[gid(11)] = getmetatable(g.members[gid(11)]).__index
-    -- The server never answers: the question is dropped, so asking again asks again.
-    RECIPE_ANSWER = { line = 171, recipe = 1001, members = {} }   -- an old answer, for another recipe
-    P:RecipeCrafters(171, 1003, function() end)
-    check(P:CraftersAsking(171, 1003), "while waiting, it's asking")
-    run(4)
-    check(not P:CraftersAsking(171, 1003) and P:KnownCrafters(171, 1003) == nil, "no answer: it stops waiting")
-    LAST_RECIPE_QUERY = nil
-    P:RecipeCrafters(171, 1003, function() end)
-    check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[2] == 1003, "...and picking it again asks the server again")
-    -- No event: the answer is read after a moment anyway.
-    RECIPE_ANSWER = { line = 171, recipe = 1002, members = { "Magicpayne-MalGanis" } }
-    local late
-    P:RecipeCrafters(171, 1002, function(list) late = list end)
-    run(4)
-    check(late and #late == 1, "an answer without the event is still read")
+    -- Asking the guild who knows one (retail: Forever's server doesn't
+    -- answer, see the Classic professions below).
+    if not FOREVER then
+        LAST_RECIPE_QUERY, RECIPE_ANSWER = nil, nil
+        local got
+        P:RecipeCrafters(171, 1001, function(list) got = list end)
+        check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[1] == 171 and LAST_RECIPE_QUERY[2] == 1001, "the game is asked about the recipe")
+        RECIPE_ANSWER = { line = 171, recipe = 1001, members = { "Magicpayne-MalGanis", "Nattypandy-MalGanis", "Stranger-Elsewhere" } }
+        A.fire("GUILD_RECIPE_KNOWN_BY_MEMBERS")
+        check(got and #got == 2, "the answer lists the guildies who know it (" .. (got and #got or "none") .. ")")
+        check(#(P:KnownCrafters(171, 1001) or {}) == 2, "...and is kept")
+        LAST_RECIPE_QUERY = nil
+        local again
+        P:RecipeCrafters(171, 1001, function(list) again = list end)
+        check(again and #again == 2 and LAST_RECIPE_QUERY == nil, "asking again soon uses the kept answer")
+        -- Who's online is read fresh, not kept with the answer.
+        local g = A.g
+        local wasOnline = g.members[gid(11)].online
+        g.members[gid(11)] = setmetatable({ online = not wasOnline }, { __index = g.members[gid(11)] })
+        local fresh
+        for _, it in ipairs(P:KnownCrafters(171, 1001)) do if it.guid == gid(11) then fresh = it end end
+        check(fresh and fresh.rec.online == not wasOnline, "the kept answer shows who's online now")
+        g.members[gid(11)] = getmetatable(g.members[gid(11)]).__index
+        -- The server never answers: the question is dropped, so asking again asks again.
+        RECIPE_ANSWER = { line = 171, recipe = 1001, members = {} }   -- an old answer, for another recipe
+        P:RecipeCrafters(171, 1003, function() end)
+        check(P:CraftersAsking(171, 1003), "while waiting, it's asking")
+        run(4)
+        check(not P:CraftersAsking(171, 1003) and P:KnownCrafters(171, 1003) == nil, "no answer: it stops waiting")
+        LAST_RECIPE_QUERY = nil
+        P:RecipeCrafters(171, 1003, function() end)
+        check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[2] == 1003, "...and picking it again asks the server again")
+        -- No event: the answer is read after a moment anyway.
+        RECIPE_ANSWER = { line = 171, recipe = 1002, members = { "Magicpayne-MalGanis" } }
+        local late
+        P:RecipeCrafters(171, 1002, function(list) late = list end)
+        run(4)
+        check(late and #late == 1, "an answer without the event is still read")
+    end
     TRADE, RECIPE_ANSWER = nil, nil
 end
 
@@ -2264,11 +2267,128 @@ local ok, why = pcall(function()
             "...even one the game won't place, from the open window")
         local byItem = P:FindRecipes("|cffffffff|Hitem:118::::::::60:::::|h[Minor Healing Potion]|h|r")
         check(#byItem == 1 and byItem[1].recipe == 2330 and byItem[1].line == 171, "...found by item link too")
+        -- Forever's server says nobody knows anything, so it isn't asked:
+        -- each copy shares what its own character knows.
         LAST_RECIPE_QUERY = nil
-        P:RecipeCrafters(171, 2330, function() end)
-        check(LAST_RECIPE_QUERY and LAST_RECIPE_QUERY[1] == 171 and LAST_RECIPE_QUERY[2] == 2330,
-            "the guild is asked about the Classic recipe")
-        run(4)
+        local answered
+        P:RecipeCrafters(171, 2330, function(list) answered = list end)
+        check(LAST_RECIPE_QUERY == nil and answered and #answered == 0 and not P:CraftersAsking(171, 2330),
+            "Forever: who knows a recipe comes from shared lists, not the server")
+
+        -- My Alchemy window: two recipes known, one not.
+        local SPELLS = { [2330] = "Minor Healing Potion", [2332] = "Minor Rejuvenation Potion",
+                         [3170] = "Elixir of Lion's Strength" }
+        for _, cl in ipairs({ A, B }) do
+            cl.env.C_Spell = { GetSpellName = function(id) return SPELLS[id] end }
+        end
+        TRADE.info[2330].learned, TRADE.info[2332].learned = true, true
+        A.env.GetProfessions = function() return 1 end
+        A.env.GetProfessionInfo = function(i) if i == 1 then return "Alchemy", 0, 120, 150, 0, 0, 171 end end
+        local bRec = B.g.members[gid(10)]
+        local savedProf = bRec.prof
+        bRec.prof = { { id = 171, rank = 1 } }
+        B.env.PandyGuildDB.recipeSpells = true   -- B's client has shown recipe ids are spells
+        B.env.PandyGuildDB.recipes = nil
+        local r0 = KINDS.r or 0
+        A.fire("TRADE_SKILL_SHOW")
+        run(3)
+        local mineK = g.known[gid(10)] and g.known[gid(10)][171]
+        local ids = mineK and P.RecipeParse(mineK.ids) or {}
+        check(#ids == 2 and ids[1] == 2330 and ids[2] == 2332, "my window: the recipes I know are kept, not the others")
+        check(A.env.PandyGuildDB.recipeSpells == true, "...and this client's recipe ids are checked against spells")
+        run(30)
+        check((KINDS.r or 0) - r0 == 1, "one profession's list is one message (" .. ((KINDS.r or 0) - r0) .. ")")
+        local who = B.PGM:KnownCrafters(171, 2330)
+        check(who and #who == 1 and who[1].guid == gid(10), "the guild learns who knows the recipe")
+        check(#B.PGM:KnownCrafters(171, 3170) == 0, "...and not a recipe I don't know")
+        local found = B.PGM:FindRecipes("rejuv")
+        check(found[1] and found[1].recipe == 2332 and found[1].line == 171,
+            "a shared list makes its recipes searchable where no window opened")
+        local u1 = g.known[gid(10)][171].u
+        A.fire("TRADE_SKILL_LIST_UPDATE")
+        run(30)
+        check(g.known[gid(10)][171].u == u1 and (KINDS.r or 0) - r0 == 1, "the same list again isn't sent again")
+
+        -- A guildie's (linked) window isn't mine.
+        A.env.C_TradeSkillUI.IsTradeSkillLinked = function() return true end
+        TRADE.info[3170].learned = true
+        A.fire("TRADE_SKILL_SHOW")
+        run(3)
+        check(#P.RecipeParse(g.known[gid(10)][171].ids) == 2, "someone else's window doesn't change my list")
+        A.env.C_TradeSkillUI.IsTradeSkillLinked = nil
+        TRADE.info[3170].learned = nil
+
+        -- Dropping the profession: the roster says so, and the old list
+        -- stops counting.
+        bRec.prof = { { id = 186, rank = 1 } }
+        check(#B.PGM:KnownCrafters(171, 2330) == 0, "a dropped profession's list doesn't count")
+        bRec.prof = { { id = 171, rank = 1 } }
+
+        -- A big profession: 300 recipes, several pieces, each readable alone.
+        local big, n = {}, 1263000
+        for i = 1, 300 do
+            n = n + (i % 7 == 0 and 40 or 3)
+            big[i] = n
+        end
+        local chunks = P.RecipeChunks(big, 200)
+        local back, fits = {}, true
+        for _, c in ipairs(chunks) do
+            if #c > 200 then fits = false end
+            for _, id in ipairs(P.RecipeParse(c)) do back[#back + 1] = id end
+        end
+        check(#chunks > 1 and fits and #back == 300 and back[300] == big[300], "a long list splits into pieces that fit")
+        check(#P.RecipeText(big) < 300 * 3, "...about two characters a recipe (" .. #P.RecipeText(big) .. ")")
+        check(P.RecipeParse("1.2.zz!") == nil and P.RecipeParse("1..2") == nil, "junk isn't a list")
+        TRADE = { ids = {}, info = {}, prof = {}, item = {}, base = 171 }
+        for _, id in ipairs(big) do
+            TRADE.ids[#TRADE.ids + 1] = id
+            TRADE.info[id] = { name = "Recipe " .. id, learned = true }
+            TRADE.prof[id] = { professionID = 2939, parentProfessionID = 171 }
+        end
+        -- One piece goes missing on the way to B: the list isn't used half
+        -- heard, and the next one sent is.
+        local realFire, dropped = B.fire, 0
+        B.fire = function(event, prefix, msg, ...)
+            if event == "CHAT_MSG_ADDON" and type(msg) == "string" and msg:sub(1, 2) == "1r" and dropped == 0 then
+                dropped = 1
+                return
+            end
+            return realFire(event, prefix, msg, ...)
+        end
+        r0 = KINDS.r or 0
+        A.fire("TRADE_SKILL_SHOW")
+        run(40)
+        local sent = (KINDS.r or 0) - r0
+        check(sent > 1 and sent <= 4, "300 recipes take a few messages (" .. sent .. ")")
+        check(#B.PGM:KnownCrafters(171, big[150]) == 0, "a list with a piece missing isn't used")
+        B.fire = realFire
+        TRADE.ids[#TRADE.ids + 1] = 1270000
+        TRADE.info[1270000] = { name = "Recipe new", learned = true }
+        TRADE.prof[1270000] = { professionID = 2939, parentProfessionID = 171 }
+        A.fire("TRADE_SKILL_SHOW")
+        run(150)   -- a catch-up may be ahead of it in the queue
+        check(#B.PGM:KnownCrafters(171, big[150]) == 1 and #B.PGM:KnownCrafters(171, 1270000) == 1,
+            "...the next whole one is")
+
+        -- A member speaks only for their own character.
+        local u = BASE + math.floor(T)
+        TR.PGM.SyncSend(false, "1r", gid(40), u, 171, 1, 1, P.RecipeText({ 2330 }))
+        TR.PGM.SyncSend(false, "1r", gid(14), u, 171, 1, 1, P.RecipeText({ 2330 }))
+        TR.PGM.SyncSend(false, "1r", gid(40), u, 999, 1, 1, P.RecipeText({ 2330 }))
+        run(10)
+        check(g.known[gid(40)] and g.known[gid(40)][171], "a member's own recipes are taken")
+        check(not g.known[gid(14)], "...but not what they say about someone else")
+        check(not g.known[gid(40)][999], "...or about a profession that isn't one")
+
+        -- A catch-up brings the lists too.
+        local NEWR = newClient(gid(26), "Yinsane")
+        for i = 1, 3 do rosterTick() run(60, 1) end
+        check(NEWR.g.known and NEWR.g.known[gid(10)] and NEWR.g.known[gid(10)][171], "a catch-up brings the lists")
+
+        bRec.prof = savedProf
+        g.known[gid(10)], g.known[gid(40)] = nil, nil
+        B.g.known = {}
+        A.env.GetProfessions, A.env.GetProfessionInfo = nil, nil
         TRADE = nil
         A.env.PandyGuildDB.recipes = nil
     else

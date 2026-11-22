@@ -105,6 +105,7 @@ The same download runs on WoW Forever. Everything above works there too, with a 
 - The raid-buff checklist is hidden, since it lists Midnight's buffs
 - Professions show each character's skill for players running the addon, and the best crafter is the one with the most
 - Thin professions are the ones with few active Artisans
+- Who can craft and Guild crafters list guildies running the addon, from the recipes they share when they open their profession window
 - The group finder posts dungeons and raids of 10, 20 or 40, with roles to match
 - Raid loot is labelled by raid size
 - Clicking a crafter opens their profile, since Forever can't show another player's recipes

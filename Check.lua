@@ -4,7 +4,9 @@
 -- Midnight engine, so which retail APIs answer there isn't always known.
 -- Every read is guarded: a missing API is written down, never an error.
 -- While it runs it also notes how Blizzard's own Group Finder calls Search,
--- CreateListing and ApplyToGroup, for the shape of those calls.
+-- CreateListing and ApplyToGroup, and what its Browse buttons call (invite,
+-- request an invite, whisper), for the shape of those calls. After the first
+-- check, every search's results are kept too (the last one wins).
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -61,6 +63,67 @@ local function loaded(name)
     return fn and select(2, pcall(fn, name)) or false
 end
 
+-- What a search found: each result's info, its leader and members, as the
+-- game gives them. Groups and players listed alone both come back here.
+local function searchResults()
+    local L = C_LFGList or {}
+    local r = try(L.GetSearchResults)
+    local out = { got = plain(r), rows = {} }
+    if type(r) ~= "table" then return out end
+    local ids
+    for _, v in ipairs(r) do
+        if type(v) == "table" then ids = v break end
+    end
+    for i, id in ipairs(ids or {}) do
+        if i > 12 then break end
+        local info = try(L.GetSearchResultInfo, id)
+        info = type(info) == "table" and info[1]
+        local row = {
+            id = plain(id), info = plain(info),
+            counts = plain(try(L.GetSearchResultMemberCounts, id)),
+            leader = plain(try(L.GetSearchResultLeaderInfo, id)),
+            player = plain(try(L.GetSearchResultPlayerInfo, id)),
+            members = {},
+        }
+        local n = type(info) == "table" and info.numMembers
+        n = (type(n) == "number" and not (issecretvalue and issecretvalue(n))) and n or 1
+        for m = 1, math.min(n, 5) do
+            row.members[m] = {
+                player = plain(try(L.GetSearchResultPlayerInfo, id, m)),
+                member = plain(try(L.GetSearchResultMemberInfo, id, m)),
+            }
+        end
+        out.rows[#out.rows + 1] = row
+    end
+    return out
+end
+
+-- Blizzard's vanilla-style windows: their global functions and the fields of
+-- the Browse and Listing frames, to know what can be hooked.
+local function browseParts()
+    local out = { globals = {}, frames = {} }
+    local n = 0
+    for k, v in pairs(_G) do
+        if type(k) == "string" and (k:find("^LFGBrowse") or k:find("^LFGListing") or k:find("^LFGParent")) then
+            n = n + 1
+            if n > 120 then break end
+            out.globals[k] = type(v) == "table" and (v.GetObjectType and "frame" or "table") or type(v)
+        end
+    end
+    for _, name in ipairs({ "LFGBrowseFrame", "LFGListingFrame" }) do
+        local f, keys, m = _G[name], {}, 0
+        if type(f) == "table" then
+            for k, v in pairs(f) do
+                m = m + 1
+                if m > 120 then break end
+                keys[tostring(k)] = type(v) == "table" and (v.GetObjectType and "frame" or "table") or type(v)
+            end
+        end
+        out.frames[name] = keys
+    end
+    return out
+end
+
 local function groupFinder(out)
     local L = C_LFGList or {}
     out.api = exists({
@@ -70,7 +133,17 @@ local function groupFinder(out)
         "C_PartyInfo.RequestInviteFromUnit", "PVEFrame_ShowFrame", "PVEFrame_ToggleFrame", "LFGListFrame",
         "LFGParentFrame", "ToggleLFGParentFrame", "LFGBrowseFrame", "LFGListingFrame",
         "LFGListSearchEntry_Update", "LFGListUtil_SetSearchEntryTooltip", "Enum.LFGListFilter",
+        "C_LFGList.GetSearchResults", "C_LFGList.GetSearchResultInfo", "C_LFGList.GetSearchResultLeaderInfo",
+        "C_LFGList.GetSearchResultMemberInfo", "C_LFGList.GetActiveEntryInfo", "C_LFGList.HasActiveEntryInfo",
+        "C_LFGList.RemoveListing", "C_LFGList.GetApplicationInfo", "C_PartyInfo.InviteUnit", "InviteUnit",
+        "C_ChatInfo.SendChatMessage", "SendChatMessage", "C_ChatInfo.SendAddonMessage",
+        "ChatFrame_SendTell", "ChatFrameUtil.SendTell", "C_FriendList.SendWho",
     })
+    local ok, res = pcall(searchResults)
+    out.results = ok and res or ("error: " .. tostring(res))
+    ok, res = pcall(browseParts)
+    out.browse = ok and res or ("error: " .. tostring(res))
+    out.applicants = plain(try(L.GetApplicants))
     out.vanillaStyleLoaded = loaded("Blizzard_GroupFinder_VanillaStyle")
     out.retailLoaded = loaded("Blizzard_GroupFinder")
     out.filters = plain(Enum and Enum.LFGListFilter)
@@ -179,6 +252,11 @@ local function professions(out)
             firstProfession = plain(all[1] and try(T.GetProfessionInfoByRecipeID, all[1])),
             firstOutput = plain(all[1] and try(T.GetRecipeOutputItemData, all[1])),
             base = plain(try(T.GetBaseProfessionInfo)),
+            -- Is a recipe id its spell's? (Then shared recipes get names.)
+            firstName = plain(all[1] and try(T.GetRecipeInfo, all[1])),
+            firstSpell = plain(all[1] and C_Spell and try(C_Spell.GetSpellName, all[1])),
+            linked = plain(try(T.IsTradeSkillLinked)),
+            recipeSpells = PandyGuildDB.recipeSpells,
         }
     end
     if ProfessionsFrame then
@@ -191,12 +269,36 @@ end
 -- Blizzard's own calls, as they happen, so their argument order is known.
 -- Kept for the session, so a second /pgm check still has them.
 local seen
-local function watch(name)
-    if not (C_LFGList and type(C_LFGList[name]) == "function" and hooksecurefunc) then return end
-    hooksecurefunc(C_LFGList, name, function(...)
-        local list = seen[name] or {}
-        seen[name] = list
-        if #list < 5 then list[#list + 1] = plain({ ... }) end
+local function watch(path)
+    if not hooksecurefunc then return end
+    local owner, key = path:match("^([^.]+)%.(.+)$")
+    local t = owner and _G[owner] or _G
+    key = key or path
+    if type(t) ~= "table" or type(t[key]) ~= "function" then return end
+    local function note(...)
+        local list = seen[path] or {}
+        seen[path] = list
+        -- A chat line's words stay out of saved data: only where it went.
+        local args = { ... }
+        if key == "SendChatMessage" then args = { channel = args[2], to = args[4] and true or nil } end
+        if #list < 5 then list[#list + 1] = plain(args) end
+    end
+    if owner then hooksecurefunc(t, key, note) else hooksecurefunc(key, note) end
+end
+
+-- Each search's results, once a check has been run this session.
+local keeper
+local function keepResults()
+    if keeper or not CreateFrame then return end
+    keeper = CreateFrame("Frame")
+    keeper:RegisterEvent("LFG_LIST_SEARCH_RESULTS_RECEIVED")
+    keeper:SetScript("OnEvent", function()
+        C_Timer.After(0.5, function()
+            local c = PandyGuildDB and PandyGuildDB.check
+            if not (c and c.groupFinder) then return end
+            local ok, res = pcall(searchResults)
+            if ok then c.groupFinder.results = res end
+        end)
     end)
 end
 
@@ -229,8 +331,14 @@ function PGM:ForeverCheck()
     end
     if not seen then
         seen = out.calls
-        for _, n in ipairs({ "Search", "CreateListing", "UpdateListing", "ApplyToGroup" }) do watch(n) end
+        for _, n in ipairs({ "C_LFGList.Search", "C_LFGList.CreateListing", "C_LFGList.UpdateListing",
+                "C_LFGList.ApplyToGroup", "C_LFGList.RemoveListing", "C_PartyInfo.InviteUnit",
+                "C_PartyInfo.RequestInviteFromUnit", "InviteUnit", "ChatFrame_SendTell",
+                "ChatFrameUtil.SendTell", "C_ChatInfo.SendChatMessage" }) do
+            watch(n)
+        end
+        pcall(keepResults)
     end
     PandyGuildDB.check = out
-    PGM.Print("Checked. Now, if you can: search for a group in Looking for Group, open a profession window and type /pgm check again, then /reload to save it all.")
+    PGM.Print("Checked. Now, if you can: in Looking for Group, browse Dungeons until groups and players show, then click a result's whisper button (you don't have to send the whisper). Then type /pgm check again and /reload to save it all.")
 end

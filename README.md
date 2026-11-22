@@ -283,6 +283,12 @@ The same addon runs on WoW Forever. Everything above works there, except:
   crafter is the one with the most skill, and once at least half of a
   profession's players have shared theirs, it counts as thin when few active
   players have Artisan (225+).
+- **Who can craft...** and the **Guild crafters** panel list guildies running
+  the addon. Forever's server doesn't say who knows a recipe, so each copy
+  shares what its character knows whenever one of their profession windows
+  opens. Guildies without the addon, or who haven't opened that profession
+  since installing it, aren't listed. Recipes others share become
+  searchable by name too.
 - The group finder posts dungeons instead of Mythic+ keys, and raids up to 40
   with roles to match. There are no delves, keystones or M+ scores, and
   **Find PuGs** opens Looking for Group.

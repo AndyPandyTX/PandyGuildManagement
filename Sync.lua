@@ -8,9 +8,9 @@
 -- member's PC can't push changes. The guild master decides which ranks count
 -- as officers (Settings); until then, ranks named like "Officer", "Leader" or
 -- "Guild Master" do. One exception: anyone may say which of their own
--- characters is their main (record B), and their own profession skill
--- (record L), but only about the character sending it; officers may relay
--- everyone's during a catch-up.
+-- characters is their main (record B), their own profession skill (record
+-- L) and recipes (record r), but only about the character sending it;
+-- officers may relay everyone's during a catch-up.
 --
 -- HOW IT MERGES: every record carries the time it was made, and newest wins,
 -- record by record (one team member, one alt link). A raid night's attendees
@@ -48,6 +48,10 @@
 --                                                   (itself, if it's the main)
 --   L guid u id:skill,... [guid u list ...]         profession skill (Forever),
 --                                                   about the sender's own character
+--   r guid u profession piece pieces ids            recipes known (Forever), about
+--                                                   the sender's own character: one
+--                                                   profession's list in pieces, each
+--                                                   readable alone (Crafters.lua)
 --   W Y Z w y z h                                   play-time hours (Activity.lua)
 --
 -- MODULES: the letters above are the core's. Modules claim one of their own
@@ -110,6 +114,7 @@ local function store()
     g.claimU = g.claimU or {}
     g.skills = g.skills or {}
     g.skillU = g.skillU or {}
+    g.known = g.known or {}
     return g, s
 end
 
@@ -325,6 +330,19 @@ local function sendPacked(kind, rows, bulk)
         size = size + #SEP + #piece
     end
     if #parts > 1 then enqueue(table.concat(parts, SEP), bulk) end
+end
+
+-- One profession's recipe list (record r), in as many pieces as it takes.
+local MAX_PIECES = 9
+local function sendRecipes(guid, base, e, bulk)
+    local ids = PGM.RecipeParse(e.ids)
+    if not ids then return end
+    local head = table.concat({ "1r", guid, e.u, base, "9", "9" }, SEP) .. SEP
+    local chunks = PGM.RecipeChunks(ids, 250 - #head)
+    if #chunks > MAX_PIECES then return end
+    for i, text in ipairs(chunks) do
+        enqueue(table.concat({ "1r", guid, e.u, base, i, #chunks, text }, SEP), bulk)
+    end
 end
 
 function PGM:SyncQueued()
@@ -666,6 +684,13 @@ local function dump(target, since)
         end
     end
     sendPacked("1L", skills, true)
+    for guid, profs in pairs(g.known) do
+        if g.members[guid] then
+            for base, e in pairs(profs) do
+                if (e.u or 0) > since then sendRecipes(guid, base, e, true) n = n + 1 end
+            end
+        end
+    end
     send("1E", target, n, s.newest)   -- bulk too, so it arrives after what it follows
     bulkMode, dumping = false, false
 end
@@ -751,7 +776,7 @@ local handlers = {}
 PGM.SyncHandlers = handlers
 
 -- Record letters the core uses, and the ones kept for modules (see WIRE).
-local CORE_KINDS = "HVORETKMASPDCJBWYZLwyzh"
+local CORE_KINDS = "HVORETKMASPDCJBWYZLwyzhr"
 
 -- A module claims a record letter: fn(fields, sender, senderRec) gets each
 -- record of that kind from a guild member, never one of our own. False if
@@ -1071,6 +1096,77 @@ do
             pending = nil
             PGM:SyncMySkills()
         end)
+    end)
+end
+
+-- ---- recipes known (Forever) ----
+-- The server won't say who knows a recipe there, so each copy tells the
+-- guild what its own character knows, one profession at a time, when that
+-- profession's window opens (Crafters.lua).
+
+local PROFESSIONS = { [129] = true, [164] = true, [165] = true, [171] = true, [182] = true, [185] = true,
+                      [186] = true, [197] = true, [202] = true, [333] = true, [356] = true, [393] = true,
+                      [755] = true, [773] = true }
+local recipeParts = {}   -- ["guid:base"] = { u, n, got = { [piece] = ids }, count }
+
+function handlers.r(f, sender, rec)
+    if not rec then return end
+    local g = store()
+    local guid, u, base = f[2], clampU(f[3]), tonumber(f[4])
+    local i, n = tonumber(f[5]), tonumber(f[6])
+    if not ((guid == rec.guid or PGM:IsOfficerRec(rec)) and isGuid(guid) and g.members[guid] and u
+            and base and PROFESSIONS[base] and i and n and n >= 1 and n <= MAX_PIECES and i >= 1 and i <= n) then
+        return
+    end
+    local have = g.known[guid] and g.known[guid][base]
+    if have and u <= (have.u or 0) then return end
+    local ids = PGM.RecipeParse(f[7] or "")
+    if not ids then return end
+    -- A list is used once all its pieces are in; a newer list starts over.
+    local key = guid .. ":" .. base
+    local parts = recipeParts[key]
+    if not parts or parts.u ~= u or parts.n ~= n then
+        parts = { u = u, n = n, got = {}, count = 0 }
+        recipeParts[key] = parts
+    end
+    if parts.got[i] then return end
+    parts.got[i] = ids
+    parts.count = parts.count + 1
+    if parts.count < n then return end
+    recipeParts[key] = nil
+    local all = {}
+    for k = 1, n do
+        for _, id in ipairs(parts.got[k]) do all[#all + 1] = id end
+    end
+    g.known[guid] = g.known[guid] or {}
+    g.known[guid][base] = { u = u, ids = PGM.RecipeText(all) }
+    Sync.lastApplied = PGM.Now()
+    PGM:IndexSharedRecipes(base, all)
+    changed("CRAFTERS")
+end
+
+-- Reads what my character knows in the profession window that's open and
+-- keeps it; a change goes to the guild a few seconds later (learning
+-- several recipes at a trainer is one list, not several).
+local recipeTimers = {}
+function PGM:SyncMyRecipes()
+    if not PGM.IS_FOREVER then return end
+    local g = store()
+    local me = PGM:MyGuid()
+    if not (g and me and g.members[me]) then return end
+    local base, ids = PGM:ReadMyRecipes()
+    if not base then return end
+    local text = PGM.RecipeText(ids)
+    g.known[me] = g.known[me] or {}
+    local e = g.known[me][base]
+    if e and e.ids == text then return end
+    g.known[me][base] = { u = PGM.Stamp(e and e.u), ids = text }
+    changed("CRAFTERS")
+    if recipeTimers[base] then recipeTimers[base]:Cancel() end
+    recipeTimers[base] = C_Timer.NewTimer(10, function()
+        recipeTimers[base] = nil
+        local now = g.known[me] and g.known[me][base]
+        if now and enabled() then sendRecipes(me, base, now, true) end
     end)
 end
 
