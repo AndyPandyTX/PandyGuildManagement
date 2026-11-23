@@ -13,6 +13,9 @@
 --     copy that can fill the most of the gaps sends those hours and the
 --     others stand down; then it asks again, so a gap the first couldn't
 --     fill (or a message that went missing) is filled by someone else
+--   * asking again later: when a copy that has hours we're missing says
+--     which it has (it just logged in), or on Sync now. So a copy that came
+--     online after our ask still fills us in
 --
 -- Hours merge without double counting: the peak is the highest anyone saw,
 -- the people on are joined together, and the average comes from whichever
@@ -47,6 +50,8 @@ local GAP_HOURS = 90 * 24       -- how far back a copy asks about gaps
 local PIECE_HOURS = 1200        -- hours per "y" (200 characters)
 local HAVE_SAMPLES = 6          -- half an hour watched: we have that hour
 local GAP_ROUNDS = 3            -- asks per session, while someone answers
+local REASK_GAP = 120           -- seconds between asks prompted by someone else
+local GIVEN_FOR = 600           -- seconds an answer counts as on its way
 
 local lastSample = 0
 
@@ -375,6 +380,19 @@ end
 local offers = {}   -- [who .. ":" .. from] = timer
 local function offerId(who, from) return PGM.SyncNorm(who or "") .. ":" .. tostring(from) end
 
+-- Hours already queued for someone: [who] = { [hour] = when }. Asked again
+-- while they're still going out (behind a records catch-up, say), they
+-- aren't queued twice; once the queue is empty, asking again means some
+-- went missing, so they're sent again.
+local given = {}
+local function alreadyGiven(who, key)
+    local t = given[who] and given[who][key]
+    if not t or GetTime() - t > GIVEN_FOR then return false end
+    return (PGM.SyncQueued and PGM:SyncQueued() or 0) > 0
+end
+
+local askSoon   -- below: ask again because someone has hours we don't
+
 function handlers.y(f, sender)
     local from, count, bits = tonumber(f[2]), tonumber(f[3]), f[4] or ""
     if not (from and count and count >= 1 and count <= PIECE_HOURS) then return end
@@ -382,18 +400,26 @@ function handlers.y(f, sender)
     local _, a = store()
     if not a then return end
     local now = hourOf(PGM.Now())
-    local keys = {}
+    local who = PGM.SyncNorm(sender or "")
+    local keys, theyHaveMore = {}, false
     for i = 0, count - 1 do
         local key = from + i
         if key >= now then break end   -- the hour in progress isn't over yet
-        if not bitAt(bits, i) and hasHour(a, key) then keys[#keys + 1] = key end
+        local theirs = bitAt(bits, i)
+        if not theirs and hasHour(a, key) and not alreadyGiven(who, key) then keys[#keys + 1] = key end
+        if theirs and not hasHour(a, key) then theyHaveMore = true end
     end
+    -- They run this version and have hours we're missing.
+    if theyHaveMore then askSoon() end
     if #keys == 0 then return end
     local id = offerId(sender, from)
     if offers[id] then offers[id]:Cancel() end
     offers[id] = C_Timer.NewTimer(1 + 6 / (1 + #keys) + math.random() * 2, function()
         offers[id] = nil
         PGM.SyncSend(false, "1z", sender, from)
+        given[who] = given[who] or {}
+        local at = GetTime()
+        for _, key in ipairs(keys) do given[who][key] = at end
         sendGaps(keys)
     end)
 end
@@ -509,6 +535,30 @@ askForGaps = function()
         asked.answered = false
     end
     return sent
+end
+
+-- Ask again, soon: someone who has hours we're missing just said so (or
+-- Sync now was pressed). Not while an answer is still arriving, and not
+-- more than every couple of minutes.
+local reask, lastReask = nil, -1000
+askSoon = function(now)
+    if reask or quiet or GetTime() - lastReask < REASK_GAP then return end
+    local g = PGM.GuildDB()
+    if not (g and g.seeded) then return end
+    reask = C_Timer.NewTimer(now and 1 or (5 + math.random() * 10), function()
+        reask = nil
+        if quiet then return end
+        lastReask = GetTime()
+        askForGaps()
+    end)
+end
+
+if PGM.SyncNow then
+    local hello = PGM.SyncNow
+    PGM.SyncNow = function(...)
+        hello(...)
+        askSoon(true)
+    end
 end
 
 -- The older ask, for when nobody running this version answers.

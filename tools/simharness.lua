@@ -582,6 +582,61 @@ do
     end
     local oO = OLD.PGM:ComputeActivity(7, false)
     check(oO.observed >= 3, "...and older copies catch it up (" .. oO.observed .. " hours)")
+
+    -- The copy with the history comes along after that ask (here: Sync now,
+    -- which asks too). Its ask shows hours the newer copy is missing, so
+    -- that copy asks again and gets the rest.
+    local function oldGot(cl)
+        local n = 0
+        for _, k in ipairs(injected) do
+            local h = cl.g.activity.hours[k]
+            if h and h.n == 12 then n = n + 1 end
+        end
+        return n
+    end
+    check(oldGot(OLD) < filled / 2, "(setup: the older catch-up left out the older hours: " .. oldGot(OLD) .. ")")
+    run(130, 1)   -- past the wait between asks
+    A.PGM.SyncNow()
+    run(240, 1)
+    check(oldGot(OLD) == filled, "a copy that comes along later fills in one that asked before it ("
+        .. oldGot(OLD) .. " of " .. filled .. ")")
+
+    -- Asked twice while the first answer is still going out: the hours
+    -- aren't queued twice.
+    local others = {}
+    for name, cl in pairs(clients) do
+        if cl ~= A then
+            others[name] = cl.PGM.SyncHandlers.y
+            cl.PGM.SyncHandlers.y = nil
+        end
+    end
+    local LATE = newClient(gid(26), "Yinsane")
+    LATE.PGM.SyncHandlers.y = nil
+    run(300, 1)   -- its own login ask is answered and sent first
+    local from, count = injected[1], injected[#injected] - injected[1] + 1
+    -- Answers to this ask: "z" naming Lateone and this ask's first hour.
+    local answers, lateFire = 0, LATE.fire
+    LATE.fire = function(event, prefix, msg, ...)
+        if event == "CHAT_MSG_ADDON" and type(msg) == "string" and msg:sub(1, 2) == "1z"
+                and msg:find("\031" .. from, 1, true) then
+            answers = answers + 1
+        end
+        return lateFire(event, prefix, msg, ...)
+    end
+    LATE.PGM.SyncSend(false, "1y", from, count, "")
+    run(5)
+    local queued = A.PGM:SyncQueued()
+    LATE.PGM.SyncSend(false, "1y", from, count, "")
+    run(5)
+    check(queued > 0 and answers == 1, "asked again mid-answer: the hours aren't queued twice ("
+        .. answers .. " answers, " .. queued .. " still queued)")
+    run(120, 1)
+    LATE.PGM.SyncSend(false, "1y", from, count, "")
+    run(10)
+    LATE.fire = lateFire
+    check(answers == 2, "...but once they've all gone, asking again means some went missing: sent again")
+    run(120, 1)
+    for name, h in pairs(others) do clients[name].PGM.SyncHandlers.y = h end
 end
 
 print("-- players linking their own characters")
