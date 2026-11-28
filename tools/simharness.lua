@@ -910,6 +910,53 @@ P:BulkSent(select(2, P:BulkBatch()))
 P:Fire("ROSTER")
 check(P:BulkState(gid(26)) == "done", "reaching the target rank is done")
 P:BulkStop()
+
+-- "In guild 5 days or more" for someone who was already here when this copy
+-- first read the roster: no join date, but at least since then.
+do
+    local function picks() return select(2, P:BulkMatches("promote"))[pr.id] or 0 end
+    local t = BASE + math.floor(T)
+    local seededWas = g.seeded
+    yin.rankIndex, yin.rank, yin.joined = 6, "Trial", nil
+    pr.joinedDays = 5
+    g.seeded = t - 2 * 86400
+    check(picks() == 0, "no join date, tracking began 2 days ago: not 5 days in the guild yet")
+    g.seeded = t - 10 * 86400
+    check(picks() == 1, "no join date, tracking began 10 days ago: in the guild at least that long")
+
+    -- The guild event log says when they joined.
+    g.seeded = t - 2 * 86400
+    GUILD_EVENTS = { { "invite", "Nattypandy-MalGanis", "Yinsane-MalGanis", "", 0, 0, 8, 0 } }
+    A.fire("GUILD_EVENT_LOG_UPDATE")
+    check(yin.joined and math.abs(yin.joined - (t - 8 * 86400)) < 7200, "the event log fills in a missing join date")
+    check(picks() == 1, "...so the rule picks them")
+
+    -- First seen a day ago (they joined while we were offline): the log's
+    -- earlier join is closer. A later one never moves a date forward.
+    g.seeded = t - 10 * 86400
+    yin.joined = t - 86400
+    GUILD_EVENTS = { { "join", "Yinsane-MalGanis", "", "", 0, 0, 3, 0 } }
+    A.fire("GUILD_EVENT_LOG_UPDATE")
+    check(math.abs(yin.joined - (t - 3 * 86400)) < 7200, "a join first seen late gets the log's earlier date")
+    GUILD_EVENTS = { { "join", "Yinsane-MalGanis", "", "", 0, 0, 0, 2 } }
+    A.fire("GUILD_EVENT_LOG_UPDATE")
+    check(math.abs(yin.joined - (t - 3 * 86400)) < 7200, "...and a later entry doesn't move it forward")
+
+    -- Two members sharing a name: neither is guessed at.
+    local twin = { guid = gid(150), name = "Yinsane-Otherrealm", short = "Yinsane", realm = "Otherrealm",
+                   rank = "Trial", rankIndex = 6, level = 90, class = "MAGE", note = "", onote = "", online = true }
+    g.members[gid(150)] = twin
+    yin.joined = nil
+    GUILD_EVENTS = { { "join", "Yinsane", "", "", 0, 0, 4, 0 } }
+    A.fire("GUILD_EVENT_LOG_UPDATE")
+    check(yin.joined == nil and twin.joined == nil, "a name two members share isn't guessed at")
+    g.members[gid(150)] = nil
+
+    GUILD_EVENTS = {}
+    g.seeded, yin.joined, pr.joinedDays = seededWas, nil, nil
+    yin.rankIndex, yin.rank = 4, "Raider"
+end
+
 pr.toRank = 1
 check((select(2, P:BulkMatches("promote"))[pr.id] or 0) == 0, "nobody can be moved to your own rank")
 

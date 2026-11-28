@@ -199,7 +199,9 @@ local function matches(r, action, guid, rec, myRank, ctx)
     if r.minLevel and lvl < r.minLevel then return false end
     if r.maxLevel and lvl > r.maxLevel then return false end
     if r.joinedDays then
-        local d = PGM.DaysSince(rec.joined)
+        -- No join date means they were here when tracking began, so they've
+        -- been in the guild at least that long.
+        local d = PGM.DaysSince(rec.joined or ctx.g.seeded)
         if not d or d < r.joinedDays then return false end
     end
     if r.note and r.note ~= "" then

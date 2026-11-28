@@ -10,7 +10,8 @@
 --     each and roughly when.
 -- A History entry is credited from a system message when there was one,
 -- and otherwise from the event log, so changes made while you were offline
--- get credited too.
+-- get credited too. The event log also gives join dates this copy doesn't
+-- have: everyone already in the guild when it first read the roster.
 
 local _, NS = ...
 local PGM = NS.PGM
@@ -200,15 +201,75 @@ function PGM:CreditFromEventLog(events)
     return n
 end
 
-PGM:RegisterEvent("GUILD_EVENT_LOG_UPDATE", function() PGM:CreditFromEventLog() end)
+-- Join dates from the event log. Someone already in the guild when this
+-- copy first read the roster has none, and someone who joined while we were
+-- offline has when we first saw them; the log's latest invite or join for
+-- them is closer (to the hour it keeps). A date only ever moves earlier, and
+-- a name two members share is left alone.
+function PGM:JoinsFromEventLog(events)
+    local g = PGM.GuildDB()
+    if not (g and g.members) then return 0 end
+    local now = PGM.Now()
+    events = events or readEvents(now)
+    local latest = {}
+    for _, ev in ipairs(events) do
+        if (ev.typ == "join" or ev.typ == "invite") and ev.who and ev.at <= now then
+            if not latest[ev.who] or ev.at > latest[ev.who] then latest[ev.who] = ev.at end
+        end
+    end
+    if not next(latest) then return 0 end
+    local byName, shared = {}, {}
+    for guid, rec in pairs(g.members) do
+        local k = nameKey(rec.name or rec.short)
+        if k then
+            if byName[k] then shared[k] = true else byName[k] = guid end
+        end
+    end
+    local seeded = g.seeded or now
+    local filled = {}
+    for k, at in pairs(latest) do
+        local guid = not shared[k] and byName[k]
+        local rec = guid and g.members[guid]
+        -- No date: they were here when tracking began, so they joined
+        -- before that. A date: they joined after it, and before we saw them.
+        local fits = rec and (rec.joined == nil and at <= seeded + 3600
+            or rec.joined ~= nil and at < rec.joined and at >= seeded - 3600)
+        if fits then
+            rec.joined = at
+            filled[#filled + 1] = guid
+        end
+    end
+    if #filled == 0 then return 0 end
+    local me = PGM.MyGuid and g.members[PGM:MyGuid() or ""]
+    if me and PGM.IsOfficerRec and PGM:IsOfficerRec(me) and PGM.SyncJoins then PGM:SyncJoins(filled) end
+    PGM:Fire("LOG")
+    return #filled
+end
+
+PGM:RegisterEvent("GUILD_EVENT_LOG_UPDATE", function()
+    PGM:CreditFromEventLog()
+    PGM:JoinsFromEventLog()
+end)
+
+local function missingJoins(g)
+    for _, rec in pairs(g.members or {}) do
+        if not rec.joined then return true end
+    end
+    return false
+end
 
 -- After a roster read turns up changes nobody has been credited for, ask
--- the game for its event log (at most once a minute).
+-- the game for its event log (at most once a minute); and once a session
+-- when someone's join date is missing.
 local lastQuery = -QUERY_GAP
+local askedForJoins = false
 PGM:On("ROSTER", function()
     local g = PGM.GuildDB()
-    if not (g and g.log) or type(QueryGuildEventLog) ~= "function" then return end
-    if GetTime() - lastQuery < QUERY_GAP or not uncredited(g, PGM.Now()) then return end
+    if not (g and g.log and g.seeded) or type(QueryGuildEventLog) ~= "function" then return end
+    if GetTime() - lastQuery < QUERY_GAP then return end
+    local forJoins = not askedForJoins and missingJoins(g)
+    if not (forJoins or uncredited(g, PGM.Now())) then return end
+    askedForJoins = true
     lastQuery = GetTime()
     pcall(QueryGuildEventLog)
 end)
